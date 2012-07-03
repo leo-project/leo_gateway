@@ -1,0 +1,14 @@
+{application, leo_gateway,
+  [
+   {description, "LeoFS Gateway Server"},
+   {vsn, "0.9.0"},
+   {id, "leo_gateway"},
+   {registered, []},
+   {applications, [kernel, stdlib]},
+   {mod, {leo_gateway_app, []}},
+   {env, [
+          {log_level, 0},
+          {layer_of_dirs, {1, 12}}
+         ]}
+  ]
+}.
