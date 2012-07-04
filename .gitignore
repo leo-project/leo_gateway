@@ -7,7 +7,6 @@ ring_*
 leofs_gateway.sh
 *.log
 *.swp
-*.sh
 *.json
 *.bak
 erl_crash.dump
