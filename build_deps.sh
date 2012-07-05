@@ -3,7 +3,7 @@
 BASEDIR="$PWD"
 
 if [ ! -d cherly ]; then
-	git clone https://github.com/mocchira/cherly.git
+	git clone https://github.com/leo-project/cherly.git 
 fi
 (cd cherly && ./configure && make)
 if [ $? -ne 0 ]; then
