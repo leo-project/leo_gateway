@@ -114,10 +114,10 @@ loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
 -spec(loop1(any(), tuple(), boolean(), string()) ->
              ok).
 loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
-    case Req:get(method) of
-        ?HTTP_POST -> HTTPMethod = ?HTTP_PUT;
-        Other      -> HTTPMethod = Other
-    end,
+    HTTPMethod = case Req:get(method) of
+                     ?HTTP_POST -> ?HTTP_PUT;
+                     Other      -> Other
+                 end,
 
     QueryString = Req:parse_qs(),
     {Prefix, IsDir} = case proplists:get_value(?QUERY_PREFIX, QueryString, undefined) of

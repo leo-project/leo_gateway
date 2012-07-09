@@ -39,6 +39,9 @@
 -ifdef(TEST).
 -define(get_several_info_from_manager(_Args),
         fun() ->
+                _ = get_system_config_from_manager([]),
+                _ = get_members_from_manager([]),
+
                 [{ok, [#system_conf{n = 1,
                                     w = 1,
                                     r = 1,
@@ -81,13 +84,12 @@ after_process({ok, _Pid} = Res) ->
         {{ok, SystemConf}, {ok, Members}} ->
             %% Launch Logger(s)
             DefLogDir = "./log/",
-
-            case application:get_env(App, log_appender) of
-                {ok, [{file, Options}|_]} ->
-                    LogDir = proplists:get_value(path, Options,  DefLogDir);
-                _ ->
-                    LogDir = DefLogDir
-            end,
+            LogDir    = case application:get_env(App, log_appender) of
+                            {ok, [{file, Options}|_]} ->
+                                proplists:get_value(path, Options,  DefLogDir);
+                            _ ->
+                                DefLogDir
+                        end,
             ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
 
             %% Launch SNMPA
@@ -173,12 +175,6 @@ get_members_from_manager([Manager|T]) ->
 -spec(log_file_appender() ->
              list()).
 log_file_appender() ->
-    %% app.config:
-    %% {log_appender, [{file, [{path, "./log/app/"}]},
-    %%                 {zmq,  [{ip,   "10.0.0.1"},
-    %%                         {port, 10501}]}
-    %%                ]},
-
     case application:get_env(leo_gateway, log_appender) of
         undefined   -> log_file_appender([], []);
         {ok, Value} -> log_file_appender(Value, [])

@@ -121,21 +121,23 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State) ->
             io:format("path:~w~n",[Path]),
             handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache], Path)
     end.
-handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
+
+handle(Req0, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
     Length = erlang:length(string:tokens(Path, ?STR_SLASH)),
-    case cowboy_http_req:method(Req) of
-        {?HTTP_POST, Req2} ->
-            HTTPMethod = ?HTTP_PUT;
-        {Other, Req2} ->
-            HTTPMethod = Other
-    end,
-    {Prefix, IsDir} = case cowboy_http_req:qs_val(?QUERY_PREFIX, Req2) of
-                          {undefined, Req3} ->
-                              {undefined, false};
-                          {Param, Req3} ->
-                              {binary_to_list(Param), true}
-                      end,
-    case catch exec(first, HTTPMethod, Req3, Path, #req_params{
+    {HTTPMethod, Req1} = case cowboy_http_req:method(Req0) of
+                             {?HTTP_POST, _Req1} -> {?HTTP_PUT, _Req1};
+                             {Other, _Req1}      -> {Other,     _Req1}
+                         end,
+
+    {Prefix, IsDir, Req2} =
+        case cowboy_http_req:qs_val(?QUERY_PREFIX, Req1) of
+            {undefined, _Req2} ->
+                {undefined, false, _Req2};
+            {Param, _Req2} ->
+                {binary_to_list(Param), true, _Req2}
+        end,
+
+    case catch exec(first, HTTPMethod, Req2, Path, #req_params{
                                                token_length     = Length,
                                                min_layers       = NumOfMinLayers,
                                                max_layers       = NumOfMaxLayers,
@@ -145,11 +147,11 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
                                               }) of
         {'EXIT', Reason} ->
             ?error("loop/3", "path:~w, reason:~w", [Path, Reason]),
-            {ok, Req4} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req3),
-            {ok, Req4, State};
-        {ok, Req5} ->
+            {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
+            {ok, Req3, State};
+        {ok, Req4} ->
             erlang:garbage_collect(self()),
-            {ok, Req5, State}
+            {ok, Req4, State}
     end.
 
 terminate(_Req, _State) ->

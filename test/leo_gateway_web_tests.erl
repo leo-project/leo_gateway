@@ -107,10 +107,11 @@ setup_mochiweb() ->
     TermFun = fun() -> leo_gateway_web_mochi:stop() end,
     setup(InitFun, TermFun).
 
-setup_cowboy() ->
-    InitFun = fun() -> leo_gateway_web_cowboy:start([{port,8080},{acceptor_pool_size,32}]) end,
-    TermFun = fun() -> leo_gateway_web_cowboy:stop() end,
-    setup(InitFun, TermFun).
+%% TODO
+%% setup_cowboy() ->
+%%     InitFun = fun() -> leo_gateway_web_cowboy:start([{port,8080},{acceptor_pool_size,32}]) end,
+%%     TermFun = fun() -> leo_gateway_web_cowboy:stop() end,
+%%     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->
     inets:stop(),

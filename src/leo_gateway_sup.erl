@@ -52,25 +52,26 @@ start_link() ->
     io:format("*             port: ~p~n", [ListenPort]),
     io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
 
-    case ?env_cache_plugin() of
-        none      -> HookModules = [];
-        undefined -> HookModules = [];
-        ModCache ->
-            CacheExpire          = ?env_cache_expire(),
-            CacheMaxContentLen   = ?env_cache_max_content_len(),
-            CachableContentTypes = ?env_cachable_content_type(),
-            CachablePathPatterns = ?env_cachable_path_pattern(),
-            io:format("*        mod cache: ~p~n", [ModCache]),
-            io:format("*     cache_expire: ~p~n", [CacheExpire]),
-            io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
-            io:format("*    content_types: ~p~n", [CachableContentTypes]),
-            io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
-            HookModules = [{ModCache, [{expire,                CacheExpire},
-                                       {max_content_len,       CacheMaxContentLen},
-                                       {cachable_content_type, CachableContentTypes},
-                                       {cachable_path_pattern, CachablePathPatterns}
-                                      ]}]
-    end,
+    HookModules =
+        case ?env_cache_plugin() of
+            none      -> [];
+            undefined -> [];
+            ModCache ->
+                CacheExpire          = ?env_cache_expire(),
+                CacheMaxContentLen   = ?env_cache_max_content_len(),
+                CachableContentTypes = ?env_cachable_content_type(),
+                CachablePathPatterns = ?env_cachable_path_pattern(),
+                io:format("*        mod cache: ~p~n", [ModCache]),
+                io:format("*     cache_expire: ~p~n", [CacheExpire]),
+                io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
+                io:format("*    content_types: ~p~n", [CachableContentTypes]),
+                io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
+                [{ModCache, [{expire,                CacheExpire},
+                             {max_content_len,       CacheMaxContentLen},
+                             {cachable_content_type, CachableContentTypes},
+                             {cachable_path_pattern, CachablePathPatterns}
+                            ]}]
+        end,
     supervisor:start_link({local, ?MODULE}, ?MODULE,
                           [ListenPort, NumOfAcceptors, HookModules]).
 
@@ -97,23 +98,23 @@ upgrade() ->
 %% @spec init([]) -> SupervisorTree
 %% @doc supervisor callback.
 init([ListenPort, AccessorPoolSize, HookModules]) ->
-    case os:getenv("MOCHIWEB_IP") of
-        false -> Ip = "0.0.0.0";
-        Any   -> Ip = Any
-    end,
-
-    WebConfig = [{ip, Ip},
+    Ip = case os:getenv("MOCHIWEB_IP") of
+             false -> "0.0.0.0";
+             Any   -> Any
+         end,
+    
+    WebConfig0 = [{ip, Ip},
                  {port, ListenPort},
                  {acceptor_pool_size, AccessorPoolSize},
                  {docroot, "."}],
-
-    case HookModules of
-        [] -> NewWebConfig = WebConfig;
-        _  -> NewWebConfig = lists:reverse([{hook_modules, HookModules}|WebConfig])
-    end,
+    WebConfig1 =
+        case HookModules of
+            [] -> WebConfig0;
+            _  -> lists:reverse([{hook_modules, HookModules}|WebConfig0])
+        end,
 
     Web = {leo_gateway_web_mochi,
-           {leo_gateway_web_mochi, start, [NewWebConfig]},
+           {leo_gateway_web_mochi, start, [WebConfig1]},
            permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic},
     {ok, {{one_for_one, 10, 10}, [Web]}}.
 

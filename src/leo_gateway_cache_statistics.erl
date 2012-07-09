@@ -64,10 +64,11 @@ init() ->
 -spec(sync(?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M) ->
              ok).
 sync(?STAT_INTERVAL_1M) ->
-    case catch ecache_server:stats() of
-        {'EXIT', _Cause} -> Stats = #stats{};
-        Value            -> Stats = Value
-    end,
+    Stats = case catch ecache_server:stats() of
+                {'EXIT', _Cause} -> #stats{};
+                Value            -> Value
+            end,
+
     #stats{get_op   = NumOfRead,
            hit_cnt  = HitCount,
            rec_num  = NumOfObjects,

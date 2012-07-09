@@ -50,11 +50,11 @@ purge(Path) ->
 -spec(get_cluster_node_status() -> {ok, #cluster_node_status{}}).
 get_cluster_node_status() ->
     {ok, Version} = application:get_key(leo_gateway, vsn),
-
-    case leo_redundant_manager_api:checksum(ring) of
-        {ok, {Chksum0, Chksum1}} -> {RingHashCur, RingHashPrev} = {Chksum0, Chksum1};
-        _ -> {RingHashCur, RingHashPrev} = {[], []}
-    end,
+    {RingHashCur, RingHashPrev} =
+        case leo_redundant_manager_api:checksum(ring) of
+            {ok, {Chksum0, Chksum1}} -> {Chksum0, Chksum1};
+            _ -> {[], []}
+        end,
 
     Directories = [{log,    ?env_log_dir(leo_gateway)},
                    {mnesia, mnesia:system_info(directory)}
