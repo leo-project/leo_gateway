@@ -15,3 +15,5 @@ Overview
 * "leo_gateway" uses the "rebar" build system. Makefile so that simply running "make" at the top level should work.
   * [rebar](https://github.com/basho/rebar)
 * "leo_gateway" requires Erlang R14B04 or later.
+
+[![Build Status](https://secure.travis-ci.org/leo-project/leo_gateway.png?branch=master)](http://travis-ci.org/leo-project/leo_gateway)
