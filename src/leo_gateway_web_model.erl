@@ -93,7 +93,11 @@ get_bucket_list(Bucket, _Delimiter, _Marker, _MaxKeys, Prefix) ->
 
 makeBucketsXML(Dir, Buckets) ->
     DirLen = string:len(Dir),
-    Fun = fun(#metadata{key=EntryKey, dsize=Length, timestamp=TS, checksum  = CS, del=0} , Acc) ->
+    Fun = fun(#metadata{key       = EntryKey,
+                        dsize     = Length,
+                        timestamp = TS,
+                        checksum  = CS,
+                        del       = 0} , Acc) ->
                   case string:equal(Dir, EntryKey) of
                       true ->
                           Acc;
@@ -108,7 +112,7 @@ makeBucketsXML(Dir, Buckets) ->
                                   Acc ++ "<Contents>"
                                       ++ "<Key>" ++ Entry ++ "</Key>"
                                       ++ "<LastModified>" ++ leo_utils:date_format(TS) ++ "</LastModified>"
-                                      ++ "<ETag>" ++ integer_to_list(CS)     ++ "</ETag>"
+                                      ++ "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
                                       ++ "<Size>" ++ integer_to_list(Length) ++ "</Size>"
                                       ++ "<StorageClass>STANDARD</StorageClass>"
                                       ++ "</Contents>"
