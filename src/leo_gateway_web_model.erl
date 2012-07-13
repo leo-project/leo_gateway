@@ -26,7 +26,7 @@
 -module(leo_gateway_web_model).
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
--vsn('0.9.0').
+-vsn('0.9.1').
 
 -export([get_bucket_list/1, get_bucket_list/5,
          head_object/1,

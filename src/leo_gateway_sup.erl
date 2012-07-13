@@ -25,7 +25,7 @@
 %% @end
 %%======================================================================
 -module(leo_gateway_sup).
--vsn('0.9.0').
+-vsn('0.9.1').
 -author('Yosuke Hara').
 
 -behaviour(supervisor).
