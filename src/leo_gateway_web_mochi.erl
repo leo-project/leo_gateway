@@ -26,7 +26,7 @@
 -module(leo_gateway_web_mochi).
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
--vsn('0.9.0').
+-vsn('0.9.1').
 
 -export([start/1, stop/0, loop/3]).
 
@@ -191,12 +191,10 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = H
             Mime = mochiweb_util:guess_mime(Key),
             case HasInnerCache of
                 true ->
-                    BinVal = term_to_binary(#cache{
-                                               etag = Meta#metadata.checksum,
-                                               mtime = Meta#metadata.timestamp,
-                                               content_type = Mime,
-                                               body = RespObject
-                                              }),
+                    BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
+                                                   mtime = Meta#metadata.timestamp,
+                                                   content_type = Mime,
+                                                   body = RespObject}),
                     ecache_server:set(Key, BinVal);
                 _ ->
                     ok
@@ -204,7 +202,7 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = H
             Req:respond({200,
                          [?SERVER_HEADER,
                           {"Content-Type",  Mime},
-                          {"ETag",          Meta#metadata.checksum},
+                          {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
                           {"Last-Modified", rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->
@@ -223,7 +221,7 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
             Req:start_response_length({200,
                                        [?SERVER_HEADER,
                                         {"Content-Type",  mochiweb_util:guess_mime(Key)},
-                                        {"ETag",          Meta#metadata.checksum},
+                                        {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
                                         {"Last-Modified", rfc1123_date(Meta#metadata.timestamp)}],
                                        Meta#metadata.dsize});
         {ok, #metadata{del = 1}} ->
@@ -281,23 +279,21 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             Req:respond({200,
                          [?SERVER_HEADER,
                           {"Content-Type",  Cached#cache.content_type},
-                          {"ETag",          Cached#cache.etag},
+                          {"ETag",          leo_hex:integer_to_hex(Cached#cache.etag)},
                           {"X-From-Cache",  "True"},
                           {"Last-Modified", rfc1123_date(Cached#cache.mtime)}],
                          Cached#cache.body});
         {ok, Meta, RespObject} ->
             Mime = mochiweb_util:guess_mime(Key),
-            BinVal = term_to_binary(#cache{
-                                       etag = Meta#metadata.checksum,
-                                       mtime = Meta#metadata.timestamp,
-                                       content_type = Mime,
-                                       body = RespObject
-                                      }),
+            BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
+                                           mtime = Meta#metadata.timestamp,
+                                           content_type = Mime,
+                                           body = RespObject}),
             ecache_server:set(Key, BinVal),
             Req:respond({200,
                          [?SERVER_HEADER,
                           {"Content-Type",  Mime},
-                          {"ETag",          Meta#metadata.checksum},
+                          {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
                           {"Last-Modified", rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->

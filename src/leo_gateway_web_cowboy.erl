@@ -26,7 +26,7 @@
 -module(leo_gateway_web_cowboy).
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
--vsn('0.9.0').
+-vsn('0.9.1').
 
 -export([start/1, stop/0]).
 -export([init/3, handle/2, terminate/2]).
@@ -205,11 +205,9 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false}) ->
         {ok, Meta, RespObject} ->
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {<<"Content-Type">>,
-                                    mochiweb_util:guess_mime(Key)},
-                                   {<<"ETag">>, Meta#metadata.checksum},
-                                   {<<"Last-Modified">>,
-                                    rfc1123_date(Meta#metadata.timestamp)}],
+                                   {<<"Content-Type">>,  mochiweb_util:guess_mime(Key)},
+                                   {<<"ETag">>,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                                   {<<"Last-Modified">>, rfc1123_date(Meta#metadata.timestamp)}],
                                   RespObject, Req);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -226,12 +224,10 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
         {ok, #metadata{del = 0} = Meta} ->
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {<<"Content-Type">>,
-                                    mochiweb_util:guess_mime(Key)},
-                                   {<<"ETag">>, Meta#metadata.checksum},
-                                   {<<"Content-Length">>,  Meta#metadata.dsize},
-                                   {<<"Last-Modified">>,
-                                    rfc1123_date(Meta#metadata.timestamp)}],
+                                   {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)},
+                                   {<<"ETag">>,           leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                                   {<<"Content-Length">>, Meta#metadata.dsize},
+                                   {<<"Last-Modified">>,  rfc1123_date(Meta#metadata.timestamp)}],
                                   Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -289,7 +285,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {<<"Content-Type">>,  Cached#cache.content_type},
-                                   {<<"ETag">>,          Cached#cache.etag},
+                                   {<<"ETag">>,          leo_hex:integer_to_hex(Cached#cache.etag)},
                                    {<<"X-From-Cache">>,  <<"True">>},
                                    {<<"Last-Modified">>, rfc1123_date(Cached#cache.mtime)}],
                                   Cached#cache.body, Req);
@@ -304,10 +300,9 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             ecache_server:set(Key, BinVal),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {<<"Content-Type">>, Mime},
-                                   {<<"ETag">>, Meta#metadata.checksum},
-                                   {<<"Last-Modified">>,
-                                    rfc1123_date(Meta#metadata.timestamp)}],
+                                   {<<"Content-Type">>,  Mime},
+                                   {<<"ETag">>,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                                   {<<"Last-Modified">>, rfc1123_date(Meta#metadata.timestamp)}],
                                   RespObject, Req);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
