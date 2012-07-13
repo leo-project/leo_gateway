@@ -29,7 +29,7 @@
 %%      to this application's path.
 
 -module(leo_gateway_deps).
--vsn('0.9.0').
+-vsn('0.9.1').
 -author('Yosuke Hara').
 
 -export([ensure/0, ensure/1]).

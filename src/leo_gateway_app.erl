@@ -24,7 +24,7 @@
 %% @end
 %%======================================================================
 -module(leo_gateway_app).
--vsn('0.9.0').
+-vsn('0.9.1').
 -author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
