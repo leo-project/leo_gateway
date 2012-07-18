@@ -26,7 +26,7 @@
 -module(leo_gateway_web_mochi).
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
--vsn('0.9.0').
+-vsn('0.9.1').
 
 -export([start/1, stop/0, loop/3]).
 

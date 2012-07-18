@@ -26,7 +26,7 @@
 -module(leo_gateway_web_cowboy).
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
--vsn('0.9.0').
+-vsn('0.9.1').
 
 -export([start/1, stop/0]).
 -export([init/3, handle/2, terminate/2]).

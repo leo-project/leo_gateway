@@ -25,7 +25,7 @@
 %%====================================================================
 -module(leo_gateway_web_model_tests).
 -author('Yoshiyuki Kanno').
--vsn('0.9.0').
+-vsn('0.9.1').
 
 -include("leo_gateway.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
