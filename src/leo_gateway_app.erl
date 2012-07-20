@@ -58,6 +58,16 @@
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
     leo_gateway_deps:ensure(),
+    App = leo_gateway,
+     %% Launch Logger(s)
+    DefLogDir = "./log/",
+    LogDir    = case application:get_env(App, log_appender) of
+                    {ok, [{file, Options}|_]} ->
+                        proplists:get_value(path, Options,  DefLogDir);
+                    _ ->
+                        DefLogDir
+                end,
+    ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
     Res = leo_gateway_sup:start_link(),
     after_process(Res).
 
@@ -82,16 +92,6 @@ after_process({ok, _Pid} = Res) ->
 
     case ?get_several_info_from_manager(NewManagerNodes) of
         {{ok, SystemConf}, {ok, Members}} ->
-            %% Launch Logger(s)
-            DefLogDir = "./log/",
-            LogDir    = case application:get_env(App, log_appender) of
-                            {ok, [{file, Options}|_]} ->
-                                proplists:get_value(path, Options,  DefLogDir);
-                            _ ->
-                                DefLogDir
-                        end,
-            ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
-
             %% Launch SNMPA
             ok = leo_statistics_api:start(leo_gateway_sup, App,
                                           [{snmp, [leo_statistics_metrics_vm,
