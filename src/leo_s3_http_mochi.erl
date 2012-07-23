@@ -142,7 +142,6 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
 %%--------------------------------------------------------------------
 %%% INTERNAL FUNCTIONS
 %%--------------------------------------------------------------------
-
 %% @doc constraint violation.
 %%
 exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
@@ -304,6 +303,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             Req:respond({504, [?SERVER_HEADER], []})
     end.
 
+
 %% @doc get options from mochiweb.
 %%
 -spec(get_option(atom(), list()) ->
@@ -311,6 +311,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
 get_option(Option, Options) ->
     {proplists:get_value(Option, Options),
      proplists:delete(Option, Options)}.
+
 
 %% @doc RFC-1123 datetime.
 %%

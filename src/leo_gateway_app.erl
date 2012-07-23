@@ -90,12 +90,6 @@ after_process({ok, Pid} = Res) ->
     ManagerNodes    = ?env_manager_nodes(App),
     NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
 
-    %% Launch a listener - [s3_http]
-    case ?env_listener() of
-        ?S3_HTTP ->
-            ok = leo_s3_http_api:start(Pid, App)
-    end,
-
     case ?get_several_info_from_manager(NewManagerNodes) of
         {{ok, SystemConf}, {ok, Members}} ->
             %% Launch SNMPA
@@ -125,6 +119,12 @@ after_process({ok, Pid} = Res) ->
                            (_, true) ->
                                 void
                         end, false, NewManagerNodes),
+
+            %% Launch a listener - [s3_http]
+            case ?env_listener() of
+                ?S3_HTTP ->
+                    ok = leo_s3_http_api:start(Pid, App)
+            end,
             Res;
         Error ->
             io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),

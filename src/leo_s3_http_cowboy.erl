@@ -157,10 +157,10 @@ handle(Req0, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
 terminate(_Req, _State) ->
     ok.
 
+
 %%--------------------------------------------------------------------
 %%% INTERNAL FUNCTIONS
 %%--------------------------------------------------------------------
-
 %% @doc constraint violation.
 %%
 exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
@@ -312,6 +312,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
     end.
 
+
 %% @doc get options from mochiweb.
 %%
 -spec(get_option(atom(), list()) ->
@@ -319,6 +320,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
 get_option(Option, Options) ->
     {proplists:get_value(Option, Options),
      proplists:delete(Option, Options)}.
+
 
 %% @doc RFC-1123 datetime.
 %%

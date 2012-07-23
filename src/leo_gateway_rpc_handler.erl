@@ -91,6 +91,7 @@ get(Key, ETag) ->
            [ReqParams#req_params.addr_id, Key, ETag, ReqParams#req_params.req_id],
            []).
 
+
 %% @doc delete object
 %%
 -spec(delete(string()) ->
@@ -103,6 +104,7 @@ delete(Key) ->
            delete,
            [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
            []).
+
 
 %% @doc put object
 %%
@@ -147,6 +149,7 @@ invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
             invoke(T, Mod, Method, Args, [ErrorMsg|Errors])
     end.
 
+
 %% @doc get request parameters.
 %%
 -spec(get_request_parameters(method(), string()) ->
@@ -167,6 +170,7 @@ get_request_parameters(Method, Key) ->
                 req_id       = ReqId,
                 timestamp    = Timestamp}.
 
+
 %% @doc error messeage filtering.
 %%
 error_filter([?ERR_TYPE_INTERNAL_ERROR|_T])       -> ?ERR_TYPE_INTERNAL_ERROR;
@@ -174,6 +178,7 @@ error_filter([H|T])                               -> error_filter(T, H).
 error_filter([],                            Prev) -> Prev;
 error_filter([?ERR_TYPE_INTERNAL_ERROR|_T],_Prev) -> ?ERR_TYPE_INTERNAL_ERROR;
 error_filter([_H|T],                        Prev) -> error_filter(T, Prev).
+
 
 %% @doc handle an error response.
 %%
