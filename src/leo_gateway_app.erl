@@ -59,7 +59,7 @@
 start(_Type, _StartArgs) ->
     leo_gateway_deps:ensure(),
     App = leo_gateway,
-     %% Launch Logger(s)
+    %% Launch Logger(s)
     DefLogDir = "./log/",
     LogDir    = case application:get_env(App, log_appender) of
                     {ok, [{file, Options}|_]} ->
@@ -85,10 +85,16 @@ stop(_State) ->
 %% @private
 -spec(after_process({ok, pid()} | {error, any()}) ->
              {ok, pid()} | {error, any()}).
-after_process({ok, _Pid} = Res) ->
+after_process({ok, Pid} = Res) ->
     App = leo_gateway,
     ManagerNodes    = ?env_manager_nodes(App),
     NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
+
+    %% Launch a listener - [s3_http]
+    case ?env_listener() of
+        ?S3_HTTP ->
+            ok = leo_s3_http_api:start(Pid, App)
+    end,
 
     case ?get_several_info_from_manager(NewManagerNodes) of
         {{ok, SystemConf}, {ok, Members}} ->

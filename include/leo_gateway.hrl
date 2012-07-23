@@ -85,10 +85,10 @@
                  [list_to_atom("leo_remote_manager_test@" ++ Hostname)]}
         end).
 
--define(env_http_server(),
-        case application:get_env(leo_gateway, http_server) of
-            {ok, HTTPServer} -> HTTPServer;
-            _ -> mochiweb
+-define(env_layer_of_dirs(),
+        case application:get_env(leo_gateway, layer_of_dirs) of
+            {ok, GW_Val_1} -> GW_Val_1;
+            _ -> ?DEF_LAYERS_OF_DIRS
         end).
 
 -define(env_listener(),
@@ -97,47 +97,7 @@
             _ -> ?S3_HTTP
         end).
 
--define(env_rpc_handler(),
-        case application:get_env(leo_gateway, rpc_handler) of
-            {ok, GW_Val_0} -> GW_Val_0;
-            _ -> ?DEF_RPC_HANDLER
-        end).
 
--define(env_layer_of_dirs(),
-        case application:get_env(leo_gateway, layer_of_dirs) of
-            {ok, GW_Val_1} -> GW_Val_1;
-            _ -> ?DEF_LAYERS_OF_DIRS
-        end).
-
--define(env_cache_plugin(),
-        case application:get_env(leo_gateway, cache_plugin) of
-            {ok, Plugin} -> Plugin;
-            _ -> none
-        end).
-
--define(env_cache_expire(),
-        case application:get_env(leo_gateway, cache_expire) of
-            {ok, Expire} -> Expire;
-            _ -> ?DEF_CACHE_EXPIRE
-        end).
-
--define(env_cache_max_content_len(),
-        case application:get_env(leo_gateway, cache_max_content_len) of
-            {ok, MaxLen} -> MaxLen;
-            _ -> ?DEF_CACHE_MAX_CONTENT_LEN
-        end).
-
--define(env_cachable_content_type(),
-        case application:get_env(leo_gateway, cachable_content_type) of
-            {ok, ContentTypes} -> ContentTypes;
-            _ -> ?DEF_CACHE_CONTENT_TYPES
-        end).
-
--define(env_cachable_path_pattern(),
-        case application:get_env(leo_gateway, cachable_path_pattern) of
-            {ok, PathPatterns} -> PathPatterns;
-            _ -> ?DEF_CACHE_PATH_PATTERNS
-        end).
 %% REQ/RESP ERRORS
 -record(error_code, {
           code             :: atom(),

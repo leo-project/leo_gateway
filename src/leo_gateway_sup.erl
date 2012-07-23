@@ -71,13 +71,7 @@ upgrade() ->
 %% @spec init([]) -> SupervisorTree
 %% @doc supervisor callback.
 init([]) ->
-    case ?env_listener() of
-        ?S3_HTTP ->
-            Procs = leo_s3_http_api:procs(),
-            {ok, {{one_for_one, 10, 10}, [Procs]}};
-        _ ->
-            {error, undefined}
-    end.
+    {ok, {{one_for_one, 10, 10}, []}}.
 
 
 %%--------------------------------------------------------------------

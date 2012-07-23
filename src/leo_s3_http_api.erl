@@ -27,7 +27,7 @@
 
 -author('Yosuke Hara').
 
--export([procs/0, procs/1]).
+-export([start/2, start/3]).
 
 -include("leo_gateway.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
@@ -35,31 +35,38 @@
 
 -type(http_server() :: mochiweb | cowboy).
 
+-define(env_s3_http(AppName),
+        case application:get_env(AppName, s3_http) of
+            {ok, Config} -> Config;
+            _ -> []
+        end).
+
+
 %% @doc Provide processes which are cache and http_server
 %%
--spec(procs() ->
+-spec(start(pid(), atom()) ->
              tuple()).
-procs() ->
-    HTTP = ?env_http_server(),
-    procs(HTTP).
+start(Sup, AppName) ->
+    S3_HTTP_Config = ?env_s3_http(AppName),
+    HTTPServer = proplists:get_value('http_server', S3_HTTP_Config, 'mochiweb'),
+    start(Sup, HTTPServer, S3_HTTP_Config).
 
--spec(procs(http_server()) ->
+-spec(start(pid(), http_server(), list()) ->
              tuple()).
-procs(mochiweb) ->
-    ListenPort     = ?env_listening_port(leo_gateway),
-    NumOfAcceptors = ?env_num_of_acceptors(leo_gateway),
+start(Sup, mochiweb, S3_HTTP_Config) ->
+    ListenPort     = proplists:get_value('port',             S3_HTTP_Config, 8080),
+    NumOfAcceptors = proplists:get_value('num_of_acceptors', S3_HTTP_Config,   32),
     io:format("*             port: ~p~n", [ListenPort]),
     io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
 
     HookModules =
-        case ?env_cache_plugin() of
-            none      -> [];
+        case proplists:get_value('cache_plugin', S3_HTTP_Config) of
             undefined -> [];
             ModCache ->
-                CacheExpire          = ?env_cache_expire(),
-                CacheMaxContentLen   = ?env_cache_max_content_len(),
-                CachableContentTypes = ?env_cachable_content_type(),
-                CachablePathPatterns = ?env_cachable_path_pattern(),
+                CacheExpire          = proplists:get_value('cache_expire',          S3_HTTP_Config, 300),
+                CacheMaxContentLen   = proplists:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
+                CachableContentTypes = proplists:get_value('cachable_content_type', S3_HTTP_Config, []),
+                CachablePathPatterns = proplists:get_value('cachable_path_pattern', S3_HTTP_Config, []),
                 io:format("*        mod cache: ~p~n", [ModCache]),
                 io:format("*     cache_expire: ~p~n", [CacheExpire]),
                 io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
@@ -87,10 +94,13 @@ procs(mochiweb) ->
             _  -> lists:reverse([{hook_modules, HookModules}|WebConfig0])
         end,
 
-    {leo_s3_http_mochi,
-     {leo_s3_http_mochi, start, [WebConfig1]},
-     permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic};
+    ChildSpec =
+        {leo_s3_http_mochi,
+         {leo_s3_http_mochi, start, [WebConfig1]},
+         permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic},
+    {ok, _} = supervisor:start_child(Sup, ChildSpec),
+    ok;
 
-procs(cowboy) ->
+start(_Sup, cowboy, _) ->
     undefined.
 
