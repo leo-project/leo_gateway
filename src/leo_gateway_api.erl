@@ -39,7 +39,7 @@
 %% @doc purge API
 -spec(purge(string()) -> ok).
 purge(Path) ->
-    HookMods = mochiweb_socket_server:get(leo_gateway_web_mochi, hook_modules),
+    HookMods = mochiweb_socket_server:get(leo_s3_http_mochi, hook_modules),
     ?info("purge/1", "path: ~p hooks: ~p ~n",[Path, HookMods]),
     _ = mochiweb:on_purge_hook_modules(Path, HookMods),
     ok.

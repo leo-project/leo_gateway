@@ -113,8 +113,8 @@ init([ListenPort, AccessorPoolSize, HookModules]) ->
             _  -> lists:reverse([{hook_modules, HookModules}|WebConfig0])
         end,
 
-    Web = {leo_gateway_web_mochi,
-           {leo_gateway_web_mochi, start, [WebConfig1]},
+    Web = {leo_s3_http_mochi,
+           {leo_s3_http_mochi, start, [WebConfig1]},
            permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic},
     {ok, {{one_for_one, 10, 10}, [Web]}}.
 

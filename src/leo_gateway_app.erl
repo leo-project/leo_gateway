@@ -96,7 +96,7 @@ after_process({ok, _Pid} = Res) ->
             ok = leo_statistics_api:start(leo_gateway_sup, App,
                                           [{snmp, [leo_statistics_metrics_vm,
                                                    leo_statistics_metrics_req,
-                                                   leo_gateway_cache_statistics]},
+                                                   leo_s3_http_cache_statistics]},
                                            {stat, [leo_statistics_metrics_vm]}]),
 
             %% Launch Redundant-manager

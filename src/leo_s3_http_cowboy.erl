@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo Gateway
+%% Leo S3 HTTP
 %%
 %% Copyright (c) 2012 Rakuten, Inc.
 %%
@@ -19,11 +19,11 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo Gateway - powered by Cowboy version
+%% Leo S3 HTTP - powered by Cowboy version
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_web_cowboy).
+-module(leo_s3_http_cowboy).
 
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
@@ -176,7 +176,7 @@ exec(first, ?HTTP_GET, Req, Key,
                  is_dir       = true,
                  qs_prefix    = Prefix
                 }) ->
-    case leo_gateway_web_model:get_bucket_list(Key, none, none, 1000, Prefix) of
+    case leo_s3_http_bucket:get_bucket_list(Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             cowboy_http_req:reply(200, [?SERVER_HEADER], XML, Req);
         {error, not_found} ->

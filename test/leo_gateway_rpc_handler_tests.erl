@@ -19,11 +19,11 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% LeoFS Gateway - S3 domainogics Test
+%% LeoFS Gateway - RPC Handler Test
 %% @doc
 %% @end
 %%====================================================================
--module(leo_gateway_web_model_tests).
+-module(leo_gateway_rpc_handler_tests).
 -author('Yoshiyuki Kanno').
 -vsn('0.9.1').
 
@@ -96,7 +96,7 @@ get_bucket_list_error_([_Node0, Node1]) ->
                                         fun(_Key) ->
                                                 {error, some_error}
                                         end]),
-    Res = leo_gateway_web_model:get_bucket_list("bucket"),
+    Res = leo_s3_http_bucket:get_bucket_list("bucket"),
     ?assertEqual({error, internal_server_error}, Res),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),
     ok.
@@ -107,7 +107,7 @@ get_bucket_list_empty_([_Node0, Node1]) ->
                                         fun(_Key) ->
                                                 {ok, []}
                                         end]),
-    Res = leo_gateway_web_model:get_bucket_list("bucket"),
+    Res = leo_s3_http_bucket:get_bucket_list("bucket"),
     Xml = io_lib:format(?XML_OBJ_LIST, [[]]),
     ?assertEqual({ok, [], Xml}, Res),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),
@@ -125,7 +125,7 @@ get_bucket_list_normal1_([_Node0, Node1]) ->
                                                         }
                                                      ]}
                                         end]),
-    {ok, [Head|Tail], _Xml} = leo_gateway_web_model:get_bucket_list("bucket"),
+    {ok, [Head|Tail], _Xml} = leo_s3_http_bucket:get_bucket_list("bucket"),
     ?assertEqual(10, Head#metadata.dsize),
     ?assertEqual([], Tail),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),

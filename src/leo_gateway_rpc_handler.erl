@@ -57,7 +57,7 @@
 
 
 %% @doc head object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectHEAD.html
+%%
 -spec(head(string()) ->
              {ok, #metadata{}}|{error, any()}).
 head(Key) ->
@@ -69,7 +69,7 @@ head(Key) ->
            []).
 
 %% @doc get object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectGET.html
+%%
 -spec(get(string()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key) ->
@@ -92,7 +92,7 @@ get(Key, ETag) ->
            []).
 
 %% @doc delete object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectDELETE.html
+%%
 -spec(delete(string()) ->
              ok|{error, any()}).
 delete(Key) ->
@@ -105,7 +105,7 @@ delete(Key) ->
            []).
 
 %% @doc put object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectPUT.html
+%%
 -spec(put(string(), binary(), integer()) ->
              ok|{error, any()}).
 put(Key, Body, Size) ->

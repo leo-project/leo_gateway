@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo Gateway
+%% Leo S3 HTTP
 %%
 %% Copyright (c) 2012 Rakuten, Inc.
 %%
@@ -19,11 +19,11 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo Gateway - S3 Bucket-related
+%% Leo S3 HTTP - S3 Bucket-related
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_web_model).
+-module(leo_s3_http_bucket).
 
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
