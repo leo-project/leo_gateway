@@ -23,7 +23,6 @@
 %%
 %%====================================================================
 -author('Yosuke Hara').
--vsn('0.9.1').
 
 -define(SHUTDOWN_WAITING_TIME, 2000).
 -define(MAX_RESTART,              5).
