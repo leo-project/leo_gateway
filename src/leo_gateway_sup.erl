@@ -1,8 +1,8 @@
 %%======================================================================
 %%
-%% LeoFS Gateway
+%% Leo Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,13 +19,13 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% LeoFS Gateway - Supervisor
+%% Leo Gateway - Supervisor
 %%
 %% @doc
 %% @end
 %%======================================================================
 -module(leo_gateway_sup).
--vsn('0.9.1').
+
 -author('Yosuke Hara').
 
 -behaviour(supervisor).
