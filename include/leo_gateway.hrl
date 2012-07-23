@@ -31,6 +31,7 @@
 
 -define(DEF_LISTEN_PORT,    8080).
 -define(DEF_NUM_OF_ACCS,    32).
+-define(DEF_RPC_HANDLER,    'leo_gateway_web_model').
 -define(DEF_LAYERS_OF_DIRS, {3, 12}).
 -define(DEF_CACHE_EXPIRE, 60).
 -define(DEF_CACHE_MAX_CONTENT_LEN, 1024000).
@@ -81,6 +82,12 @@
                  [list_to_atom("leo_remote_manager_test@" ++ Hostname)]}
         end).
 
+-define(env_rpc_handler(),
+        case application:get_env(leo_gateway, rpc_handler) of
+            {ok, GW_Val_0} -> GW_Val_0;
+            _ -> ?DEF_RPC_HANDLER
+        end).
+
 -define(env_layer_of_dirs(),
         case application:get_env(leo_gateway, layer_of_dirs) of
             {ok, GW_Val_1} -> GW_Val_1;
@@ -121,6 +128,7 @@
           code             :: atom(),
           description      :: list(),
           http_status_code :: integer()}).
+
 
 -record(statistics, {
           id        = 0        :: integer(),

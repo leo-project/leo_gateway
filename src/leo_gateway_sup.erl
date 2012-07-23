@@ -102,11 +102,11 @@ init([ListenPort, AccessorPoolSize, HookModules]) ->
              false -> "0.0.0.0";
              Any   -> Any
          end,
-    
+
     WebConfig0 = [{ip, Ip},
-                 {port, ListenPort},
-                 {acceptor_pool_size, AccessorPoolSize},
-                 {docroot, "."}],
+                  {port, ListenPort},
+                  {acceptor_pool_size, AccessorPoolSize},
+                  {docroot, "."}],
     WebConfig1 =
         case HookModules of
             [] -> WebConfig0;

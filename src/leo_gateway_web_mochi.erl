@@ -186,7 +186,7 @@ exec(first, ?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
 %% @doc GET operation on Object.
 %%
 exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
-    case leo_gateway_web_model:get_object(Key) of
+    case leo_gateway_rpc_handler:get(Key) of
         {ok, Meta, RespObject} ->
             Mime = mochiweb_util:guess_mime(Key),
             case HasInnerCache of
@@ -216,7 +216,7 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = H
 %% @doc HEAD operation on Object.
 %%
 exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
-    case leo_gateway_web_model:head_object(Key) of
+    case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Req:start_response_length({200,
                                        [?SERVER_HEADER,
@@ -237,7 +237,7 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
 %% @doc DELETE operation on Object.
 %%
 exec(first, ?HTTP_DELETE, Req, Key, #req_params{is_dir = false}) ->
-    case leo_gateway_web_model:delete_object(Key) of
+    case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             Req:respond({204, [?SERVER_HEADER], []});
         {error, not_found} ->
@@ -257,7 +257,7 @@ exec(first, ?HTTP_PUT, Req, Key, #req_params{is_dir = false}) ->
               true  -> <<>>;
               false -> Req:recv(Size)
           end,
-    case leo_gateway_web_model:put_object(Key, Bin, Size) of
+    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -274,7 +274,7 @@ exec(first, _, Req, _, _) ->
 %% @doc GET operation with Etag
 %%
 exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
-    case leo_gateway_web_model:get_object(Key, Cached#cache.etag) of
+    case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             Req:respond({200,
                          [?SERVER_HEADER,
