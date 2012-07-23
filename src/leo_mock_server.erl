@@ -1,8 +1,8 @@
 %%======================================================================
 %%
-%% LeoFS Gateway
+%% Leo Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,14 +19,13 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% LeoFS Gateway -  Mock Server.
+%% Leo Gateway -  Mock Server.
 %% @doc
 %% @end
 %%======================================================================
 -module(leo_mock_server).
 
 -author('Yosuke Hara').
--vsn('0.9.1').
 
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").

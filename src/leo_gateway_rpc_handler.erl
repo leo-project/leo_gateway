@@ -1,8 +1,8 @@
 %%======================================================================
 %%
-%% LeoFS Gateway
+%% Leo Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,21 +19,22 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% LeoFS Gateway - S3 domain logics
+%% Leo Gateway -  RPC-Handler
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_web_model).
+-module(leo_gateway_rpc_handler).
+
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
--vsn('0.9.1').
 
--export([get_bucket_list/1, get_bucket_list/5,
-         head_object/1,
-         get_object/1,
-         get_object/2,
-         delete_object/1,
-         put_object/3]).
+-export([head/1,
+         get/1,
+         get/2,
+         delete/1,
+         put/3,
+         invoke/5
+        ]).
 
 -include("leo_gateway.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
@@ -42,8 +43,6 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_statistics/include/leo_statistics.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
--define(STR_SLASH,       "/").
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
@@ -56,94 +55,12 @@
           redundancies = [] :: list()
          }).
 
-%%--------------------------------------------------------------------
-%% S3 Compatible Bucket APIs
-%%--------------------------------------------------------------------
-%% @doc get bucket
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
--spec(get_bucket_list(string()|none) ->
-             {ok, list(), string()}|{error, any()}).
-get_bucket_list(Bucket) ->
-    get_bucket_list(Bucket, none, none, 1000, none).
-
--spec(get_bucket_list(string()|none, char()|none, string()|none, integer(), string()|none) ->
-             {ok, list(), string()}|{error, any()}).
-get_bucket_list(Bucket, _Delimiter, _Marker, _MaxKeys, Prefix) ->
-    ReqParams = get_request_parameters(get, Bucket),
-    Key = case Bucket of
-              none ->
-                  ?STR_SLASH;
-              Base when Prefix =:= none ->
-                  Base;
-              Base when Prefix /= none ->
-                  Base ++ ?STR_SLASH ++ Prefix
-          end,
-    case invoke(ReqParams#req_params.redundancies,
-                leo_storage_handler_directory,
-                find_by_parent_dir,
-                [Key],
-                []) of
-        {ok, Meta} when is_list(Meta) =:= true andalso Bucket =:= none ->
-            {ok, Meta, makeMyBucketsXML(Meta)};
-        {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, makeBucketsXML(Key, Meta)};
-        Error ->
-            Error
-    end.
-
-makeBucketsXML(Dir, Buckets) ->
-    DirLen = string:len(Dir),
-    Fun = fun(#metadata{key       = EntryKey,
-                        dsize     = Length,
-                        timestamp = TS,
-                        checksum  = CS,
-                        del       = 0} , Acc) ->
-                  case string:equal(Dir, EntryKey) of
-                      true ->
-                          Acc;
-                      false ->
-                          Entry = string:sub_string(EntryKey, DirLen + 1),
-                          case Length of
-                              -1 ->
-                                  %% directory.
-                                  Acc ++ "<CommonPrefixes><Prefix>" ++ Entry ++ "</Prefix></CommonPrefixes>";
-                              _ ->
-                                  %% file.
-                                  Acc ++ "<Contents>"
-                                      ++ "<Key>" ++ Entry ++ "</Key>"
-                                      ++ "<LastModified>" ++ leo_utils:date_format(TS) ++ "</LastModified>"
-                                      ++ "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
-                                      ++ "<Size>" ++ integer_to_list(Length) ++ "</Size>"
-                                      ++ "<StorageClass>STANDARD</StorageClass>"
-                                      ++ "</Contents>"
-                          end
-                  end
-          end,
-    io_lib:format(?XML_OBJ_LIST, [lists:foldl(Fun, [], Buckets)]).
-
-makeMyBucketsXML(Buckets) ->
-    Fun = fun(#metadata{key=EntryKey, dsize=Length, timestamp=TS, del=0} , Acc) ->
-                  case string:equal(?STR_SLASH, EntryKey) of
-                      true ->
-                          Acc;
-                      false ->
-                          Entry = string:sub_string(EntryKey, 2),
-                          case Length of
-                              -1 ->
-                                  Acc ++ "<Bucket><Name>" ++ Entry ++ "</Name><CreationDate>" ++
-                                      leo_utils:date_format(TS) ++ "</CreationDate></Bucket>";
-                              _ ->
-                                  Acc
-                          end
-                  end
-          end,
-    io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], Buckets)]).
 
 %% @doc head object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectHEAD.html
--spec(head_object(string()) ->
+%%
+-spec(head(string()) ->
              {ok, #metadata{}}|{error, any()}).
-head_object(Key) ->
+head(Key) ->
     ReqParams = get_request_parameters(head, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
@@ -152,10 +69,10 @@ head_object(Key) ->
            []).
 
 %% @doc get object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectGET.html
--spec(get_object(string()) ->
+%%
+-spec(get(string()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
-get_object(Key) ->
+get(Key) ->
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
     ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
@@ -163,9 +80,9 @@ get_object(Key) ->
            get,
            [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id],
            []).
--spec(get_object(string(), integer()) ->
+-spec(get(string(), integer()) ->
              {ok, match}|{ok, #metadata{}, binary()}|{error, any()}).
-get_object(Key, ETag) ->
+get(Key, ETag) ->
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
     ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
@@ -175,10 +92,10 @@ get_object(Key, ETag) ->
            []).
 
 %% @doc delete object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectDELETE.html
--spec(delete_object(string()) ->
+%%
+-spec(delete(string()) ->
              ok|{error, any()}).
-delete_object(Key) ->
+delete(Key) ->
     _ = leo_statistics_req_counter:increment(?STAT_REQ_DEL),
     ReqParams = get_request_parameters(delete, Key),
     invoke(ReqParams#req_params.redundancies,
@@ -188,10 +105,10 @@ delete_object(Key) ->
            []).
 
 %% @doc put object
-%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTObjectPUT.html
--spec(put_object(string(), binary(), integer()) ->
+%%
+-spec(put(string(), binary(), integer()) ->
              ok|{error, any()}).
-put_object(Key, Body, Size) ->
+put(Key, Body, Size) ->
     _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
     ReqParams = get_request_parameters(put, Key),
     invoke(ReqParams#req_params.redundancies,
@@ -274,3 +191,4 @@ handle_error(Node, Mod, Method, _Args, timeout) ->
     ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
           [Node, Mod, Method, 'timeout']),
     timeout.
+

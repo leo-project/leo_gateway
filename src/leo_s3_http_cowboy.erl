@@ -1,8 +1,8 @@
 %%======================================================================
 %%
-%% LeoFS Gateway
+%% Leo S3 HTTP
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,14 +19,14 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% LeoFS Gateway - powered by Cowboy version
+%% Leo S3 HTTP - powered by Cowboy version
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_web_cowboy).
+-module(leo_s3_http_cowboy).
+
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
--vsn('0.9.1').
 
 -export([start/1, stop/0]).
 -export([init/3, handle/2, terminate/2]).
@@ -176,7 +176,7 @@ exec(first, ?HTTP_GET, Req, Key,
                  is_dir       = true,
                  qs_prefix    = Prefix
                 }) ->
-    case leo_gateway_web_model:get_bucket_list(Key, none, none, 1000, Prefix) of
+    case leo_s3_http_bucket:get_bucket_list(Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             cowboy_http_req:reply(200, [?SERVER_HEADER], XML, Req);
         {error, not_found} ->
@@ -201,7 +201,7 @@ exec(first, ?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false, has_in
 %% @doc GET operation on Object.
 %%
 exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false}) ->
-    case leo_gateway_web_model:get_object(Key) of
+    case leo_gateway_rpc_handler:get(Key) of
         {ok, Meta, RespObject} ->
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
@@ -220,7 +220,7 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false}) ->
 %% @doc HEAD operation on Object.
 %%
 exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
-    case leo_gateway_web_model:head_object(Key) of
+    case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
@@ -242,7 +242,7 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
 %% @doc DELETE operation on Object.
 %%
 exec(first, ?HTTP_DELETE, Req, Key, #req_params{is_dir = false}) ->
-    case leo_gateway_web_model:delete_object(Key) of
+    case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             cowboy_http_req:reply(204, [?SERVER_HEADER], Req);
         {error, not_found} ->
@@ -263,7 +263,7 @@ exec(first, ?HTTP_PUT, Req, Key, #req_params{is_dir = false}) ->
                           true -> cowboy_http_req:body(Req)
                       end,
     {Size, Req3} = cowboy_http_req:body_length(Req2),
-    case leo_gateway_web_model:put_object(Key, Bin, Size) of
+    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         ok ->
             cowboy_http_req:reply(200, [?SERVER_HEADER], Req3);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -280,7 +280,7 @@ exec(first, _, Req, _, _) ->
 %% @doc GET operation with Etag
 %%
 exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
-    case leo_gateway_web_model:get_object(Key, Cached#cache.etag) of
+    case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,

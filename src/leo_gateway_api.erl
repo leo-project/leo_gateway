@@ -1,8 +1,8 @@
 %%======================================================================
 %%
-%% LeoFS Gateway
+%% Leo Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,13 +19,12 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% LeoFS Gateway - API
+%% Leo Gateway - API
 %% @doc
 %% @end
 %%====================================================================
 -module(leo_gateway_api).
 -author('Yosuke Hara').
--vsn('0.9.1').
 
 -include("leo_gateway.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
@@ -40,7 +39,7 @@
 %% @doc purge API
 -spec(purge(string()) -> ok).
 purge(Path) ->
-    HookMods = mochiweb_socket_server:get(leo_gateway_web_mochi, hook_modules),
+    HookMods = mochiweb_socket_server:get(leo_s3_http_mochi, hook_modules),
     ?info("purge/1", "path: ~p hooks: ~p ~n",[Path, HookMods]),
     _ = mochiweb:on_purge_hook_modules(Path, HookMods),
     ok.

@@ -1,8 +1,8 @@
 %%======================================================================
 %%
-%% LeoFS Gateway
+%% Leo Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,13 +19,13 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% LeoFS Gateway - Supervisor
+%% Leo Gateway - Supervisor
 %%
 %% @doc
 %% @end
 %%======================================================================
 -module(leo_gateway_sup).
--vsn('0.9.1').
+
 -author('Yosuke Hara').
 
 -behaviour(supervisor).
@@ -46,34 +46,7 @@
 %% @doc API for starting the supervisor.
 start_link() ->
     setup_mnesia(),
-
-    ListenPort      = ?env_listening_port(leo_gateway),
-    NumOfAcceptors  = ?env_num_of_acceptors(leo_gateway),
-    io:format("*             port: ~p~n", [ListenPort]),
-    io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
-
-    HookModules =
-        case ?env_cache_plugin() of
-            none      -> [];
-            undefined -> [];
-            ModCache ->
-                CacheExpire          = ?env_cache_expire(),
-                CacheMaxContentLen   = ?env_cache_max_content_len(),
-                CachableContentTypes = ?env_cachable_content_type(),
-                CachablePathPatterns = ?env_cachable_path_pattern(),
-                io:format("*        mod cache: ~p~n", [ModCache]),
-                io:format("*     cache_expire: ~p~n", [CacheExpire]),
-                io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
-                io:format("*    content_types: ~p~n", [CachableContentTypes]),
-                io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
-                [{ModCache, [{expire,                CacheExpire},
-                             {max_content_len,       CacheMaxContentLen},
-                             {cachable_content_type, CachableContentTypes},
-                             {cachable_path_pattern, CachablePathPatterns}
-                            ]}]
-        end,
-    supervisor:start_link({local, ?MODULE}, ?MODULE,
-                          [ListenPort, NumOfAcceptors, HookModules]).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @spec upgrade() -> ok
 %% @doc Add processes if necessary.
@@ -97,26 +70,8 @@ upgrade() ->
 
 %% @spec init([]) -> SupervisorTree
 %% @doc supervisor callback.
-init([ListenPort, AccessorPoolSize, HookModules]) ->
-    Ip = case os:getenv("MOCHIWEB_IP") of
-             false -> "0.0.0.0";
-             Any   -> Any
-         end,
-    
-    WebConfig0 = [{ip, Ip},
-                 {port, ListenPort},
-                 {acceptor_pool_size, AccessorPoolSize},
-                 {docroot, "."}],
-    WebConfig1 =
-        case HookModules of
-            [] -> WebConfig0;
-            _  -> lists:reverse([{hook_modules, HookModules}|WebConfig0])
-        end,
-
-    Web = {leo_gateway_web_mochi,
-           {leo_gateway_web_mochi, start, [WebConfig1]},
-           permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic},
-    {ok, {{one_for_one, 10, 10}, [Web]}}.
+init([]) ->
+    {ok, {{one_for_one, 10, 10}, []}}.
 
 
 %%--------------------------------------------------------------------

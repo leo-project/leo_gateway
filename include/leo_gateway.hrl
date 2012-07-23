@@ -23,7 +23,6 @@
 %%
 %%====================================================================
 -author('Yosuke Hara').
--vsn('0.9.1').
 
 -define(SHUTDOWN_WAITING_TIME, 2000).
 -define(MAX_RESTART,              5).
@@ -31,11 +30,15 @@
 
 -define(DEF_LISTEN_PORT,    8080).
 -define(DEF_NUM_OF_ACCS,    32).
+-define(DEF_RPC_HANDLER,    'leo_gateway_web_model').
 -define(DEF_LAYERS_OF_DIRS, {3, 12}).
 -define(DEF_CACHE_EXPIRE, 60).
 -define(DEF_CACHE_MAX_CONTENT_LEN, 1024000).
 -define(DEF_CACHE_CONTENT_TYPES, []). %all
 -define(DEF_CACHE_PATH_PATTERNS, []). %all
+
+-define(S3_HTTP, leo_s3_http). %% listener-1
+-define(T6_HTTP, leo_t6).      %% listener-2
 
 -ifdef(TEST).
 -define(DEF_TIMEOUT,     1000).
@@ -87,40 +90,19 @@
             _ -> ?DEF_LAYERS_OF_DIRS
         end).
 
--define(env_cache_plugin(),
-        case application:get_env(leo_gateway, cache_plugin) of
-            {ok, Plugin} -> Plugin;
-            _ -> none
+-define(env_listener(),
+        case application:get_env(leo_gateway, listener) of
+            {ok, Listener} -> Listener;
+            _ -> ?S3_HTTP
         end).
 
--define(env_cache_expire(),
-        case application:get_env(leo_gateway, cache_expire) of
-            {ok, Expire} -> Expire;
-            _ -> ?DEF_CACHE_EXPIRE
-        end).
 
--define(env_cache_max_content_len(),
-        case application:get_env(leo_gateway, cache_max_content_len) of
-            {ok, MaxLen} -> MaxLen;
-            _ -> ?DEF_CACHE_MAX_CONTENT_LEN
-        end).
-
--define(env_cachable_content_type(),
-        case application:get_env(leo_gateway, cachable_content_type) of
-            {ok, ContentTypes} -> ContentTypes;
-            _ -> ?DEF_CACHE_CONTENT_TYPES
-        end).
-
--define(env_cachable_path_pattern(),
-        case application:get_env(leo_gateway, cachable_path_pattern) of
-            {ok, PathPatterns} -> PathPatterns;
-            _ -> ?DEF_CACHE_PATH_PATTERNS
-        end).
 %% REQ/RESP ERRORS
 -record(error_code, {
           code             :: atom(),
           description      :: list(),
           http_status_code :: integer()}).
+
 
 -record(statistics, {
           id        = 0        :: integer(),
