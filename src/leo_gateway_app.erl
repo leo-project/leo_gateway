@@ -1,8 +1,8 @@
 %%======================================================================
 %%
-%% LeoFS Gateway
+%% Leo Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,12 +19,12 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% LeoFS Gateway - Application
+%% Leo Gateway - Application
 %% @doc
 %% @end
 %%======================================================================
 -module(leo_gateway_app).
--vsn('0.9.0').
+
 -author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
