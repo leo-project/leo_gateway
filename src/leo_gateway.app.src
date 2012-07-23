@@ -6,9 +6,6 @@
    {registered, []},
    {applications, [kernel, stdlib]},
    {mod, {leo_gateway_app, []}},
-   {env, [
-          {log_level, 0},
-          {layer_of_dirs, {1, 12}}
-         ]}
+   {env, []}
   ]
 }.

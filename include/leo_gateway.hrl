@@ -38,6 +38,9 @@
 -define(DEF_CACHE_CONTENT_TYPES, []). %all
 -define(DEF_CACHE_PATH_PATTERNS, []). %all
 
+-define(S3_HTTP, leo_s3_http). %% listener-1
+-define(T6_HTTP, leo_t6).      %% listener-2
+
 -ifdef(TEST).
 -define(DEF_TIMEOUT,     1000).
 -define(DEF_REQ_TIMEOUT, 1000).
@@ -80,6 +83,18 @@
                 {ok, Hostname} = inet:gethostname(),
                 {?DEF_LISTEN_PORT, ?DEF_NUM_OF_ACCS,
                  [list_to_atom("leo_remote_manager_test@" ++ Hostname)]}
+        end).
+
+-define(env_http_server(),
+        case application:get_env(leo_gateway, http_server) of
+            {ok, HTTPServer} -> HTTPServer;
+            _ -> mochiweb
+        end).
+
+-define(env_listener(),
+        case application:get_env(leo_gateway, listener) of
+            {ok, Listener} -> Listener;
+            _ -> ?S3_HTTP
         end).
 
 -define(env_rpc_handler(),
