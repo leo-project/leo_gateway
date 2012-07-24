@@ -50,6 +50,7 @@
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
 -record(req_params, {
+          access_key_id     :: string(),
           token_length      :: integer(),
           min_layers        :: integer(),
           max_layers        :: integer(),
@@ -120,24 +121,34 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                  end,
 
     QueryString = Req:parse_qs(),
-    {Prefix, IsDir} = case proplists:get_value(?QUERY_PREFIX, QueryString, undefined) of
-                          undefined -> {none, false};
-                          Param     -> {Param, true}
-                      end,
+    Prefix = case proplists:get_value(?QUERY_PREFIX, QueryString, undefined) of
+                 undefined -> none;
+                 Param     -> Param
+             end,
+    IsDir = case string:right(Path, 1) of
+                ?STR_SLASH -> true;
+                _Else      -> false
+            end,
 
-    case catch exec(first, HTTPMethod, Req, Path, #req_params{token_length     = erlang:length(string:tokens(Path, ?STR_SLASH)),
-                                                              min_layers       = NumOfMinLayers,
-                                                              max_layers       = NumOfMaxLayers,
-                                                              has_inner_cache  = HasInnerCache,
-                                                              is_dir           = IsDir,
-                                                              is_cached        = true,
-                                                              qs_prefix        = Prefix}) of
-        {'EXIT', Reason} ->
-            ?error("loop1/4", "path:~w, reason:~p", [Path, Reason]),
-            Req:respond({500, [?SERVER_HEADER], []});
-        _ ->
-            erlang:garbage_collect(self())
-    end.
+    case auth(Req, Path) of
+        false ->
+            Req:respond({403, [?SERVER_HEADER], []});
+        {true, AccessKeyId} ->
+            case catch exec(first, HTTPMethod, Req, Path, #req_params{token_length     = erlang:length(string:tokens(Path, ?STR_SLASH)),
+                                                                      access_key_id    = AccessKeyId,
+                                                                      min_layers       = NumOfMinLayers,
+                                                                      max_layers       = NumOfMaxLayers,
+                                                                      has_inner_cache  = HasInnerCache,
+                                                                      is_dir           = IsDir,
+                                                                      is_cached        = true,
+                                                                      qs_prefix        = Prefix}) of
+            {'EXIT', Reason} ->
+                ?error("loop1/4", "path:~w, reason:~p", [Path, Reason]),
+                Req:respond({500, [?SERVER_HEADER], []});
+            _ ->
+                erlang:garbage_collect(self())
+        end
+   end.
 
 %%--------------------------------------------------------------------
 %%% INTERNAL FUNCTIONS
@@ -151,14 +162,15 @@ exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
     Req:respond({404, [?SERVER_HEADER], []}),
     ok;
 
-%% @doc operations on buckets.
+%% @doc GET operation on buckets & Dirs.
 %%
 exec(first, ?HTTP_GET, Req, Key,
-     #req_params{token_length = _TokenLen,
-                 is_dir       = true,
-                 qs_prefix    = Prefix
+     #req_params{
+                 is_dir        = true,
+                 access_key_id = AccessKeyId,
+                 qs_prefix     = Prefix
                 }) ->
-    case leo_s3_http_bucket:get_bucket_list(Key, none, none, 1000, Prefix) of
+    case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req:respond({200, [?SERVER_HEADER], XML});
         {error, not_found} ->
@@ -168,6 +180,59 @@ exec(first, ?HTTP_GET, Req, Key,
         {error, timeout} ->
             Req:respond({504, [?SERVER_HEADER], []})
     end;
+
+%% @doc PUT operation on buckets.
+%%
+exec(first, ?HTTP_PUT, Req, Key,
+     #req_params{token_length  = 1,
+                 is_dir       = true,
+                 access_key_id = AccessKeyId
+                }) ->
+    case leo_s3_http_bucket:put_bucket(AccessKeyId, Key) of
+        ok ->
+            Req:respond({200, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end;
+
+%% @doc DELETE operation on buckets.
+%%
+exec(first, ?HTTP_DELETE, Req, Key,
+     #req_params{token_length  = 1,
+                 is_dir       = true,
+                 access_key_id = AccessKeyId
+                }) ->
+    case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
+        ok ->
+            Req:respond({204, [?SERVER_HEADER], []});
+        not_found ->
+            Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end;
+
+%% @doc HEAD operation on buckets.
+%%
+exec(first, ?HTTP_HEAD, Req, Key,
+     #req_params{token_length  = 1,
+                 is_dir       = true,
+                 access_key_id = AccessKeyId
+                }) ->
+    case leo_s3_http_bucket:head_bucket(AccessKeyId, Key) of
+        ok ->
+            Req:respond({200, [?SERVER_HEADER], []});
+        not_found ->
+            Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end;
+
 
 %% @doc GET operation on Object if inner cache is enabled.
 %%
@@ -214,7 +279,7 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = H
 
 %% @doc HEAD operation on Object.
 %%
-exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
+exec(first, ?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Req:start_response_length({200,
@@ -235,7 +300,7 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
 
 %% @doc DELETE operation on Object.
 %%
-exec(first, ?HTTP_DELETE, Req, Key, #req_params{is_dir = false}) ->
+exec(first, ?HTTP_DELETE, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             Req:respond({204, [?SERVER_HEADER], []});
@@ -249,7 +314,7 @@ exec(first, ?HTTP_DELETE, Req, Key, #req_params{is_dir = false}) ->
 
 %% @doc POST/PUT operation on Objects.
 %%
-exec(first, ?HTTP_PUT, Req, Key, #req_params{is_dir = false}) ->
+exec(first, ?HTTP_PUT, Req, Key, _Params) ->
     Size = list_to_integer(Req:get_header_value("content-length")),
     Bin = case (Size == 0) of
               %% for support uploading zero byte files.
@@ -303,6 +368,10 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             Req:respond({504, [?SERVER_HEADER], []})
     end.
 
+%% @doc auth
+auth(_Req, _Key) ->
+    %% @TODO call leo_s3_auth_api:authenticate under construct...
+    {true, "test"}.
 
 %% @doc get options from mochiweb.
 %%

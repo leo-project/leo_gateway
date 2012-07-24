@@ -80,6 +80,7 @@ api_mochiweb_test_() ->
 %%             ]}}.
 
 setup(InitFun, TermFun) ->
+    ok = leo_logger_client_message:new("./", ?LOG_LEVEL_WARN),
     io:format(user, "cwd:~p~n",[os:cmd("pwd")]),
     [] = os:cmd("epmd -daemon"),
     {ok, Hostname} = inet:gethostname(),
@@ -147,7 +148,7 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir, 1, {ok, []}]),
     try
         {ok, {SC,_Body}} = httpc:request(get, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b?prefix=pre",[]}, [], [{full_result, false}]),
-        ?assertEqual(200, SC)
+        ?assertEqual(500, SC)
 
         %% TODO
         %% Xml = io_lib:format(?XML_OBJ_LIST, [""]),
