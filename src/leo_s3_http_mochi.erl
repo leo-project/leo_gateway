@@ -34,6 +34,7 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_s3_auth/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(HTTP_GET,        'GET').
@@ -48,6 +49,10 @@
 -define(STR_SLASH,       "/").
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
+
+-define(HTTP_HEAD_MD5,          "Content-MD5").
+-define(HTTP_HEAD_CONTENT_TYPE, "Content-Type").
+-define(HTTP_HEAD_DATE,         "Date").
 
 -record(req_params, {
           access_key_id     :: string(),
@@ -129,12 +134,13 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                 ?STR_SLASH -> true;
                 _Else      -> false
             end,
+    TokenLen = erlang:length(string:tokens(Path, ?STR_SLASH)),
 
-    case auth(Req, Path) of
-        false ->
+    case auth(Req, HTTPMethod, Path, TokenLen) of
+        {error, _Cause} ->
             Req:respond({403, [?SERVER_HEADER], []});
-        {true, AccessKeyId} ->
-            case catch exec(first, HTTPMethod, Req, Path, #req_params{token_length     = erlang:length(string:tokens(Path, ?STR_SLASH)),
+        {ok, AccessKeyId} ->
+            case catch exec(first, HTTPMethod, Req, Path, #req_params{token_length     = TokenLen,
                                                                       access_key_id    = AccessKeyId,
                                                                       min_layers       = NumOfMinLayers,
                                                                       max_layers       = NumOfMaxLayers,
@@ -368,10 +374,40 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             Req:respond({504, [?SERVER_HEADER], []})
     end.
 
+%% @doc getter helper function. return "" if specified header is undefined 
+get_header(Req, Key) ->
+    case Req:get_header_value(Key) of
+        undefined ->
+            "";
+        Val ->
+            Val
+    end.
 %% @doc auth
-auth(_Req, _Key) ->
-    %% @TODO call leo_s3_auth_api:authenticate under construct...
-    {true, "test"}.
+auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen == 1) orelse
+                                           (TokenLen > 1 andalso 
+                                               (HTTPMethod == ?HTTP_PUT orelse 
+                                                HTTPMethod == ?HTTP_DELETE)) ->
+    %% bucket operations must be needed to auth
+    %% AND alter object operations as well
+    case Req:get_header_value("Authorization") of
+        undefined ->
+            {error, undefined};
+        Authorization ->
+            {_, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
+            SignParams = #sign_params{
+                http_verb    = HTTPMethod,
+                content_md5  = get_header(Req, ?HTTP_HEAD_MD5),
+                content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
+                date         = get_header(Req, ?HTTP_HEAD_DATE),
+                bucket       = hd(string:tokens(Path, ?STR_SLASH)),
+                uri          = Req:get(path),
+                query_str    = QueryString,
+                amz_headers  = leo_http:get_amz_headers(Req:get(headers))
+            },
+            leo_s3_auth_api:authenticate(Authorization, SignParams)
+    end;
+auth(_Req, _HTTPMethod, _Path, _TokenLen) -> 
+    {ok, []}.
 
 %% @doc get options from mochiweb.
 %%

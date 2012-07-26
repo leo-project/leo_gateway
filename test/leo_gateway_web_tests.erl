@@ -291,71 +291,86 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
     ok = rpc:call(Node0, meck, expect, [leo_storage_handler_object, delete, 4, {error, not_found}]),
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, {error, not_found}]),
+    meck:new(leo_s3_auth_api),
+    meck:expect(leo_s3_auth_api, authenticate, 2, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[]}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}]}, [], [{full_result, false}]),
         ?assertEqual(404, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
         ok = rpc:call(Node0, meck, unload, [leo_storage_handler_object]),
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth_api)
     end,
     ok.
 
 delete_object_error_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, {error, foobar}]),
+    meck:new(leo_s3_auth_api),
+    meck:expect(leo_s3_auth_api, authenticate, 2, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[]}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}]}, [], [{full_result, false}]),
         ?assertEqual(500, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth_api)
     end,
     ok.
 
 delete_object_normal1_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, ok]),
+    meck:new(leo_s3_auth_api),
+    meck:expect(leo_s3_auth_api, authenticate, 2, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[]}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}]}, [], [{full_result, false}]),
         ?assertEqual(204, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth_api)
     end,
     ok.
 
 put_object_error_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 6, {error, foobar}]),
+    meck:new(leo_s3_auth_api),
+    meck:expect(leo_s3_auth_api, authenticate, 2, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[], "image/png", "body"}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}], "image/png", "body"}, [], [{full_result, false}]),
         ?assertEqual(500, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth_api)
     end,
     ok.
 
 put_object_normal1_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 6, ok]),
+    meck:new(leo_s3_auth_api),
+    meck:expect(leo_s3_auth_api, authenticate, 2, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[], "image/png", "body"}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}], "image/png", "body"}, [], [{full_result, false}]),
         ?assertEqual(200, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth_api)
     end,
     ok.
 -endif.
