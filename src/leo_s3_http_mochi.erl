@@ -126,21 +126,27 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                  end,
 
     QueryString = Req:parse_qs(),
-    Prefix = case proplists:get_value(?QUERY_PREFIX, QueryString, undefined) of
-                 undefined -> none;
-                 Param     -> Param
+    {Prefix, IsDir, Path2} = case proplists:get_value(?QUERY_PREFIX, QueryString, undefined) of
+                 undefined ->
+                     HasTermSlash = case string:right(Path, 1) of
+                                 ?STR_SLASH -> true;
+                                 _Else      -> false
+                             end,
+                     {none, HasTermSlash, Path};
+                 Param     -> 
+                     NewPath = case string:right(Path, 1) of
+                                 ?STR_SLASH -> Path;
+                                 _Else      -> Path ++ ?STR_SLASH
+                             end,
+                     {Param, true, NewPath}
              end,
-    IsDir = case string:right(Path, 1) of
-                ?STR_SLASH -> true;
-                _Else      -> false
-            end,
-    TokenLen = erlang:length(string:tokens(Path, ?STR_SLASH)),
+    TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
 
-    case auth(Req, HTTPMethod, Path, TokenLen) of
+    case auth(Req, HTTPMethod, Path2, TokenLen) of
         {error, _Cause} ->
             Req:respond({403, [?SERVER_HEADER], []});
         {ok, AccessKeyId} ->
-            case catch exec(first, HTTPMethod, Req, Path, #req_params{token_length     = TokenLen,
+            case catch exec(first, HTTPMethod, Req, Path2, #req_params{token_length     = TokenLen,
                                                                       access_key_id    = AccessKeyId,
                                                                       min_layers       = NumOfMinLayers,
                                                                       max_layers       = NumOfMaxLayers,
@@ -149,7 +155,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                                                                       is_cached        = true,
                                                                       qs_prefix        = Prefix}) of
             {'EXIT', Reason} ->
-                ?error("loop1/4", "path:~w, reason:~p", [Path, Reason]),
+                ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
                 Req:respond({500, [?SERVER_HEADER], []});
             _ ->
                 erlang:garbage_collect(self())
