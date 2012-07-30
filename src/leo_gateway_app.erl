@@ -59,6 +59,7 @@
 start(_Type, _StartArgs) ->
     leo_gateway_deps:ensure(),
     App = leo_gateway,
+
     %% Launch Logger(s)
     DefLogDir = "./log/",
     LogDir    = case application:get_env(App, log_appender) of
@@ -68,6 +69,8 @@ start(_Type, _StartArgs) ->
                         DefLogDir
                 end,
     ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
+
+    %% Launch Supervisor
     Res = leo_gateway_sup:start_link(),
     after_process(Res).
 
@@ -199,7 +202,7 @@ log_file_appender([], Acc) ->
     lists:reverse(Acc);
 log_file_appender([{Type, _}|T], Acc) when Type == file ->
     log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|[{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]);
+%% @TODO
 log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
-    %% @TODO
     log_file_appender(T, [{?LOG_ID_ZMQ, ?LOG_APPENDER_ZMQ}|Acc]).
 

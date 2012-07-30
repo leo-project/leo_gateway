@@ -45,7 +45,6 @@
 %% @spec start_link() -> ServerRet
 %% @doc API for starting the supervisor.
 start_link() ->
-    setup_mnesia(),
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @spec upgrade() -> ok
@@ -77,12 +76,11 @@ init([]) ->
 %%--------------------------------------------------------------------
 %% Internal Functions.
 %%--------------------------------------------------------------------
-setup_mnesia() ->
-    application:start(mnesia),
-
-    MnesiaMode = disc_copies,
-    mnesia:change_table_copy_type(schema, node(), MnesiaMode),
-    leo_redundant_manager_mnesia:create_members(MnesiaMode),
-    mnesia:wait_for_tables([members], 30000),
-    ok.
+%% setup_mnesia() ->
+%%     application:start(mnesia),
+%%     MnesiaMode = disc_copies,
+%%     mnesia:change_table_copy_type(schema, node(), MnesiaMode),
+%%     leo_redundant_manager_mnesia:create_members(MnesiaMode),
+%%     mnesia:wait_for_tables([members], 30000),
+%%     ok.
 
