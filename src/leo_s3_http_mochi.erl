@@ -46,8 +46,6 @@
 -spec(start(list()) ->
              ok).
 start(Options) ->
-    ?debugVal(Options),
-
     {_DocRoot, Options1} = get_option(docroot, Options),
     HookModules = proplists:get_value(hook_modules, Options1),
 
@@ -72,7 +70,7 @@ stop() ->
     mochiweb_http:stop(?MODULE).
 
 
-%% @doc handling HTTP-Request/Response
+%% @doc Handling HTTP-Request/Response
 %%
 -spec(loop(any(), tuple(), boolean()) ->
              ok).
@@ -81,8 +79,12 @@ loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
     Key = leo_http:key(?S3_DEFAULT_ENDPOINT, Host, Req:get(path)),
     loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Key).
 
+
+%%--------------------------------------------------------------------
+%%% INTERNAL FUNCTIONS
+%%--------------------------------------------------------------------
+%% @doc Handling HTTP-Request/Response
 %% @private
-%%
 -spec(loop1(any(), tuple(), boolean(), string()) ->
              ok).
 loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
@@ -112,14 +114,14 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
         {error, _Cause} ->
             Req:respond({403, [?SERVER_HEADER], []});
         {ok, AccessKeyId} ->
-            case catch exec(first, HTTPMethod, Req, Path2, #req_params{token_length     = TokenLen,
-                                                                       access_key_id    = AccessKeyId,
-                                                                       min_layers       = NumOfMinLayers,
-                                                                       max_layers       = NumOfMaxLayers,
-                                                                       has_inner_cache  = HasInnerCache,
-                                                                       is_dir           = IsDir,
-                                                                       is_cached        = true,
-                                                                       qs_prefix        = Prefix}) of
+            case catch exec1(HTTPMethod, Req, Path2, #req_params{token_length     = TokenLen,
+                                                                 access_key_id    = AccessKeyId,
+                                                                 min_layers       = NumOfMinLayers,
+                                                                 max_layers       = NumOfMaxLayers,
+                                                                 has_inner_cache  = HasInnerCache,
+                                                                 is_dir           = IsDir,
+                                                                 is_cached        = true,
+                                                                 qs_prefix        = Prefix}) of
                 {'EXIT', Reason} ->
                     ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
                     Req:respond({500, [?SERVER_HEADER], []});
@@ -128,23 +130,21 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
             end
     end.
 
-%%--------------------------------------------------------------------
-%%% INTERNAL FUNCTIONS
-%%--------------------------------------------------------------------
+
 %% @doc constraint violation.
 %%
-exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
-                                               min_layers   = Min,
-                                               max_layers   = Max}) when Len < (Min - 1);
-                                                                         Len > Max ->
+exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
+                                         min_layers   = Min,
+                                         max_layers   = Max}) when Len < (Min - 1);
+                                                                   Len > Max ->
     Req:respond({404, [?SERVER_HEADER], []}),
     ok;
 
 %% @doc GET operation on buckets & Dirs.
 %%
-exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir        = true,
-                                             access_key_id = AccessKeyId,
-                                             qs_prefix     = Prefix}) ->
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
+                                       access_key_id = AccessKeyId,
+                                       qs_prefix     = Prefix}) ->
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req:respond({200, [?SERVER_HEADER], XML});
@@ -158,9 +158,9 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir        = true,
 
 %% @doc PUT operation on buckets.
 %%
-exec(first, ?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
-                                             is_dir        = true,
-                                             access_key_id = AccessKeyId}) ->
+exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
+                                       is_dir        = true,
+                                       access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:put_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
@@ -172,9 +172,9 @@ exec(first, ?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
 
 %% @doc DELETE operation on buckets.
 %%
-exec(first, ?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
-                                                is_dir        = true,
-                                                access_key_id = AccessKeyId}) ->
+exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
+                                          is_dir        = true,
+                                          access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({204, [?SERVER_HEADER], []});
@@ -188,9 +188,9 @@ exec(first, ?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
 
 %% @doc HEAD operation on buckets.
 %%
-exec(first, ?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
-                                              is_dir        = true,
-                                              access_key_id = AccessKeyId}) ->
+exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
+                                        is_dir        = true,
+                                        access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
@@ -205,20 +205,20 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 
 %% @doc GET operation on Object if inner cache is enabled.
 %%
-exec(first, ?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
-                                                          is_cached = true,
-                                                          has_inner_cache = true} = Params) ->
+exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
+                                                    is_cached = true,
+                                                    has_inner_cache = true} = Params) ->
     case ecache_server:get(Key) of
         undefined ->
-            exec(first, HTTPMethod, Req, Key, Params#req_params{is_cached = false});
+            exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         BinCached ->
             Cached = binary_to_term(BinCached),
-            exec(next, HTTPMethod, Req, Key, Params, Cached)
+            exec2(HTTPMethod, Req, Key, Params, Cached)
     end;
 
 %% @doc GET operation on Object.
 %%
-exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         {ok, Meta, RespObject} ->
             Mime = mochiweb_util:guess_mime(Key),
@@ -248,7 +248,7 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = H
 
 %% @doc HEAD operation on Object.
 %%
-exec(first, ?HTTP_HEAD, Req, Key, _Params) ->
+exec1(?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Req:start_response_length({200,
@@ -269,7 +269,7 @@ exec(first, ?HTTP_HEAD, Req, Key, _Params) ->
 
 %% @doc DELETE operation on Object.
 %%
-exec(first, ?HTTP_DELETE, Req, Key, _Params) ->
+exec1(?HTTP_DELETE, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             Req:respond({204, [?SERVER_HEADER], []});
@@ -283,7 +283,7 @@ exec(first, ?HTTP_DELETE, Req, Key, _Params) ->
 
 %% @doc POST/PUT operation on Objects.
 %%
-exec(first, ?HTTP_PUT, Req, Key, _Params) ->
+exec1(?HTTP_PUT, Req, Key, _Params) ->
     Size = list_to_integer(Req:get_header_value("content-length")),
     Bin = case (Size == 0) of
               %% for support uploading zero byte files.
@@ -301,12 +301,13 @@ exec(first, ?HTTP_PUT, Req, Key, _Params) ->
 
 %% @doc invalid request.
 %%
-exec(first, _, Req, _, _) ->
+exec1(_, Req, _, _) ->
     Req:respond({400, [?SERVER_HEADER], []}).
+
 
 %% @doc GET operation with Etag
 %%
-exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
+exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
     case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             Req:respond({200,
@@ -337,6 +338,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             Req:respond({504, [?SERVER_HEADER], []})
     end.
 
+
 %% @doc getter helper function. return "" if specified header is undefined
 get_header(Req, Key) ->
     case Req:get_header_value(Key) of
@@ -345,6 +347,8 @@ get_header(Req, Key) ->
         Val ->
             Val
     end.
+
+
 %% @doc auth
 auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen == 1) orelse
                                            (TokenLen > 1 andalso
@@ -369,8 +373,10 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen == 1) orelse
              },
             leo_s3_auth_api:authenticate(Authorization, SignParams)
     end;
+
 auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
     {ok, []}.
+
 
 %% @doc get options from mochiweb.
 %%
