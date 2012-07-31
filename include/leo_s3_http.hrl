@@ -41,6 +41,24 @@
 -define(HTTP_HEAD_DATE,         "Date").
 
 
+%% s3 response xmls
+-define(XML_BUCKET_LIST,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        ++ "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">"
+        ++ "<Owner><ID>LeoFS</ID><DisplayName>webfile</DisplayName></Owner><Buckets>"
+        ++ "~s"
+        ++ "</Buckets></ListAllMyBucketsResult>").
+
+-define(XML_OBJ_LIST,
+        "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+        ++ "<Name>standalone</Name>"
+        ++ "<Prefix></Prefix><Marker></Marker>"
+        ++ "<MaxKeys>50</MaxKeys><Delimiter>/</Delimiter>"
+        ++ "<IsTruncated>false</IsTruncated>"
+        ++ "~s"
+        ++ "</ListBucketResult>").
+
+
 -record(req_params, {
           access_key_id     :: string(),
           token_length      :: integer(),

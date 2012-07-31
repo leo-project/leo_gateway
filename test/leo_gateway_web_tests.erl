@@ -25,9 +25,9 @@
 %%====================================================================
 -module(leo_gateway_web_tests).
 -author('Yoshiyuki Kanno').
--vsn('0.9.1').
 
 -include("leo_gateway.hrl").
+-include("leo_s3_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").

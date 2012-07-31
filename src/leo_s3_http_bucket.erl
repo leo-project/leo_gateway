@@ -31,13 +31,11 @@
 -export([get_bucket_list/2, get_bucket_list/6, put_bucket/2, delete_bucket/2, head_bucket/2]).
 
 -include("leo_gateway.hrl").
+-include("leo_s3_http.hrl").
 -include_lib("leo_s3_bucket/include/leo_s3_bucket.hrl").
--include_lib("leo_s3_auth/include/leo_s3_auth.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
--define(STR_SLASH, "/").
 
 %%--------------------------------------------------------------------
 %% S3 Compatible Bucket APIs

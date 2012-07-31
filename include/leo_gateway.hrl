@@ -59,22 +59,6 @@
 -define(MSG_INTERNAL_ERROR,    {500, 'internal_error'   }).
 -define(MSG_SLOW_DOWN,         {503, 'slow down'        }).
 
-%% s3 response xmls
--define(XML_BUCKET_LIST,
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        ++ "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">"
-        ++ "<Owner><ID>LeoFS</ID><DisplayName>webfile</DisplayName></Owner><Buckets>"
-        ++ "~s"
-        ++ "</Buckets></ListAllMyBucketsResult>").
-
--define(XML_OBJ_LIST,
-        "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
-        ++ "<Name>standalone</Name>"
-        ++ "<Prefix></Prefix><Marker></Marker>"
-        ++ "<MaxKeys>50</MaxKeys><Delimiter>/</Delimiter>"
-        ++ "<IsTruncated>false</IsTruncated>"
-        ++ "~s"
-        ++ "</ListBucketResult>").
 
 %% macros.
 -define(def_gateway_conf(),

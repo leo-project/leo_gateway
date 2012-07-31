@@ -25,9 +25,9 @@
 %%====================================================================
 -module(leo_gateway_rpc_handler_tests).
 -author('Yoshiyuki Kanno').
--vsn('0.9.1').
 
 -include("leo_gateway.hrl").
+-include("leo_s3_http.hrl").
 -include_lib("leo_s3_bucket/include/leo_s3_bucket.hrl").
 -include_lib("leo_s3_auth/include/leo_s3_auth.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
