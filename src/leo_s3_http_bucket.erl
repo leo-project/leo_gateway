@@ -37,7 +37,7 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(STR_SLASH,       "/").
+-define(STR_SLASH, "/").
 
 %%--------------------------------------------------------------------
 %% S3 Compatible Bucket APIs
@@ -54,7 +54,7 @@ get_bucket_list(AccessKeyId, Bucket) ->
 get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
     case leo_s3_bucket_api:find_buckets_by_id(AccessKeyId) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, makeMyBucketsXML(Meta)};
+            {ok, Meta, generate_xml(Meta)};
         Error ->
             Error
     end;
@@ -68,10 +68,11 @@ get_bucket_list(_AccessKeyId, Bucket, _Delimiter, _Marker, _MaxKeys, Prefix) ->
                                         [Key],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, makeBucketsXML(Key, Meta)};
+            {ok, Meta, generate_xml(Key, Meta)};
         Error ->
             Error
     end.
+
 
 %% @doc put bucket
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketPUT.html
@@ -80,12 +81,14 @@ get_bucket_list(_AccessKeyId, Bucket, _Delimiter, _Marker, _MaxKeys, Prefix) ->
 put_bucket(AccessKeyId, Bucket) ->
     leo_s3_bucket_api:put(AccessKeyId, Bucket).
 
+
 %% @doc delete bucket
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketDELETE.html
 -spec(delete_bucket(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket(AccessKeyId, Bucket) ->
     leo_s3_bucket_api:delete(AccessKeyId, Bucket).
+
 
 %% @doc head bucket
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketHEAD.html
@@ -94,7 +97,10 @@ delete_bucket(AccessKeyId, Bucket) ->
 head_bucket(AccessKeyId, Bucket) ->
     leo_s3_bucket_api:head(AccessKeyId, Bucket).
 
-makeBucketsXML(Dir, Buckets) ->
+
+%% @doc Generate XML from matadata-list 
+%% @private
+generate_xml(Dir, Buckets) ->
     DirLen = string:len(Dir),
     Fun = fun(#metadata{key       = EntryKey,
                         dsize     = Length,
@@ -124,7 +130,7 @@ makeBucketsXML(Dir, Buckets) ->
           end,
     io_lib:format(?XML_OBJ_LIST, [lists:foldl(Fun, [], Buckets)]).
 
-makeMyBucketsXML(Buckets) ->
+generate_xml(Buckets) ->
     Fun = fun(#bucket{name=Name, created_at=TS} , Acc) ->
                   case string:equal(?STR_SLASH, Name) of
                       true ->

@@ -31,46 +31,12 @@
 -export([start/1, stop/0, loop/3]).
 
 -include("leo_gateway.hrl").
+-include("leo_s3_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_s3_auth/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
--define(HTTP_GET,        'GET').
--define(HTTP_POST,       'POST').
--define(HTTP_PUT,        'PUT').
--define(HTTP_DELETE,     'DELETE').
--define(HTTP_HEAD,       'HEAD').
--define(SERVER_HEADER,   {"Server","LeoFS"}).
--define(QUERY_PREFIX,    "prefix").
--define(QUERY_DELIMITER, "delimiter").
--define(QUERY_MAX_KEYS,  "max-keys").
--define(STR_SLASH,       "/").
-
--define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
-
--define(HTTP_HEAD_MD5,          "Content-MD5").
--define(HTTP_HEAD_CONTENT_TYPE, "Content-Type").
--define(HTTP_HEAD_DATE,         "Date").
-
--record(req_params, {
-          access_key_id     :: string(),
-          token_length      :: integer(),
-          min_layers        :: integer(),
-          max_layers        :: integer(),
-          is_dir = false    :: boolean(),
-          qs_prefix         :: string(),
-          has_inner_cache   :: boolean(),
-          is_cached         :: boolean()
-         }).
-
--record(cache, {
-          etag         = 0    :: integer(), % actual value is checksum
-          mtime        = 0    :: integer(), % gregorian_seconds
-          content_type = ""   :: list(),    % from a Content-Type header
-          body         = <<>> :: binary()
-         }).
 
 %%--------------------------------------------------------------------
 %% API
@@ -127,19 +93,19 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
 
     QueryString = Req:parse_qs(),
     {Prefix, IsDir, Path2} = case proplists:get_value(?QUERY_PREFIX, QueryString, undefined) of
-                 undefined ->
-                     HasTermSlash = case string:right(Path, 1) of
-                                 ?STR_SLASH -> true;
-                                 _Else      -> false
+                                 undefined ->
+                                     HasTermSlash = case string:right(Path, 1) of
+                                                        ?STR_SLASH -> true;
+                                                        _Else      -> false
+                                                    end,
+                                     {none, HasTermSlash, Path};
+                                 Param     ->
+                                     NewPath = case string:right(Path, 1) of
+                                                   ?STR_SLASH -> Path;
+                                                   _Else      -> Path ++ ?STR_SLASH
+                                               end,
+                                     {Param, true, NewPath}
                              end,
-                     {none, HasTermSlash, Path};
-                 Param     -> 
-                     NewPath = case string:right(Path, 1) of
-                                 ?STR_SLASH -> Path;
-                                 _Else      -> Path ++ ?STR_SLASH
-                             end,
-                     {Param, true, NewPath}
-             end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
 
     case auth(Req, HTTPMethod, Path2, TokenLen) of
@@ -147,20 +113,20 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
             Req:respond({403, [?SERVER_HEADER], []});
         {ok, AccessKeyId} ->
             case catch exec(first, HTTPMethod, Req, Path2, #req_params{token_length     = TokenLen,
-                                                                      access_key_id    = AccessKeyId,
-                                                                      min_layers       = NumOfMinLayers,
-                                                                      max_layers       = NumOfMaxLayers,
-                                                                      has_inner_cache  = HasInnerCache,
-                                                                      is_dir           = IsDir,
-                                                                      is_cached        = true,
-                                                                      qs_prefix        = Prefix}) of
-            {'EXIT', Reason} ->
-                ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
-                Req:respond({500, [?SERVER_HEADER], []});
-            _ ->
-                erlang:garbage_collect(self())
-        end
-   end.
+                                                                       access_key_id    = AccessKeyId,
+                                                                       min_layers       = NumOfMinLayers,
+                                                                       max_layers       = NumOfMaxLayers,
+                                                                       has_inner_cache  = HasInnerCache,
+                                                                       is_dir           = IsDir,
+                                                                       is_cached        = true,
+                                                                       qs_prefix        = Prefix}) of
+                {'EXIT', Reason} ->
+                    ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
+                    Req:respond({500, [?SERVER_HEADER], []});
+                _ ->
+                    erlang:garbage_collect(self())
+            end
+    end.
 
 %%--------------------------------------------------------------------
 %%% INTERNAL FUNCTIONS
@@ -176,12 +142,9 @@ exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
 
 %% @doc GET operation on buckets & Dirs.
 %%
-exec(first, ?HTTP_GET, Req, Key,
-     #req_params{
-                 is_dir        = true,
-                 access_key_id = AccessKeyId,
-                 qs_prefix     = Prefix
-                }) ->
+exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir        = true,
+                                             access_key_id = AccessKeyId,
+                                             qs_prefix     = Prefix}) ->
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req:respond({200, [?SERVER_HEADER], XML});
@@ -195,11 +158,9 @@ exec(first, ?HTTP_GET, Req, Key,
 
 %% @doc PUT operation on buckets.
 %%
-exec(first, ?HTTP_PUT, Req, Key,
-     #req_params{token_length  = 1,
-                 is_dir       = true,
-                 access_key_id = AccessKeyId
-                }) ->
+exec(first, ?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
+                                             is_dir        = true,
+                                             access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:put_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
@@ -211,11 +172,9 @@ exec(first, ?HTTP_PUT, Req, Key,
 
 %% @doc DELETE operation on buckets.
 %%
-exec(first, ?HTTP_DELETE, Req, Key,
-     #req_params{token_length  = 1,
-                 is_dir       = true,
-                 access_key_id = AccessKeyId
-                }) ->
+exec(first, ?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
+                                                is_dir        = true,
+                                                access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({204, [?SERVER_HEADER], []});
@@ -229,11 +188,9 @@ exec(first, ?HTTP_DELETE, Req, Key,
 
 %% @doc HEAD operation on buckets.
 %%
-exec(first, ?HTTP_HEAD, Req, Key,
-     #req_params{token_length  = 1,
-                 is_dir       = true,
-                 access_key_id = AccessKeyId
-                }) ->
+exec(first, ?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
+                                              is_dir        = true,
+                                              access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
@@ -279,7 +236,7 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = H
                          [?SERVER_HEADER,
                           {"Content-Type",  Mime},
                           {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                          {"Last-Modified", rfc1123_date(Meta#metadata.timestamp)}],
+                          {"Last-Modified", leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -298,7 +255,7 @@ exec(first, ?HTTP_HEAD, Req, Key, _Params) ->
                                        [?SERVER_HEADER,
                                         {"Content-Type",  mochiweb_util:guess_mime(Key)},
                                         {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                                        {"Last-Modified", rfc1123_date(Meta#metadata.timestamp)}],
+                                        {"Last-Modified", leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                        Meta#metadata.dsize});
         {ok, #metadata{del = 1}} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -357,7 +314,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
                           {"Content-Type",  Cached#cache.content_type},
                           {"ETag",          leo_hex:integer_to_hex(Cached#cache.etag)},
                           {"X-From-Cache",  "True"},
-                          {"Last-Modified", rfc1123_date(Cached#cache.mtime)}],
+                          {"Last-Modified", leo_http:rfc1123_date(Cached#cache.mtime)}],
                          Cached#cache.body});
         {ok, Meta, RespObject} ->
             Mime = mochiweb_util:guess_mime(Key),
@@ -370,7 +327,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
                          [?SERVER_HEADER,
                           {"Content-Type",  Mime},
                           {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                          {"Last-Modified", rfc1123_date(Meta#metadata.timestamp)}],
+                          {"Last-Modified", leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -380,7 +337,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             Req:respond({504, [?SERVER_HEADER], []})
     end.
 
-%% @doc getter helper function. return "" if specified header is undefined 
+%% @doc getter helper function. return "" if specified header is undefined
 get_header(Req, Key) ->
     case Req:get_header_value(Key) of
         undefined ->
@@ -390,9 +347,9 @@ get_header(Req, Key) ->
     end.
 %% @doc auth
 auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen == 1) orelse
-                                           (TokenLen > 1 andalso 
-                                               (HTTPMethod == ?HTTP_PUT orelse 
-                                                HTTPMethod == ?HTTP_DELETE)) ->
+                                           (TokenLen > 1 andalso
+                                                           (HTTPMethod == ?HTTP_PUT orelse
+                                                            HTTPMethod == ?HTTP_DELETE)) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case Req:get_header_value("Authorization") of
@@ -401,18 +358,18 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen == 1) orelse
         Authorization ->
             {_, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
             SignParams = #sign_params{
-                http_verb    = HTTPMethod,
-                content_md5  = get_header(Req, ?HTTP_HEAD_MD5),
-                content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
-                date         = get_header(Req, ?HTTP_HEAD_DATE),
-                bucket       = hd(string:tokens(Path, ?STR_SLASH)),
-                uri          = Req:get(path),
-                query_str    = QueryString,
-                amz_headers  = leo_http:get_amz_headers(Req:get(headers))
-            },
+              http_verb    = HTTPMethod,
+              content_md5  = get_header(Req, ?HTTP_HEAD_MD5),
+              content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
+              date         = get_header(Req, ?HTTP_HEAD_DATE),
+              bucket       = hd(string:tokens(Path, ?STR_SLASH)),
+              uri          = Req:get(path),
+              query_str    = QueryString,
+              amz_headers  = leo_http:get_amz_headers(Req:get(headers))
+             },
             leo_s3_auth_api:authenticate(Authorization, SignParams)
     end;
-auth(_Req, _HTTPMethod, _Path, _TokenLen) -> 
+auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
     {ok, []}.
 
 %% @doc get options from mochiweb.
@@ -422,14 +379,4 @@ auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
 get_option(Option, Options) ->
     {proplists:get_value(Option, Options),
      proplists:delete(Option, Options)}.
-
-
-%% @doc RFC-1123 datetime.
-%%
--spec(rfc1123_date(integer()) ->
-             string()).
-rfc1123_date(Date) ->
-    httpd_util:rfc1123_date(
-      calendar:universal_time_to_local_time(
-        calendar:gregorian_seconds_to_datetime(Date))).
 
