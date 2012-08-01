@@ -110,7 +110,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                              end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
 
-    case auth(Req, HTTPMethod, Path2, TokenLen) of
+    case catch auth(Req, HTTPMethod, Path2, TokenLen) of
         {error, _Cause} ->
             Req:respond({403, [?SERVER_HEADER], []});
         {ok, AccessKeyId} ->
@@ -127,7 +127,10 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                     Req:respond({500, [?SERVER_HEADER], []});
                 _ ->
                     erlang:garbage_collect(self())
-            end
+            end;
+        {'EXIT', Reason} ->
+            ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
+            Req:respond({500, [?SERVER_HEADER], []})
     end.
 
 
