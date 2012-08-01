@@ -121,7 +121,7 @@ generate_xml(Dir, Buckets) ->
                                   %% file.
                                   Acc ++ "<Contents>"
                                       ++ "<Key>" ++ Entry ++ "</Key>"
-                                      ++ "<LastModified>" ++ leo_utils:date_format(TS) ++ "</LastModified>"
+                                      ++ "<LastModified>" ++ leo_http:web_date(TS) ++ "</LastModified>"
                                       ++ "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
                                       ++ "<Size>" ++ integer_to_list(Length) ++ "</Size>"
                                       ++ "<StorageClass>STANDARD</StorageClass>"
