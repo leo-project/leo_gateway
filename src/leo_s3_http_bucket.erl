@@ -56,17 +56,20 @@ get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
         Error ->
             Error
     end;
-get_bucket_list(_AccessKeyId, Bucket, _Delimiter, _Marker, _MaxKeys, Prefix) ->
+get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
     Key = Bucket ++ Prefix,
+
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
-                                        [Key],
+                                        [Key, Delimiter, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
             {ok, Meta, generate_xml(Key, Meta)};
+        {ok, _} ->
+            {error, invalid_format};
         Error ->
             Error
     end.
@@ -96,7 +99,7 @@ head_bucket(AccessKeyId, Bucket) ->
     leo_s3_bucket_api:head(AccessKeyId, Bucket).
 
 
-%% @doc Generate XML from matadata-list 
+%% @doc Generate XML from matadata-list
 %% @private
 generate_xml(Dir, Buckets) ->
     DirLen = string:len(Dir),
@@ -136,7 +139,7 @@ generate_xml(Buckets) ->
                       false ->
                           TrimmedName = string:sub_string(Name, 2),
                           Acc ++ "<Bucket><Name>" ++ TrimmedName ++ "</Name><CreationDate>" ++
-                          leo_utils:date_format(TS) ++ "</CreationDate></Bucket>"
+                              leo_utils:date_format(TS) ++ "</CreationDate></Bucket>"
                   end
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], Buckets)]).

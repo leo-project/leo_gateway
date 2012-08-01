@@ -96,7 +96,7 @@ teardown([_, Node1]) ->
 get_bucket_list_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
-                                        fun(_Key) ->
+                                        fun(_Key,_,_,_) ->
                                                 {error, some_error}
                                         end]),
     Res = leo_s3_http_bucket:get_bucket_list("accesskeyid", "bucket/", none, none, 1000, "dir"),
@@ -107,7 +107,7 @@ get_bucket_list_error_([_Node0, Node1]) ->
 get_bucket_list_empty_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
-                                        fun(_Key) ->
+                                        fun(_Key,_,_,_) ->
                                                 {ok, []}
                                         end]),
     Res = leo_s3_http_bucket:get_bucket_list("accesskeyid", "bucket/", none, none, 1000, "dir"),
@@ -119,7 +119,7 @@ get_bucket_list_empty_([_Node0, Node1]) ->
 get_bucket_list_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
-                                        fun(Key) ->
+                                        fun(Key,_,_,_) ->
                                                 {ok, [
                                                       #metadata{
                                                          key = Key,
