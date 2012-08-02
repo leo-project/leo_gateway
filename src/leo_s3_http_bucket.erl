@@ -137,9 +137,9 @@ generate_xml(Buckets) ->
                       true ->
                           Acc;
                       false ->
-                          TrimmedName = string:sub_string(Name, 2),
-                          Acc ++ "<Bucket><Name>" ++ TrimmedName ++ "</Name><CreationDate>" ++
-                              leo_utils:date_format(TS) ++ "</CreationDate></Bucket>"
+                          %%TrimmedName = string:sub_string(Name, 2),
+                          Acc ++ "<Bucket><Name>" ++ Name ++ "</Name><CreationDate>" ++
+                              leo_http:web_date(TS) ++ "</CreationDate></Bucket>"
                   end
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], Buckets)]).

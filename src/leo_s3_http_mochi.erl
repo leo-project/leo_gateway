@@ -59,7 +59,15 @@ start(Options) ->
     LayerOfDirs = ?env_layer_of_dirs(),
 
     Loop = fun (Req) -> ?MODULE:loop(Req, LayerOfDirs, HasInnerCache) end,
-    mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options1]).
+    mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options1]),
+    %% @TODO setting from app.config
+    mochiweb_http:start([{name, https}, 
+                         {loop, Loop},
+                         {ssl, true},
+                         {ssl_opts, [
+                             {certfile, "/home/leofs/dev/leofs_R14B04/server_cert.pem"},
+                             {keyfile,  "/home/leofs/dev/leofs_R14B04/server_key.pem"}]},
+                         {port, 443}]).
 
 
 %% @doc Stop web-server
@@ -67,7 +75,8 @@ start(Options) ->
 -spec(stop() ->
              ok).
 stop() ->
-    mochiweb_http:stop(?MODULE).
+    mochiweb_http:stop(?MODULE),
+    mochiweb_http:stop(https).
 
 
 %% @doc Handling HTTP-Request/Response
@@ -110,6 +119,8 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                              end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
 
+?info("loop1/4", "verb:~p prefix:~p path:~w~n", [HTTPMethod, Prefix, Path2]),
+
     case catch auth(Req, HTTPMethod, Path2, TokenLen) of
         {error, _Cause} ->
             Req:respond({403, [?SERVER_HEADER], []});
@@ -150,6 +161,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
                                        qs_prefix     = Prefix}) ->
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
+?info("exec1/4", "path:~w xml:~w~n", [Key, XML]),
             Req:respond({200, [?SERVER_HEADER], XML});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -162,7 +174,6 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
 %% @doc PUT operation on buckets.
 %%
 exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
-                                       is_dir        = true,
                                        access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:put_bucket(AccessKeyId, Key) of
         ok ->
@@ -176,7 +187,6 @@ exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
 %% @doc DELETE operation on buckets.
 %%
 exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
-                                          is_dir        = true,
                                           access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
@@ -192,7 +202,6 @@ exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
 %% @doc HEAD operation on buckets.
 %%
 exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
-                                        is_dir        = true,
                                         access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
@@ -353,7 +362,7 @@ get_header(Req, Key) ->
 
 
 %% @doc auth
-auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen == 1) orelse
+auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                            (TokenLen > 1 andalso
                                                            (HTTPMethod == ?HTTP_PUT orelse
                                                             HTTPMethod == ?HTTP_DELETE)) ->
@@ -363,18 +372,23 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen == 1) orelse
         undefined ->
             {error, undefined};
         Authorization ->
+            Bucket = case TokenLen >= 1 of
+                true  -> hd(string:tokens(Path, ?STR_SLASH));
+                false -> []
+            end,
+            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
             {_, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
             SignParams = #sign_params{
               http_verb    = HTTPMethod,
               content_md5  = get_header(Req, ?HTTP_HEAD_MD5),
               content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
               date         = get_header(Req, ?HTTP_HEAD_DATE),
-              bucket       = hd(string:tokens(Path, ?STR_SLASH)),
+              bucket       = Bucket,
               uri          = Req:get(path),
               query_str    = QueryString,
               amz_headers  = leo_http:get_amz_headers(Req:get(headers))
              },
-            leo_s3_auth_api:authenticate(Authorization, SignParams)
+            leo_s3_auth_api:authenticate(Authorization, SignParams, IsCreateBucketOp)
     end;
 
 auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
