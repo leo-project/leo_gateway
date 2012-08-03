@@ -46,8 +46,11 @@
 -spec(start(list()) ->
              ok).
 start(Options) ->
-    {_DocRoot, Options1} = get_option(docroot, Options),
-    HookModules = proplists:get_value(hook_modules, Options1),
+    {_DocRoot, Options1} = get_option(docroot,      Options),
+    {SSLPort,  Options2} = get_option(ssl_port,     Options1),
+    {SSLCert,  Options3} = get_option(ssl_certfile, Options2),
+    {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
+    HookModules = proplists:get_value(hook_modules, Options4),
 
     HasInnerCache = HookModules =:= undefined,
     case HasInnerCache of
@@ -59,15 +62,14 @@ start(Options) ->
     LayerOfDirs = ?env_layer_of_dirs(),
 
     Loop = fun (Req) -> ?MODULE:loop(Req, LayerOfDirs, HasInnerCache) end,
-    mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options1]),
-    %% @TODO setting from app.config
-    mochiweb_http:start([{name, https}, 
+    mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options4]),
+    mochiweb_http:start([{name, ssl_proc_name()}, 
                          {loop, Loop},
                          {ssl, true},
                          {ssl_opts, [
-                             {certfile, "/home/leofs/dev/leofs_R14B04/server_cert.pem"},
-                             {keyfile,  "/home/leofs/dev/leofs_R14B04/server_key.pem"}]},
-                         {port, 443}]).
+                             {certfile, SSLCert},
+                             {keyfile,  SSLKey}]},
+                         {port, SSLPort}]).
 
 
 %% @doc Stop web-server
@@ -76,8 +78,11 @@ start(Options) ->
              ok).
 stop() ->
     mochiweb_http:stop(?MODULE),
-    mochiweb_http:stop(https).
+    mochiweb_http:stop(ssl_proc_name()).
 
+%% @doc ssl process name
+ssl_proc_name() ->
+    list_to_atom(?MODULE_STRING ++ "_ssl").
 
 %% @doc Handling HTTP-Request/Response
 %%
