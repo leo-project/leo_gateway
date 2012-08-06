@@ -54,7 +54,6 @@
 -spec(init() ->
              ok).
 init() ->
-    ?debugVal(init),
     ok.
 
 

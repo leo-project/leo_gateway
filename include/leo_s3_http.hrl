@@ -39,7 +39,8 @@
 -define(HTTP_HEAD_MD5,          "Content-MD5").
 -define(HTTP_HEAD_CONTENT_TYPE, "Content-Type").
 -define(HTTP_HEAD_DATE,         "Date").
-
+-define(HTTP_HEAD_EXPECT,       "Expect").
+-define(HTTP_HEAD_100_CONTINUE, "100-continue").
 
 %% s3 response xmls
 -define(XML_BUCKET_LIST,

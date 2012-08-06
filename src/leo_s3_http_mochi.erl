@@ -63,12 +63,11 @@ start(Options) ->
 
     Loop = fun (Req) -> ?MODULE:loop(Req, LayerOfDirs, HasInnerCache) end,
     mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options4]),
-    mochiweb_http:start([{name, ssl_proc_name()}, 
+    mochiweb_http:start([{name, ssl_proc_name()},
                          {loop, Loop},
                          {ssl, true},
-                         {ssl_opts, [
-                             {certfile, SSLCert},
-                             {keyfile,  SSLKey}]},
+                         {ssl_opts, [{certfile, SSLCert},
+                                     {keyfile,  SSLKey}]},
                          {port, SSLPort}]).
 
 
@@ -90,7 +89,8 @@ ssl_proc_name() ->
              ok).
 loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
     [Host|_] = string:tokens(Req:get_header_value("host"), ":"),
-    Key = leo_http:key(?S3_DEFAULT_ENDPOINT, Host, Req:get(path)),
+    Key = leo_http:key(Host, Req:get(path)),
+
     loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Key).
 
 
@@ -124,8 +124,6 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                              end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
 
-?info("loop1/4", "verb:~p prefix:~p path:~w~n", [HTTPMethod, Prefix, Path2]),
-
     case catch auth(Req, HTTPMethod, Path2, TokenLen) of
         {error, _Cause} ->
             Req:respond({403, [?SERVER_HEADER], []});
@@ -139,7 +137,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                                                                  is_cached        = true,
                                                                  qs_prefix        = Prefix}) of
                 {'EXIT', Reason} ->
-                    ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
+                    ?error("loop1/4", "path:~p, reason:~p", [Path2, Reason]),
                     Req:respond({500, [?SERVER_HEADER], []});
                 _ ->
                     erlang:garbage_collect(self())
@@ -153,9 +151,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
 %% @doc constraint violation.
 %%
 exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
-                                         min_layers   = Min,
-                                         max_layers   = Max}) when Len < (Min - 1);
-                                                                   Len > Max ->
+                                         max_layers   = Max}) when Len > Max ->
     Req:respond({404, [?SERVER_HEADER], []}),
     ok;
 
@@ -166,7 +162,6 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
                                        qs_prefix     = Prefix}) ->
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
-?info("exec1/4", "path:~w xml:~w~n", [Key, XML]),
             Req:respond({200, [?SERVER_HEADER], XML});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -301,12 +296,20 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 %% @doc POST/PUT operation on Objects.
 %%
 exec1(?HTTP_PUT, Req, Key, _Params) ->
-    Size = list_to_integer(Req:get_header_value("content-length")),
+    Size  = list_to_integer(Req:get_header_value("content-length")),
+    case Req:get_header_value(?HTTP_HEAD_EXPECT) of
+        ?HTTP_HEAD_100_CONTINUE ->
+            Req:respond({100, [?SERVER_HEADER], []});
+        _ ->
+            void
+    end,
+
     Bin = case (Size == 0) of
               %% for support uploading zero byte files.
               true  -> <<>>;
               false -> Req:recv(Size)
           end,
+
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
@@ -378,21 +381,22 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             {error, undefined};
         Authorization ->
             Bucket = case TokenLen >= 1 of
-                true  -> hd(string:tokens(Path, ?STR_SLASH));
-                false -> []
-            end,
+                         true  -> hd(string:tokens(Path, ?STR_SLASH));
+                         false -> []
+                     end,
+
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
             {_, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
-            SignParams = #sign_params{
-              http_verb    = HTTPMethod,
-              content_md5  = get_header(Req, ?HTTP_HEAD_MD5),
-              content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
-              date         = get_header(Req, ?HTTP_HEAD_DATE),
-              bucket       = Bucket,
-              uri          = Req:get(path),
-              query_str    = QueryString,
-              amz_headers  = leo_http:get_amz_headers(Req:get(headers))
-             },
+
+            SignParams = #sign_params{http_verb    = HTTPMethod,
+                                      content_md5  = get_header(Req, ?HTTP_HEAD_MD5),
+                                      content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
+                                      date         = get_header(Req, ?HTTP_HEAD_DATE),
+                                      bucket       = Bucket,
+                                      uri          = Req:get(path),
+                                      query_str    = QueryString,
+                                      amz_headers  = leo_http:get_amz_headers(Req:get(headers))
+                                     },
             leo_s3_auth_api:authenticate(Authorization, SignParams, IsCreateBucketOp)
     end;
 
