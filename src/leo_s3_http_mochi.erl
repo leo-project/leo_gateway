@@ -88,8 +88,14 @@ ssl_proc_name() ->
 -spec(loop(any(), tuple(), boolean()) ->
              ok).
 loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
-    [Host|_] = string:tokens(Req:get_header_value("host"), ":"),
-    Key = leo_http:key(Host, Req:get(path)),
+    EndPoints1 = case leo_s3_auth_api:get_endpoints() of
+                     {ok, EndPoints0} ->
+                         lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
+                     _ -> []
+                 end,
+
+    [Host|_]  = string:tokens(Req:get_header_value(?HTTP_HEAD_HOST), ":"),
+    Key = leo_http:key(EndPoints1, Host, Req:get(path)),
 
     loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Key).
 
