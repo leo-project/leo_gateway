@@ -60,15 +60,15 @@ get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
 get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
-    Key = Bucket ++ Prefix,
 
+    Key =  Bucket ++ Prefix,
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
                                         [Key, Delimiter, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, generate_xml(Key, Meta)};
+            {ok, Meta, generate_xml(Key, Prefix, Meta)};
         {ok, _} ->
             {error, invalid_format};
         Error ->
@@ -102,7 +102,7 @@ head_bucket(AccessKeyId, Bucket) ->
 
 %% @doc Generate XML from matadata-list
 %% @private
-generate_xml(Key, MetadataList) ->
+generate_xml(Key, Prefix, MetadataList) ->
     DirLen = string:len(Key),
     Fun = fun(#metadata{key       = EntryKey,
                         dsize     = Length,
@@ -117,11 +117,12 @@ generate_xml(Key, MetadataList) ->
                           case Length of
                               -1 ->
                                   %% directory.
-                                  Acc ++ "<CommonPrefixes><Prefix>" ++ Entry ++ "</Prefix></CommonPrefixes>";
+                                  Acc ++ "<CommonPrefixes><Prefix>"
+                                      ++ Prefix ++ Entry ++ "</Prefix></CommonPrefixes>";
                               _ ->
                                   %% file.
                                   Acc ++ "<Contents>"
-                                      ++   "<Key>" ++ Entry ++ "</Key>"
+                                      ++   "<Key>" ++ Prefix ++ Entry ++ "</Key>"
                                       ++   "<LastModified>" ++ leo_http:web_date(TS) ++ "</LastModified>"
                                       ++   "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
                                       ++   "<Size>" ++ integer_to_list(Length) ++ "</Size>"
@@ -134,7 +135,7 @@ generate_xml(Key, MetadataList) ->
                           end
                   end
           end,
-    io_lib:format(?XML_OBJ_LIST, [lists:foldl(Fun, [], MetadataList)]).
+    io_lib:format(?XML_OBJ_LIST, [Prefix, lists:foldl(Fun, [], MetadataList)]).
 
 generate_xml(MetadataList) ->
     Fun = fun(#bucket{name=Name, created_at=TS} , Acc) ->

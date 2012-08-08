@@ -36,12 +36,14 @@
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
--define(HTTP_HEAD_MD5,          "Content-MD5").
--define(HTTP_HEAD_CONTENT_TYPE, "Content-Type").
--define(HTTP_HEAD_HOST,         "Host").
--define(HTTP_HEAD_DATE,         "Date").
--define(HTTP_HEAD_EXPECT,       "Expect").
--define(HTTP_HEAD_100_CONTINUE, "100-continue").
+-define(HTTP_HEAD_MD5,           "Content-MD5").
+-define(HTTP_HEAD_CONTENT_TYPE,  "Content-Type").
+-define(HTTP_HEAD_DATE,          "Date").
+-define(HTTP_HEAD_ETAG,          "ETag").
+-define(HTTP_HEAD_HOST,          "Host").
+-define(HTTP_HEAD_LAST_MODIFIED, "Last-Modified").
+-define(HTTP_HEAD_EXPECT,        "Expect").
+-define(HTTP_HEAD_100_CONTINUE,  "100-continue").
 
 %% s3 response xmls
 -define(XML_BUCKET_LIST,
@@ -55,8 +57,8 @@
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         ++ "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
         ++ "<Name>standalone</Name>"
-        ++ "<Prefix/>"
-        ++ "<Marker/>"
+        ++ "<Prefix>~s</Prefix>"
+        ++ "<Marker></Marker>"
         ++ "<MaxKeys>1000</MaxKeys>"
         ++ "<Delimiter>/</Delimiter>"
         ++ "<IsTruncated>false</IsTruncated>"

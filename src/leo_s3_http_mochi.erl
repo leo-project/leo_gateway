@@ -169,7 +169,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req:respond({200, [?SERVER_HEADER,
-                               {?HTTP_HEAD_CONTENT_TYPE,"application/xml"},
+                               {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
                                {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_utils:now())}
                               ], XML});
         {error, not_found} ->
@@ -243,6 +243,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
     case leo_gateway_rpc_handler:get(Key) of
         {ok, Meta, RespObject} ->
             Mime = mochiweb_util:guess_mime(Key),
+
             case HasInnerCache of
                 true ->
                     BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
@@ -253,11 +254,12 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                 _ ->
                     ok
             end,
+
             Req:respond({200,
                          [?SERVER_HEADER,
-                          {"Content-Type",  Mime},
-                          {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                          {"Last-Modified", leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                          {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                          {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                          {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -274,9 +276,9 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
         {ok, #metadata{del = 0} = Meta} ->
             Req:start_response_length({200,
                                        [?SERVER_HEADER,
-                                        {"Content-Type",  mochiweb_util:guess_mime(Key)},
-                                        {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                                        {"Last-Modified", leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                                        {?HTTP_HEAD_CONTENT_TYPE,  mochiweb_util:guess_mime(Key)},
+                                        {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                                        {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                        Meta#metadata.dsize});
         {ok, #metadata{del = 1}} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -341,10 +343,10 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
         {ok, match} ->
             Req:respond({200,
                          [?SERVER_HEADER,
-                          {"Content-Type",  Cached#cache.content_type},
-                          {"ETag",          leo_hex:integer_to_hex(Cached#cache.etag)},
-                          {"X-From-Cache",  "True"},
-                          {"Last-Modified", leo_http:rfc1123_date(Cached#cache.mtime)}],
+                          {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
+                          {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Cached#cache.etag)},
+                          {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
+                          {"X-From-Cache", "True"}],
                          Cached#cache.body});
         {ok, Meta, RespObject} ->
             Mime = mochiweb_util:guess_mime(Key),
@@ -355,9 +357,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             ecache_server:set(Key, BinVal),
             Req:respond({200,
                          [?SERVER_HEADER,
-                          {"Content-Type",  Mime},
-                          {"ETag",          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                          {"Last-Modified", leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                          {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                          {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                          {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
