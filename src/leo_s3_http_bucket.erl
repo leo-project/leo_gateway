@@ -102,14 +102,14 @@ head_bucket(AccessKeyId, Bucket) ->
 
 %% @doc Generate XML from matadata-list
 %% @private
-generate_xml(Dir, Buckets) ->
-    DirLen = string:len(Dir),
+generate_xml(Key, MetadataList) ->
+    DirLen = string:len(Key),
     Fun = fun(#metadata{key       = EntryKey,
                         dsize     = Length,
                         timestamp = TS,
                         checksum  = CS,
                         del       = 0} , Acc) ->
-                  case string:equal(Dir, EntryKey) of
+                  case string:equal(Key, EntryKey) of
                       true ->
                           Acc;
                       false ->
@@ -121,18 +121,22 @@ generate_xml(Dir, Buckets) ->
                               _ ->
                                   %% file.
                                   Acc ++ "<Contents>"
-                                      ++ "<Key>" ++ Entry ++ "</Key>"
-                                      ++ "<LastModified>" ++ leo_http:web_date(TS) ++ "</LastModified>"
-                                      ++ "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
-                                      ++ "<Size>" ++ integer_to_list(Length) ++ "</Size>"
-                                      ++ "<StorageClass>STANDARD</StorageClass>"
+                                      ++   "<Key>" ++ Entry ++ "</Key>"
+                                      ++   "<LastModified>" ++ leo_http:web_date(TS) ++ "</LastModified>"
+                                      ++   "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
+                                      ++   "<Size>" ++ integer_to_list(Length) ++ "</Size>"
+                                      ++   "<StorageClass>STANDARD</StorageClass>"
+                                      ++   "<Owner>"
+                                      ++     "<ID>leofs</ID>"
+                                      ++     "<DisplayName>leofs</DisplayName>"
+                                      ++   "</Owner>"
                                       ++ "</Contents>"
                           end
                   end
           end,
-    io_lib:format(?XML_OBJ_LIST, [lists:foldl(Fun, [], Buckets)]).
+    io_lib:format(?XML_OBJ_LIST, [lists:foldl(Fun, [], MetadataList)]).
 
-generate_xml(Buckets) ->
+generate_xml(MetadataList) ->
     Fun = fun(#bucket{name=Name, created_at=TS} , Acc) ->
                   case string:equal(?STR_SLASH, Name) of
                       true ->
@@ -143,5 +147,5 @@ generate_xml(Buckets) ->
                               leo_http:web_date(TS) ++ "</CreationDate></Bucket>"
                   end
           end,
-    io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], Buckets)]).
+    io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).
 

@@ -168,7 +168,10 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
                                        qs_prefix     = Prefix}) ->
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
-            Req:respond({200, [?SERVER_HEADER], XML});
+            Req:respond({200, [?SERVER_HEADER,
+                               {?HTTP_HEAD_CONTENT_TYPE,"application/xml"},
+                               {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_utils:now())}
+                              ], XML});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
