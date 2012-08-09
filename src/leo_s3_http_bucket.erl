@@ -33,7 +33,7 @@
 -include("leo_gateway.hrl").
 -include("leo_s3_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
--include_lib("leo_s3_bucket/include/leo_s3_bucket.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -51,7 +51,7 @@ get_bucket_list(AccessKeyId, Bucket) ->
 -spec(get_bucket_list(string(), none, char()|none, string()|none, integer(), string()|none) ->
              {ok, list(), string()}|{error, any()}).
 get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
-    case leo_s3_bucket_api:find_buckets_by_id(AccessKeyId) of
+    case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
         {ok, Meta} when is_list(Meta) =:= true ->
             {ok, Meta, generate_xml(Meta)};
         Error ->
@@ -81,7 +81,7 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
 -spec(put_bucket(string(), string()|none) ->
              ok|{error, any()}).
 put_bucket(AccessKeyId, Bucket) ->
-    leo_s3_bucket_api:put(AccessKeyId, Bucket).
+    leo_s3_bucket:put(AccessKeyId, Bucket).
 
 
 %% @doc delete bucket
@@ -89,7 +89,7 @@ put_bucket(AccessKeyId, Bucket) ->
 -spec(delete_bucket(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket(AccessKeyId, Bucket) ->
-    leo_s3_bucket_api:delete(AccessKeyId, Bucket).
+    leo_s3_bucket:delete(AccessKeyId, Bucket).
 
 
 %% @doc head bucket
@@ -97,7 +97,7 @@ delete_bucket(AccessKeyId, Bucket) ->
 -spec(head_bucket(string(), string()|none) ->
              ok|{error, any()}).
 head_bucket(AccessKeyId, Bucket) ->
-    leo_s3_bucket_api:head(AccessKeyId, Bucket).
+    leo_s3_bucket:head(AccessKeyId, Bucket).
 
 
 %% @doc Generate XML from matadata-list

@@ -123,11 +123,8 @@ after_process({ok, Pid} = Res) ->
                                 void
                         end, false, NewManagerNodes),
 
-            %% Launch s3 bucket api
-            ok = leo_s3_bucket_api:start(slave, [{'provider', NewManagerNodes}]),
-
-            %% Launch s3 bucket api
-            ok = leo_s3_auth_api:start(slave, [{'provider', NewManagerNodes}]),
+            %% Launch S3Libs:Auth/Bucket/EndPoint
+            ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
 
             %% Launch a listener - [s3_http]
             case ?env_listener() of

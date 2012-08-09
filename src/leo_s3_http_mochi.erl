@@ -35,7 +35,7 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
--include_lib("leo_s3_auth/include/leo_s3_auth.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%--------------------------------------------------------------------
@@ -88,7 +88,7 @@ ssl_proc_name() ->
 -spec(loop(any(), tuple(), boolean()) ->
              ok).
 loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
-    EndPoints1 = case leo_s3_auth_api:get_endpoints() of
+    EndPoints1 = case leo_s3_endpoint:get_endpoints() of
                      {ok, EndPoints0} ->
                          lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
                      _ -> []
@@ -408,7 +408,7 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                       query_str    = QueryString,
                                       amz_headers  = leo_http:get_amz_headers(Req:get(headers))
                                      },
-            leo_s3_auth_api:authenticate(Authorization, SignParams, IsCreateBucketOp)
+            leo_s3_auth:authenticate(Authorization, SignParams, IsCreateBucketOp)
     end;
 
 auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
