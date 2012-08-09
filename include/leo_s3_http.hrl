@@ -32,6 +32,7 @@
 -define(QUERY_PREFIX,    "prefix").
 -define(QUERY_DELIMITER, "delimiter").
 -define(QUERY_MAX_KEYS,  "max-keys").
+-define(QUERY_ACL,       "acl").
 -define(STR_SLASH,       "/").
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).

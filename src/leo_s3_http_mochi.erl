@@ -130,27 +130,32 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                              end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
 
-    case catch auth(Req, HTTPMethod, Path2, TokenLen) of
-        {error, _Cause} ->
-            Req:respond({403, [?SERVER_HEADER], []});
-        {ok, AccessKeyId} ->
-            case catch exec1(HTTPMethod, Req, Path2, #req_params{token_length     = TokenLen,
-                                                                 access_key_id    = AccessKeyId,
-                                                                 min_layers       = NumOfMinLayers,
-                                                                 max_layers       = NumOfMaxLayers,
-                                                                 has_inner_cache  = HasInnerCache,
-                                                                 is_dir           = IsDir,
-                                                                 is_cached        = true,
-                                                                 qs_prefix        = Prefix}) of
+    case proplists:get_value(?QUERY_ACL, QueryString, undefined) of
+        undefined ->
+            case catch auth(Req, HTTPMethod, Path2, TokenLen) of
+                {error, _Cause} ->
+                    Req:respond({403, [?SERVER_HEADER], []});
+                {ok, AccessKeyId} ->
+                    case catch exec1(HTTPMethod, Req, Path2, #req_params{token_length     = TokenLen,
+                                                                         access_key_id    = AccessKeyId,
+                                                                         min_layers       = NumOfMinLayers,
+                                                                         max_layers       = NumOfMaxLayers,
+                                                                         has_inner_cache  = HasInnerCache,
+                                                                         is_dir           = IsDir,
+                                                                         is_cached        = true,
+                                                                         qs_prefix        = Prefix}) of
+                        {'EXIT', Reason} ->
+                            ?error("loop1/4", "path:~p, reason:~p", [Path2, Reason]),
+                            Req:respond({500, [?SERVER_HEADER], []});
+                        _ ->
+                            erlang:garbage_collect(self())
+                    end;
                 {'EXIT', Reason} ->
-                    ?error("loop1/4", "path:~p, reason:~p", [Path2, Reason]),
-                    Req:respond({500, [?SERVER_HEADER], []});
-                _ ->
-                    erlang:garbage_collect(self())
+                    ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
+                    Req:respond({500, [?SERVER_HEADER], []})
             end;
-        {'EXIT', Reason} ->
-            ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
-            Req:respond({500, [?SERVER_HEADER], []})
+        _ ->
+            Req:respond({404, [?SERVER_HEADER], []})
     end.
 
 
