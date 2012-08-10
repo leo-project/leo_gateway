@@ -312,6 +312,17 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 %% @doc POST/PUT operation on Objects.
 %%
 exec1(?HTTP_PUT, Req, Key, _Params) ->
+    do_put(Req:get_header_value(?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, _Params);
+
+%% @doc invalid request.
+%%
+exec1(_, Req, _, _) ->
+    Req:respond({400, [?SERVER_HEADER], []}).
+
+
+%% @doc POST/PUT operation on Objects. NORMAL
+%%
+do_put(undefined, Req, Key, _Params) ->
     Size  = list_to_integer(Req:get_header_value("content-length")),
     case Req:get_header_value(?HTTP_HEAD_EXPECT) of
         ?HTTP_HEAD_100_CONTINUE ->
@@ -335,11 +346,58 @@ exec1(?HTTP_PUT, Req, Key, _Params) ->
             Req:respond({504, [?SERVER_HEADER], []})
     end;
 
-%% @doc invalid request.
+%% @doc POST/PUT operation on Objects. COPY/REPLACE 
 %%
-exec1(_, Req, _, _) ->
-    Req:respond({400, [?SERVER_HEADER], []}).
+do_put(Directive, Req, Key, _Params) ->
+    CS = Req:get_header_value(?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+    case leo_gateway_rpc_handler:get(CS) of
+        {ok, Meta, RespObject} ->
+            do_put_2(Directive, Req, Key, Meta, RespObject);
+        {error, not_found} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end.
 
+%% @doc POST/PUT operation on Objects. COPY
+%%
+do_put_2(Directive, Req, Key, Meta, Bin) ->
+    Size = size(Bin),
+    case {Directive, leo_gateway_rpc_handler:put(Key, Bin, Size)} of
+        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY, ok} ->
+            resp_copyobj_xml(Req, Meta);
+        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
+            do_put_3(Req, Meta);
+        {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {_, {error, timeout}} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end.
+
+%% @doc POST/PUT operation on Objects. REPLACE
+%%
+do_put_3(Req, Meta) ->
+    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
+        ok ->
+            resp_copyobj_xml(Req, Meta);
+       {error, not_found} ->
+            resp_copyobj_xml(Req, Meta);
+       {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end.
+
+resp_copyobj_xml(Req, Meta) ->
+    XML = io_lib:format(?XML_COPY_OBJ_RESULT, 
+                        [leo_http:web_date(Meta#metadata.timestamp),
+                         leo_hex:integer_to_hex(Meta#metadata.checksum)]),
+    Req:respond({200, [?SERVER_HEADER, 
+                       {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
+                       {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_utils:now())}
+                      ], XML}).
 
 %% @doc GET operation with Etag
 %%

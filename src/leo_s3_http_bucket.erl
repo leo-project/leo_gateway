@@ -54,6 +54,8 @@ get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
     case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
         {ok, Meta} when is_list(Meta) =:= true ->
             {ok, Meta, generate_xml(Meta)};
+        not_found ->
+            {ok, [], generate_xml([])};
         Error ->
             Error
     end;

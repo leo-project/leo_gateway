@@ -45,6 +45,10 @@
 -define(HTTP_HEAD_LAST_MODIFIED, "Last-Modified").
 -define(HTTP_HEAD_EXPECT,        "Expect").
 -define(HTTP_HEAD_100_CONTINUE,  "100-continue").
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         "x-amz-metadata-directive").
+-define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            "x-amz-copy-source").
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    "COPY").
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, "REPLACE").
 
 %% s3 response xmls
 -define(XML_BUCKET_LIST,
@@ -65,6 +69,13 @@
         ++ "<IsTruncated>false</IsTruncated>"
         ++ "~s"
         ++ "</ListBucketResult>").
+
+-define(XML_COPY_OBJ_RESULT,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        ++ "<CopyObjectResult>"
+        ++ "<LastModified>~s</LastModified>"
+        ++ "<ETag>\"~s\"</ETag>"
+        ++ "</CopyObjectResult>").
 
 
 -record(req_params, {
