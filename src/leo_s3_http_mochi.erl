@@ -55,7 +55,7 @@ start(Options) ->
     HasInnerCache = HookModules =:= undefined,
     case HasInnerCache of
         true ->
-            application:start(ecache_app);
+            application:start(ecache);
         _ ->
             void
     end,
