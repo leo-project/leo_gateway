@@ -37,6 +37,7 @@
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
+-define(HTTP_HEAD_RANGE,         "Range").
 -define(HTTP_HEAD_MD5,           "Content-MD5").
 -define(HTTP_HEAD_CONTENT_TYPE,  "Content-Type").
 -define(HTTP_HEAD_DATE,          "Date").
@@ -86,6 +87,7 @@
           is_dir = false    :: boolean(),
           qs_prefix         :: string(),
           has_inner_cache   :: boolean(),
+          range_header      :: string(),
           is_cached         :: boolean()
          }).
 

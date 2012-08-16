@@ -141,6 +141,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                                                                          min_layers       = NumOfMinLayers,
                                                                          max_layers       = NumOfMaxLayers,
                                                                          has_inner_cache  = HasInnerCache,
+                                                                         range_header     = Req:get_header_value(?HTTP_HEAD_RANGE),
                                                                          is_dir           = IsDir,
                                                                          is_cached        = true,
                                                                          qs_prefix        = Prefix}) of
@@ -228,6 +229,41 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
             Req:respond({504, [?SERVER_HEADER], []})
     end;
 
+%% @doc GET operation on Object with Range Header.
+%%
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false, 
+                                       range_header = RangeHeader}) when RangeHeader =/= undefined ->
+    [_,ByteRangeSpec|_] = string:tokens(RangeHeader, "="),
+    ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
+    {Start, End} = case length(ByteRangeSet) of
+        1 ->
+            [StartStr|_] = ByteRangeSet,
+            {list_to_integer(StartStr), 0};
+        2 ->
+            [StartStr,EndStr|_] = ByteRangeSet,
+            {list_to_integer(StartStr), list_to_integer(EndStr) + 1};
+        _ ->
+            {undefined, undefined}
+    end,
+    case Start of
+        undefined ->
+            Req:respond({416, [?SERVER_HEADER], []});
+        _ ->
+            case leo_gateway_rpc_handler:get(Key, Start, End) of
+                {ok, _Meta, RespObject} ->
+                    Mime = mochiweb_util:guess_mime(Key),
+                    Req:respond({206,
+                                 [?SERVER_HEADER,
+                                  {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
+                                 RespObject});
+                {error, not_found} ->
+                    Req:respond({404, [?SERVER_HEADER], []});
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    Req:respond({500, [?SERVER_HEADER], []});
+                {error, timeout} ->
+                    Req:respond({504, [?SERVER_HEADER], []})
+            end
+    end;
 
 %% @doc GET operation on Object if inner cache is enabled.
 %%

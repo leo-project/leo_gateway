@@ -31,6 +31,7 @@
 -export([head/1,
          get/1,
          get/2,
+         get/3,
          delete/1,
          put/3,
          invoke/5
@@ -89,6 +90,17 @@ get(Key, ETag) ->
            leo_storage_handler_object,
            get,
            [ReqParams#req_params.addr_id, Key, ETag, ReqParams#req_params.req_id],
+           []).
+
+-spec(get(string(), integer(), integer()) ->
+             {ok, #metadata{}, binary()}|{error, any()}).
+get(Key, StartPos, EndPos) ->
+    _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
+    ReqParams = get_request_parameters(get, Key),
+    invoke(ReqParams#req_params.redundancies,
+           leo_storage_handler_object,
+           get,
+           [ReqParams#req_params.addr_id, Key, StartPos, EndPos, ReqParams#req_params.req_id],
            []).
 
 
