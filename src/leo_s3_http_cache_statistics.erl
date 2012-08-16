@@ -30,7 +30,7 @@
 -behaviour(leo_statistics_behaviour).
 
 -include_lib("leo_statistics/include/leo_statistics.hrl").
--include_lib("ecache_app/include/ecache.hrl").
+-include_lib("ecache/include/ecache.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([init/0, sync/1]).
