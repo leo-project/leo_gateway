@@ -108,6 +108,7 @@ loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
 -spec(loop1(any(), tuple(), boolean(), string()) ->
              ok).
 loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
+
     HTTPMethod = case Req:get(method) of
                      ?HTTP_POST -> ?HTTP_PUT;
                      Other      -> Other
@@ -496,14 +497,14 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                      end,
 
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
-            {_, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
+            {RawUri, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
 
             SignParams = #sign_params{http_verb    = HTTPMethod,
                                       content_md5  = get_header(Req, ?HTTP_HEAD_MD5),
                                       content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
                                       date         = get_header(Req, ?HTTP_HEAD_DATE),
                                       bucket       = Bucket,
-                                      uri          = Req:get(path),
+                                      uri          = RawUri,
                                       query_str    = QueryString,
                                       amz_headers  = leo_http:get_amz_headers(Req:get(headers))
                                      },
