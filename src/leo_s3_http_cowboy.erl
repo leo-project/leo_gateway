@@ -32,39 +32,11 @@
 -export([init/3, handle/2, terminate/2]).
 
 -include("leo_gateway.hrl").
+-include("leo_s3_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
--define(HTTP_GET,        'GET').
--define(HTTP_POST,       'POST').
--define(HTTP_PUT,        'PUT').
--define(HTTP_DELETE,     'DELETE').
--define(HTTP_HEAD,       'HEAD').
--define(SERVER_HEADER,   {<<"Server">>,<<"LeoFS">>}).
--define(QUERY_PREFIX,    <<"prefix">>).
--define(QUERY_DELIMITER, "delimiter").
--define(QUERY_MAX_KEYS,  "max-keys").
--define(STR_SLASH,       "/").
-
--define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
-
--record(req_params, {
-          token_length      :: integer(),
-          min_layers        :: integer(),
-          max_layers        :: integer(),
-          is_dir = false    :: boolean(),
-          qs_prefix         :: string(),
-          has_inner_cache   :: boolean()
-         }).
-
--record(cache, {
-          etag         = 0    :: integer(), % actual value is checksum
-          mtime        = 0    :: integer(), % gregorian_seconds
-          content_type = ""   :: list(),    % from a Content-Type header
-          body         = <<>> :: binary()
-         }).
 
 %%--------------------------------------------------------------------
 %% API
@@ -81,7 +53,7 @@ start(Options) ->
     HasInnerCache = HookModules =:= undefined,
     case HasInnerCache of
         true ->
-            application:start(ecache_app);
+            application:start(ecache);
         _ ->
             void
     end,
@@ -157,10 +129,10 @@ handle(Req0, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
 terminate(_Req, _State) ->
     ok.
 
+
 %%--------------------------------------------------------------------
 %%% INTERNAL FUNCTIONS
 %%--------------------------------------------------------------------
-
 %% @doc constraint violation.
 %%
 exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
@@ -171,12 +143,11 @@ exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
 
 %% @doc operations on buckets.
 %%
-exec(first, ?HTTP_GET, Req, Key,
-     #req_params{token_length = _TokenLen,
-                 is_dir       = true,
-                 qs_prefix    = Prefix
-                }) ->
-    case leo_s3_http_bucket:get_bucket_list(Key, none, none, 1000, Prefix) of
+exec(first, ?HTTP_GET, Req, Key, #req_params{token_length  = _TokenLen,
+                                             is_dir        = true,
+                                             access_key_id = AccessKeyId,
+                                             qs_prefix     = Prefix}) ->
+    case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             cowboy_http_req:reply(200, [?SERVER_HEADER], XML, Req);
         {error, not_found} ->
@@ -189,7 +160,8 @@ exec(first, ?HTTP_GET, Req, Key,
 
 %% @doc GET operation on Object if inner cache is enabled.
 %%
-exec(first, ?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false, has_inner_cache = true} = Params) ->
+exec(first, ?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir          = false,
+                                                          has_inner_cache = true} = Params) ->
     case ecache_server:get(Key) of
         undefined ->
             exec(first, HTTPMethod, Req, Key, Params#req_params{has_inner_cache = false});
@@ -207,7 +179,7 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false}) ->
                                   [?SERVER_HEADER,
                                    {<<"Content-Type">>,  mochiweb_util:guess_mime(Key)},
                                    {<<"ETag">>,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                                   {<<"Last-Modified">>, rfc1123_date(Meta#metadata.timestamp)}],
+                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   RespObject, Req);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -227,7 +199,7 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
                                    {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)},
                                    {<<"ETag">>,           leo_hex:integer_to_hex(Meta#metadata.checksum)},
                                    {<<"Content-Length">>, Meta#metadata.dsize},
-                                   {<<"Last-Modified">>,  rfc1123_date(Meta#metadata.timestamp)}],
+                                   {<<"Last-Modified">>,  leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -279,7 +251,8 @@ exec(first, _, Req, _, _) ->
 
 %% @doc GET operation with Etag
 %%
-exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
+exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false,
+                                            has_inner_cache = true}, Cached) ->
     case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             cowboy_http_req:reply(200,
@@ -287,7 +260,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
                                    {<<"Content-Type">>,  Cached#cache.content_type},
                                    {<<"ETag">>,          leo_hex:integer_to_hex(Cached#cache.etag)},
                                    {<<"X-From-Cache">>,  <<"True">>},
-                                   {<<"Last-Modified">>, rfc1123_date(Cached#cache.mtime)}],
+                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Cached#cache.mtime)}],
                                   Cached#cache.body, Req);
         {ok, Meta, RespObject} ->
             Mime = mochiweb_util:guess_mime(Key),
@@ -302,7 +275,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
                                   [?SERVER_HEADER,
                                    {<<"Content-Type">>,  Mime},
                                    {<<"ETag">>,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                                   {<<"Last-Modified">>, rfc1123_date(Meta#metadata.timestamp)}],
+                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   RespObject, Req);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -312,6 +285,7 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = tr
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
     end.
 
+
 %% @doc get options from mochiweb.
 %%
 -spec(get_option(atom(), list()) ->
@@ -320,12 +294,4 @@ get_option(Option, Options) ->
     {proplists:get_value(Option, Options),
      proplists:delete(Option, Options)}.
 
-%% @doc RFC-1123 datetime.
-%%
--spec(rfc1123_date(integer()) ->
-             string()).
-rfc1123_date(Date) ->
-    httpd_util:rfc1123_date(
-      calendar:universal_time_to_local_time(
-        calendar:gregorian_seconds_to_datetime(Date))).
 

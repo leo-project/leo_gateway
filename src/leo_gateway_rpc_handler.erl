@@ -31,6 +31,7 @@
 -export([head/1,
          get/1,
          get/2,
+         get/3,
          delete/1,
          put/3,
          invoke/5
@@ -91,6 +92,18 @@ get(Key, ETag) ->
            [ReqParams#req_params.addr_id, Key, ETag, ReqParams#req_params.req_id],
            []).
 
+-spec(get(string(), integer(), integer()) ->
+             {ok, #metadata{}, binary()}|{error, any()}).
+get(Key, StartPos, EndPos) ->
+    _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
+    ReqParams = get_request_parameters(get, Key),
+    invoke(ReqParams#req_params.redundancies,
+           leo_storage_handler_object,
+           get,
+           [ReqParams#req_params.addr_id, Key, StartPos, EndPos, ReqParams#req_params.req_id],
+           []).
+
+
 %% @doc delete object
 %%
 -spec(delete(string()) ->
@@ -101,8 +114,10 @@ delete(Key) ->
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            delete,
-           [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [ReqParams#req_params.addr_id, Key,
+            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
            []).
+
 
 %% @doc put object
 %%
@@ -114,7 +129,8 @@ put(Key, Body, Size) ->
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            put,
-           [ReqParams#req_params.addr_id, Key, Body, Size, ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [ReqParams#req_params.addr_id, Key, Body, Size,
+            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
            []).
 
 
@@ -142,10 +158,11 @@ invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
         {value, {ok, _Meta} = Ret} ->
             Ret;
         %% error
-        Other ->
-            ErrorMsg = handle_error(Node, Mod, Method, Args, Other),
-            invoke(T, Mod, Method, Args, [ErrorMsg|Errors])
+        Error ->
+            E = handle_error(Node, Mod, Method, Args, Error),
+            invoke(T, Mod, Method, Args, [E|Errors])
     end.
+
 
 %% @doc get request parameters.
 %%
@@ -167,13 +184,15 @@ get_request_parameters(Method, Key) ->
                 req_id       = ReqId,
                 timestamp    = Timestamp}.
 
+
 %% @doc error messeage filtering.
 %%
-error_filter([?ERR_TYPE_INTERNAL_ERROR|_T])       -> ?ERR_TYPE_INTERNAL_ERROR;
+error_filter([not_found = Error|_T])              -> Error;
 error_filter([H|T])                               -> error_filter(T, H).
 error_filter([],                            Prev) -> Prev;
-error_filter([?ERR_TYPE_INTERNAL_ERROR|_T],_Prev) -> ?ERR_TYPE_INTERNAL_ERROR;
+error_filter([not_found = Error|_T],       _Prev) -> Error;
 error_filter([_H|T],                        Prev) -> error_filter(T, Prev).
+
 
 %% @doc handle an error response.
 %%
@@ -187,8 +206,8 @@ handle_error(Node, Mod, Method, _Args, {value, {badrpc, Cause}}) ->
     ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
           [Node, Mod, Method, Cause]),
     ?ERR_TYPE_INTERNAL_ERROR;
-handle_error(Node, Mod, Method, _Args, timeout) ->
+handle_error(Node, Mod, Method, _Args, timeout = Error) ->
     ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
-          [Node, Mod, Method, 'timeout']),
-    timeout.
+          [Node, Mod, Method, Error]),
+    Error.
 

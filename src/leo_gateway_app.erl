@@ -59,6 +59,7 @@
 start(_Type, _StartArgs) ->
     leo_gateway_deps:ensure(),
     App = leo_gateway,
+
     %% Launch Logger(s)
     DefLogDir = "./log/",
     LogDir    = case application:get_env(App, log_appender) of
@@ -68,6 +69,8 @@ start(_Type, _StartArgs) ->
                         DefLogDir
                 end,
     ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
+
+    %% Launch Supervisor
     Res = leo_gateway_sup:start_link(),
     after_process(Res).
 
@@ -89,12 +92,6 @@ after_process({ok, Pid} = Res) ->
     App = leo_gateway,
     ManagerNodes    = ?env_manager_nodes(App),
     NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
-
-    %% Launch a listener - [s3_http]
-    case ?env_listener() of
-        ?S3_HTTP ->
-            ok = leo_s3_http_api:start(Pid, App)
-    end,
 
     case ?get_several_info_from_manager(NewManagerNodes) of
         {{ok, SystemConf}, {ok, Members}} ->
@@ -125,6 +122,15 @@ after_process({ok, Pid} = Res) ->
                            (_, true) ->
                                 void
                         end, false, NewManagerNodes),
+
+            %% Launch S3Libs:Auth/Bucket/EndPoint
+            ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
+
+            %% Launch a listener - [s3_http]
+            case ?env_listener() of
+                ?S3_HTTP ->
+                    ok = leo_s3_http_api:start(Pid, App)
+            end,
             Res;
         Error ->
             io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
@@ -193,7 +199,7 @@ log_file_appender([], Acc) ->
     lists:reverse(Acc);
 log_file_appender([{Type, _}|T], Acc) when Type == file ->
     log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|[{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]);
+%% @TODO
 log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
-    %% @TODO
     log_file_appender(T, [{?LOG_ID_ZMQ, ?LOG_APPENDER_ZMQ}|Acc]).
 

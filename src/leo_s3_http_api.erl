@@ -56,8 +56,14 @@ start(Sup, AppName) ->
 start(Sup, mochiweb, S3_HTTP_Config) ->
     ListenPort     = proplists:get_value('port',             S3_HTTP_Config, 8080),
     NumOfAcceptors = proplists:get_value('num_of_acceptors', S3_HTTP_Config,   32),
+    SSLListenPort  = proplists:get_value('ssl_port',         S3_HTTP_Config, 8443),
+    SSLCertFile    = proplists:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
+    SSLKeyFile     = proplists:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
     io:format("*             port: ~p~n", [ListenPort]),
     io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
+    io:format("*         ssl port: ~p~n", [SSLListenPort]),
+    io:format("*     ssl certfile: ~p~n", [SSLCertFile]),
+    io:format("*      ssl keyfile: ~p~n", [SSLKeyFile]),
 
     HookModules =
         case proplists:get_value('cache_plugin', S3_HTTP_Config) of
@@ -87,6 +93,9 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
     WebConfig0 = [{ip, Ip},
                   {port, ListenPort},
                   {acceptor_pool_size, NumOfAcceptors},
+                  {ssl_port, SSLListenPort},
+                  {ssl_certfile, SSLCertFile},
+                  {ssl_keyfile, SSLKeyFile},
                   {docroot, "."}],
     WebConfig1 =
         case HookModules of

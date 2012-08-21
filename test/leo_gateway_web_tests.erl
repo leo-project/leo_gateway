@@ -25,9 +25,9 @@
 %%====================================================================
 -module(leo_gateway_web_tests).
 -author('Yoshiyuki Kanno').
--vsn('0.9.1').
 
 -include("leo_gateway.hrl").
+-include("leo_s3_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
@@ -79,7 +79,57 @@ api_mochiweb_test_() ->
 %%              fun put_object_normal1_/1
 %%             ]}}.
 
+-define(SSL_CERT_DATA,
+    "-----BEGIN CERTIFICATE-----\n" ++
+    "MIIDIDCCAgigAwIBAgIJAJLkNZzERPIUMA0GCSqGSIb3DQEBBQUAMBQxEjAQBgNV\n" ++
+    "BAMTCWxvY2FsaG9zdDAeFw0xMDAzMTgxOTM5MThaFw0yMDAzMTUxOTM5MThaMBQx\n" ++
+    "EjAQBgNVBAMTCWxvY2FsaG9zdDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC\n" ++
+    "ggEBAJeUCOZxbmtngF4S5lXckjSDLc+8C+XjMBYBPyy5eKdJY20AQ1s9/hhp3ulI\n" ++
+    "8pAvl+xVo4wQ+iBSvOzcy248Q+Xi6+zjceF7UNRgoYPgtJjKhdwcHV3mvFFrS/fp\n" ++
+    "9ggoAChaJQWDO1OCfUgTWXImhkw+vcDR11OVMAJ/h73dqzJPI9mfq44PTTHfYtgr\n" ++
+    "v4LAQAOlhXIAa2B+a6PlF6sqDqJaW5jLTcERjsBwnRhUGi7JevQzkejujX/vdA+N\n" ++
+    "jRBjKH/KLU5h3Q7wUchvIez0PXWVTCnZjpA9aR4m7YV05nKQfxtGd71czYDYk+j8\n" ++
+    "hd005jetT4ir7JkAWValBybJVksCAwEAAaN1MHMwHQYDVR0OBBYEFJl9s51SnjJt\n" ++
+    "V/wgKWqV5Q6jnv1ZMEQGA1UdIwQ9MDuAFJl9s51SnjJtV/wgKWqV5Q6jnv1ZoRik\n" ++
+    "FjAUMRIwEAYDVQQDEwlsb2NhbGhvc3SCCQCS5DWcxETyFDAMBgNVHRMEBTADAQH/\n" ++
+    "MA0GCSqGSIb3DQEBBQUAA4IBAQB2ldLeLCc+lxK5i0EZquLamMBJwDIjGpT0JMP9\n" ++
+    "b4XQOK2JABIu54BQIZhwcjk3FDJz/uOW5vm8k1kYni8FCjNZAaRZzCUfiUYTbTKL\n" ++
+    "Rq9LuIAODyP2dnTqyKaQOOJHvrx9MRZ3XVecXPS0Tib4aO57vCaAbIkmhtYpTWmw\n" ++
+    "e3t8CAIDVtgvjR6Se0a1JA4LktR7hBu22tDImvCSJn1nVAaHpani6iPBPPdMuMsP\n" ++
+    "TBoeQfj8VpqBUjCStqJGa8ytjDFX73YaxV2mgrtGwPNme1x3YNRR11yTu7tksyMO\n" ++
+    "GrmgxNriqYRchBhNEf72AKF0LR1ByKwfbDB9rIsV00HtCgOp\n" ++
+    "-----END CERTIFICATE-----\n").
+-define(SSL_KEY_DATA,
+    "-----BEGIN RSA PRIVATE KEY-----\n" ++
+    "MIIEpAIBAAKCAQEAl5QI5nFua2eAXhLmVdySNIMtz7wL5eMwFgE/LLl4p0ljbQBD\n" ++
+    "Wz3+GGne6UjykC+X7FWjjBD6IFK87NzLbjxD5eLr7ONx4XtQ1GChg+C0mMqF3Bwd\n" ++
+    "Xea8UWtL9+n2CCgAKFolBYM7U4J9SBNZciaGTD69wNHXU5UwAn+Hvd2rMk8j2Z+r\n" ++
+    "jg9NMd9i2Cu/gsBAA6WFcgBrYH5ro+UXqyoOolpbmMtNwRGOwHCdGFQaLsl69DOR\n" ++
+    "6O6Nf+90D42NEGMof8otTmHdDvBRyG8h7PQ9dZVMKdmOkD1pHibthXTmcpB/G0Z3\n" ++
+    "vVzNgNiT6PyF3TTmN61PiKvsmQBZVqUHJslWSwIDAQABAoIBACI8Ky5xHDFh9RpK\n" ++
+    "Rn/KC7OUlTpADKflgizWJ0Cgu2F9L9mkn5HyFHvLHa+u7CootbWJOiEejH/UcBtH\n" ++
+    "WyMQtX0snYCpdkUpJv5wvMoebGu+AjHOn8tfm9T/2O6rhwgckLyMb6QpGbMo28b1\n" ++
+    "p9QiY17BJPZx7qJQJcHKsAvwDwSThlb7MFmWf42LYWlzybpeYQvwpd+UY4I0WXLu\n" ++
+    "/dqJIS9Npq+5Y5vbo2kAEAssb2hSCvhCfHmwFdKmBzlvgOn4qxgZ1iHQgfKI6Z3Y\n" ++
+    "J0573ZgOVTuacn+lewtdg5AaHFcl/zIYEr9SNqRoPNGbPliuv6k6N2EYcufWL5lR\n" ++
+    "sCmmmHECgYEAxm+7OpepGr++K3+O1e1MUhD7vSPkKJrCzNtUxbOi2NWj3FFUSPRU\n" ++
+    "adWhuxvUnZgTcgM1+KuQ0fB2VmxXe9IDcrSFS7PKFGtd2kMs/5mBw4UgDZkOQh+q\n" ++
+    "kDiBEV3HYYJWRq0w3NQ/9Iy1jxxdENHtGmG9aqamHxNtuO608wGW2S8CgYEAw4yG\n" ++
+    "ZyAic0Q/U9V2OHI0MLxLCzuQz17C2wRT1+hBywNZuil5YeTuIt2I46jro6mJmWI2\n" ++
+    "fH4S/geSZzg2RNOIZ28+aK79ab2jWBmMnvFCvaru+odAuser4N9pfAlHZvY0pT+S\n" ++
+    "1zYX3f44ygiio+oosabLC5nWI0zB2gG8pwaJlaUCgYEAgr7poRB+ZlaCCY0RYtjo\n" ++
+    "mYYBKD02vp5BzdKSB3V1zeLuBWM84pjB6b3Nw0fyDig+X7fH3uHEGN+USRs3hSj6\n" ++
+    "BqD01s1OT6fyfbYXNw5A1r+nP+5h26Wbr0zblcKxdQj4qbbBZC8hOJNhqTqqA0Qe\n" ++
+    "MmzF7jiBaiZV/Cyj4x1f9BcCgYEAhjL6SeuTuOctTqs/5pz5lDikh6DpUGcH8qaV\n" ++
+    "o6aRAHHcMhYkZzpk8yh1uUdD7516APmVyvn6rrsjjhLVq4ZAJjwB6HWvE9JBN0TR\n" ++
+    "bILF+sREHUqU8Zn2Ku0nxyfXCKIOnxlx/J/y4TaGYqBqfXNFWiXNUrjQbIlQv/xR\n" ++
+    "K48g/MECgYBZdQlYbMSDmfPCC5cxkdjrkmAl0EgV051PWAi4wR+hLxIMRjHBvAk7\n" ++
+    "IweobkFvT4TICulgroLkYcSa5eOZGxB/DHqcQCbWj3reFV0VpzmTDoFKG54sqBRl\n" ++
+    "vVntGt0pfA40fF17VoS7riAdHF53ippTtsovHEsg5tq5NrBl5uKm2g==\n" ++
+    "-----END RSA PRIVATE KEY-----\n").
+
 setup(InitFun, TermFun) ->
+    ok = leo_logger_client_message:new("./", ?LOG_LEVEL_WARN),
     io:format(user, "cwd:~p~n",[os:cmd("pwd")]),
     [] = os:cmd("epmd -daemon"),
     {ok, Hostname} = inet:gethostname(),
@@ -97,13 +147,18 @@ setup(InitFun, TermFun) ->
                                            n = 2, r = 1, w = 1, d = 1}}
                 end),
     code:add_path("../cherly/ebin"),
+    ok = file:write_file("./cert.pem", ?SSL_CERT_DATA),
+    ok = file:write_file("./key.pem",  ?SSL_KEY_DATA),
     InitFun(),
 
     inets:start(),
     [TermFun, Node0, Node1].
 
 setup_mochiweb() ->
-    InitFun = fun() -> leo_s3_http_mochi:start([{port,8080}]) end,
+    InitFun = fun() -> leo_s3_http_mochi:start([{port,8080},
+                                                {ssl_port,8443},
+                                                {ssl_certfile,"./cert.pem"},
+                                                {ssl_keyfile, "./key.pem"}]) end,
     TermFun = fun() -> leo_s3_http_mochi:stop() end,
     setup(InitFun, TermFun).
 
@@ -144,14 +199,14 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
     timer:sleep(150),
 
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-    ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir, 1, {ok, []}]),
+    ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir, 4, {ok, []}]),
     try
-        {ok, {SC,_Body}} = httpc:request(get, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b?prefix=pre",[]}, [], [{full_result, false}]),
-        ?assertEqual(200, SC)
-
-        %% TODO
-        %% Xml = io_lib:format(?XML_OBJ_LIST, [""]),
-        %% ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body))
+        {ok, {SC, Body}} = httpc:request(
+                             get, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b?prefix=pre",[]},
+                             [], [{full_result, false}]),
+        ?assertEqual(200, SC),
+        Xml = io_lib:format(?XML_OBJ_LIST, ["pre", ""]),
+        ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body))
     catch
         throw:Reason ->
             throw(Reason)
@@ -164,16 +219,16 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
     timer:sleep(150),
 
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-    ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir, 1, {ok, [
-                                                                                                    {metadata, "leofs/a/b/pre", 0, 4, 0, 0, 0, 1, [], 0, 0, 19740926, 0, 0}]}]),
+    ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
+                                        4, {ok,
+                                            [{metadata, "localhost/a/b/pre/test.png", 0, 8, 0, 0, 0, 1, [], 0, 63511805822, 19740926, 0, 0}]}]),
     try
-        {ok, {SC,_Body}} = httpc:request(get, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b?prefix=pre",[]}, [], [{full_result, false}]),
-        ?assertEqual(500, SC)
-
-        %% TODO
-        %% ?assertEqual(200, SC)
-        %% {_XmlDoc, Rest} = xmerl_scan:string(Body),
-        %% ?assertEqual([], Rest)
+        {ok, {SC,Body}} = httpc:request(
+                              get, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b?prefix=pre",[]},
+                              [], [{full_result, false}]),
+        ?assertEqual(200, SC),
+        {_XmlDoc, Rest} = xmerl_scan:string(Body),
+        ?assertEqual([], Rest)
     catch
         throw:Reason ->
             throw(Reason)
@@ -290,71 +345,86 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
     ok = rpc:call(Node0, meck, expect, [leo_storage_handler_object, delete, 4, {error, not_found}]),
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, {error, not_found}]),
+    meck:new(leo_s3_auth),
+    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[]}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}]}, [], [{full_result, false}]),
         ?assertEqual(404, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
         ok = rpc:call(Node0, meck, unload, [leo_storage_handler_object]),
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth)
     end,
     ok.
 
 delete_object_error_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, {error, foobar}]),
+    meck:new(leo_s3_auth),
+    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[]}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}]}, [], [{full_result, false}]),
         ?assertEqual(500, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth)
     end,
     ok.
 
 delete_object_normal1_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, ok]),
+    meck:new(leo_s3_auth),
+    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[]}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(delete, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}]}, [], [{full_result, false}]),
         ?assertEqual(204, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth)
     end,
     ok.
 
 put_object_error_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 6, {error, foobar}]),
+    meck:new(leo_s3_auth),
+    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[], "image/png", "body"}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}], "image/png", "body"}, [], [{full_result, false}]),
         ?assertEqual(500, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth)
     end,
     ok.
 
 put_object_normal1_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 6, ok]),
+    meck:new(leo_s3_auth),
+    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
     try
-        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[], "image/png", "body"}, [], [{full_result, false}]),
+        {ok, {SC, _Body}} = httpc:request(put, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"Authorization","auth"}], "image/png", "body"}, [], [{full_result, false}]),
         ?assertEqual(200, SC)
     catch
         throw:Reason ->
             throw(Reason)
     after
-        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+        ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+        ok = meck:unload(leo_s3_auth)
     end,
     ok.
 -endif.
