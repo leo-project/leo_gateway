@@ -137,15 +137,16 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                 {error, _Cause} ->
                     Req:respond({403, [?SERVER_HEADER], []});
                 {ok, AccessKeyId} ->
-                    case catch exec1(HTTPMethod, Req, Path2, #req_params{token_length     = TokenLen,
-                                                                         access_key_id    = AccessKeyId,
-                                                                         min_layers       = NumOfMinLayers,
-                                                                         max_layers       = NumOfMaxLayers,
-                                                                         has_inner_cache  = HasInnerCache,
-                                                                         range_header     = Req:get_header_value(?HTTP_HEAD_RANGE),
-                                                                         is_dir           = IsDir,
-                                                                         is_cached        = true,
-                                                                         qs_prefix        = Prefix}) of
+                    case catch exec1(HTTPMethod, Req, Path2,
+                                     #req_params{token_length     = TokenLen,
+                                                 access_key_id    = AccessKeyId,
+                                                 min_layers       = NumOfMinLayers,
+                                                 max_layers       = NumOfMaxLayers,
+                                                 has_inner_cache  = HasInnerCache,
+                                                 range_header     = Req:get_header_value(?HTTP_HEAD_RANGE),
+                                                 is_dir           = IsDir,
+                                                 is_cached        = true,
+                                                 qs_prefix        = Prefix}) of
                         {'EXIT', Reason} ->
                             ?error("loop1/4", "path:~p, reason:~p", [Path2, Reason]),
                             Req:respond({500, [?SERVER_HEADER], []});
@@ -232,20 +233,20 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 
 %% @doc GET operation on Object with Range Header.
 %%
-exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false, 
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                                        range_header = RangeHeader}) when RangeHeader =/= undefined ->
     [_,ByteRangeSpec|_] = string:tokens(RangeHeader, "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
-        1 ->
-            [StartStr|_] = ByteRangeSet,
-            {list_to_integer(StartStr), 0};
-        2 ->
-            [StartStr,EndStr|_] = ByteRangeSet,
-            {list_to_integer(StartStr), list_to_integer(EndStr) + 1};
-        _ ->
-            {undefined, undefined}
-    end,
+                       1 ->
+                           [StartStr|_] = ByteRangeSet,
+                           {list_to_integer(StartStr), 0};
+                       2 ->
+                           [StartStr,EndStr|_] = ByteRangeSet,
+                           {list_to_integer(StartStr), list_to_integer(EndStr) + 1};
+                       _ ->
+                           {undefined, undefined}
+                   end,
     case Start of
         undefined ->
             Req:respond({416, [?SERVER_HEADER], []});
@@ -383,7 +384,7 @@ do_put(undefined, Req, Key, _Params) ->
             Req:respond({504, [?SERVER_HEADER], []})
     end;
 
-%% @doc POST/PUT operation on Objects. COPY/REPLACE 
+%% @doc POST/PUT operation on Objects. COPY/REPLACE
 %%
 do_put(Directive, Req, Key, _Params) ->
     CS = Req:get_header_value(?HTTP_HEAD_X_AMZ_COPY_SOURCE),
@@ -419,19 +420,19 @@ do_put_3(Req, Meta) ->
     case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
         ok ->
             resp_copyobj_xml(Req, Meta);
-       {error, not_found} ->
+        {error, not_found} ->
             resp_copyobj_xml(Req, Meta);
-       {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
             Req:respond({504, [?SERVER_HEADER], []})
     end.
 
 resp_copyobj_xml(Req, Meta) ->
-    XML = io_lib:format(?XML_COPY_OBJ_RESULT, 
+    XML = io_lib:format(?XML_COPY_OBJ_RESULT,
                         [leo_http:web_date(Meta#metadata.timestamp),
                          leo_hex:integer_to_hex(Meta#metadata.checksum)]),
-    Req:respond({200, [?SERVER_HEADER, 
+    Req:respond({200, [?SERVER_HEADER,
                        {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
                        {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_utils:now())}
                       ], XML}).

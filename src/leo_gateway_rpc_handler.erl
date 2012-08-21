@@ -114,7 +114,8 @@ delete(Key) ->
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            delete,
-           [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [ReqParams#req_params.addr_id, Key,
+            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
            []).
 
 
@@ -128,7 +129,8 @@ put(Key, Body, Size) ->
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            put,
-           [ReqParams#req_params.addr_id, Key, Body, Size, ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [ReqParams#req_params.addr_id, Key, Body, Size,
+            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
            []).
 
 
@@ -137,6 +139,7 @@ put(Key, Body, Size) ->
 -spec(invoke(list(), atom(), atom(), list(), list()) ->
              ok|{ok, any()}|{error, any()}).
 invoke([], _Mod, _Method, _Args, Errors) ->
+    ?debugVal(Errors),
     {error, error_filter(Errors)};
 invoke([{_, false}|T], Mod, Method, Args, Errors) ->
     invoke(T, Mod, Method, Args, [?ERR_TYPE_INTERNAL_ERROR|Errors]);
@@ -156,9 +159,9 @@ invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
         {value, {ok, _Meta} = Ret} ->
             Ret;
         %% error
-        Other ->
-            ErrorMsg = handle_error(Node, Mod, Method, Args, Other),
-            invoke(T, Mod, Method, Args, [ErrorMsg|Errors])
+        Error ->
+            E = handle_error(Node, Mod, Method, Args, Error),
+            invoke(T, Mod, Method, Args, [E|Errors])
     end.
 
 
@@ -185,10 +188,10 @@ get_request_parameters(Method, Key) ->
 
 %% @doc error messeage filtering.
 %%
-error_filter([?ERR_TYPE_INTERNAL_ERROR|_T])       -> ?ERR_TYPE_INTERNAL_ERROR;
+error_filter([not_found = Error|_T])              -> Error;
 error_filter([H|T])                               -> error_filter(T, H).
 error_filter([],                            Prev) -> Prev;
-error_filter([?ERR_TYPE_INTERNAL_ERROR|_T],_Prev) -> ?ERR_TYPE_INTERNAL_ERROR;
+error_filter([not_found = Error|_T],       _Prev) -> Error;
 error_filter([_H|T],                        Prev) -> error_filter(T, Prev).
 
 
@@ -204,8 +207,8 @@ handle_error(Node, Mod, Method, _Args, {value, {badrpc, Cause}}) ->
     ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
           [Node, Mod, Method, Cause]),
     ?ERR_TYPE_INTERNAL_ERROR;
-handle_error(Node, Mod, Method, _Args, timeout) ->
+handle_error(Node, Mod, Method, _Args, timeout = Error) ->
     ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
-          [Node, Mod, Method, 'timeout']),
-    timeout.
+          [Node, Mod, Method, Error]),
+    Error.
 
