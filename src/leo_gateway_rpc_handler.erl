@@ -139,7 +139,6 @@ put(Key, Body, Size) ->
 -spec(invoke(list(), atom(), atom(), list(), list()) ->
              ok|{ok, any()}|{error, any()}).
 invoke([], _Mod, _Method, _Args, Errors) ->
-    ?debugVal(Errors),
     {error, error_filter(Errors)};
 invoke([{_, false}|T], Mod, Method, Args, Errors) ->
     invoke(T, Mod, Method, Args, [?ERR_TYPE_INTERNAL_ERROR|Errors]);
