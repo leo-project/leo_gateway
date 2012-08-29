@@ -421,7 +421,7 @@ do_put_2(Directive, Req, Key, Meta, Bin) ->
         {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY, ok} ->
             resp_copyobj_xml(Req, Meta);
         {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
-            do_put_3(Req, Meta);
+            do_put_3(Req, Key, Meta);
         {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
             Req:respond({500, [?SERVER_HEADER], []});
         {_, {error, timeout}} ->
@@ -430,7 +430,9 @@ do_put_2(Directive, Req, Key, Meta, Bin) ->
 
 %% @doc POST/PUT operation on Objects. REPLACE
 %%
-do_put_3(Req, Meta) ->
+do_put_3(Req, Key, Meta) when Key == Meta#metadata.key ->
+    resp_copyobj_xml(Req, Meta);
+do_put_3(Req, _Key, Meta) ->
     case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
         ok ->
             resp_copyobj_xml(Req, Meta);
