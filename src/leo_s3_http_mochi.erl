@@ -387,12 +387,26 @@ do_put(undefined, Req, Key, _Params) ->
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %%
 do_put(Directive, Req, Key, _Params) ->
+    case Req:get_header_value(?HTTP_HEAD_EXPECT) of
+        ?HTTP_HEAD_100_CONTINUE ->
+            Req:respond({100, [?SERVER_HEADER], []});
+        _ ->
+            void
+    end,
     CS = Req:get_header_value(?HTTP_HEAD_X_AMZ_COPY_SOURCE),
-    case leo_gateway_rpc_handler:get(CS) of
+    % need to trim head '/' when cooperating with s3fs(-c)
+    CS2 = case string:left(CS, 1) of
+        "/" ->
+            [_H|Rest] = CS,
+            Rest;
+        _ ->
+            CS
+    end,
+    case leo_gateway_rpc_handler:get(CS2) of
         {ok, Meta, RespObject} ->
             do_put_2(Directive, Req, Key, Meta, RespObject);
         {error, not_found} ->
-            Req:respond({500, [?SERVER_HEADER], []});
+            Req:respond({404, [?SERVER_HEADER], []});
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
