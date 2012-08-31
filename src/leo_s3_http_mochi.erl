@@ -301,7 +301,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
             Req:respond({200,
                          [?SERVER_HEADER,
                           {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                          {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                          {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
                           {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->
@@ -320,7 +320,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
             Req:start_response_length({200,
                                        [?SERVER_HEADER,
                                         {?HTTP_HEAD_CONTENT_TYPE,  mochiweb_util:guess_mime(Key)},
-                                        {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                                        {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
                                         {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                        Meta#metadata.dsize});
         {ok, #metadata{del = 1}} ->
@@ -447,7 +447,7 @@ do_put_3(Req, _Key, Meta) ->
 resp_copyobj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
                         [leo_http:web_date(Meta#metadata.timestamp),
-                         leo_hex:integer_to_hex(Meta#metadata.checksum)]),
+                         erlang:integer_to_list(Meta#metadata.checksum, 16)]),
     Req:respond({200, [?SERVER_HEADER,
                        {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
                        {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_utils:now())}
@@ -461,7 +461,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             Req:respond({200,
                          [?SERVER_HEADER,
                           {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
-                          {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Cached#cache.etag)},
+                          {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Cached#cache.etag, 16)},
                           {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
                           {"X-From-Cache", "True"}],
                          Cached#cache.body});
@@ -475,7 +475,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             Req:respond({200,
                          [?SERVER_HEADER,
                           {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                          {?HTTP_HEAD_ETAG,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
+                          {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
                           {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                          RespObject});
         {error, not_found} ->
