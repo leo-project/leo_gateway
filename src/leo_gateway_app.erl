@@ -148,7 +148,7 @@ after_process(Error) ->
 get_system_config_from_manager([]) ->
     {error, 'could_not_get_system_config'};
 get_system_config_from_manager([Manager|T]) ->
-    case leo_utils:node_existence(Manager) of
+    case leo_misc:node_existence(Manager) of
         true ->
             case rpc:call(Manager, leo_manager_api, get_system_config, [], ?DEF_TIMEOUT) of
                 {ok, SystemConf} ->

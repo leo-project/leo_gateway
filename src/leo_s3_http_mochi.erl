@@ -178,7 +178,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req:respond({200, [?SERVER_HEADER,
                                {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
-                               {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_utils:now())}
+                               {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_date:now())}
                               ], XML});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
@@ -450,7 +450,7 @@ resp_copyobj_xml(Req, Meta) ->
                          erlang:integer_to_list(Meta#metadata.checksum, 16)]),
     Req:respond({200, [?SERVER_HEADER,
                        {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
-                       {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_utils:now())}
+                       {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_date:now())}
                       ], XML}).
 
 %% @doc GET operation with Etag

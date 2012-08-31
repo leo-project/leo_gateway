@@ -87,7 +87,7 @@ register_in_monitor(RequestedTimes) ->
         Pid ->
             Fun = fun(Node, false) ->
                           NodeAtom = list_to_atom(Node),
-                          case leo_utils:node_existence(NodeAtom) of
+                          case leo_misc:node_existence(NodeAtom) of
                               true ->
                                   case rpc:call(NodeAtom, leo_manager_api, register,
                                                 [RequestedTimes, Pid, erlang:node(), gateway], ?DEF_TIMEOUT) of
