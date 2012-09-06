@@ -36,7 +36,11 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+-undef(SERVER_HEADER).
+-define(SERVER_HEADER,   {<<"Server">>,<<"LeoFS">>}).
 
 %%--------------------------------------------------------------------
 %% API
@@ -47,8 +51,11 @@
              ok).
 start(Options) ->
     {_DocRoot, Options1} = get_option(docroot, Options),
-    {PoolSize, Options2} = get_option(acceptor_pool_size, Options1),
-    HookModules = proplists:get_value(hook_modules, Options2),
+    {SSLPort,  Options2} = get_option(ssl_port,     Options1),
+    {SSLCert,  Options3} = get_option(ssl_certfile, Options2),
+    {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
+    {PoolSize, Options5} = get_option(acceptor_pool_size, Options4),
+    HookModules = proplists:get_value(hook_modules, Options5),
 
     HasInnerCache = HookModules =:= undefined,
     case HasInnerCache of
@@ -65,91 +72,128 @@ start(Options) ->
                        {'_', ?MODULE, [LayerOfDirs, HasInnerCache]}
                       ]}
                ],
-    cowboy:start_listener(leo_gateway_http_listener, PoolSize,
-                          cowboy_tcp_transport, Options2,
+    cowboy:start_listener(?MODULE, PoolSize,
+                          cowboy_tcp_transport, [{max_keepalive, 0}|Options5],
                           cowboy_http_protocol, [{dispatch, Dispatch}]
-                         ).
+                         ),
+    cowboy:start_listener(ssl_proc_name(), PoolSize,
+		          cowboy_ssl_transport, [
+			      {max_keepalive, 0}, 
+			      {port, SSLPort}, 
+                              {certfile, SSLCert},
+			      {keyfile, SSLKey}],
+		          cowboy_http_protocol, [{dispatch, Dispatch}]
+	).
 
 -spec(stop() ->
              ok).
 stop() ->
-    cowboy:stop_listener(leo_gateway_http_listener).
+    cowboy:stop_listener(?MODULE),
+    cowboy:stop_listener(ssl_proc_name()).
+
+%% @doc ssl process name
+ssl_proc_name() ->
+    list_to_atom(?MODULE_STRING ++ "_ssl").
 
 %% cowboy http handlers
 init({_Any, http}, Req, Opts) ->
     {ok, Req, Opts}.
 
-handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State) ->
-    {SplitHost, _Req} = cowboy_http_req:host(Req),
-    case SplitHost of
-        [H|T] when length(T) =:= 0 ->
-            ?error("loop/3", "invalid hostname due to lack of a subdomain, host:~p~n", [H]),
-            {ok, Req2} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req),
-            {ok, Req2, State};
-        [Sub|_T] ->
-            {RawPath, _Req} = cowboy_http_req:raw_path(Req),
-            BinPath = <<Sub/binary, RawPath/binary>>,
-            Path = erlang:binary_to_list(BinPath),
-            io:format("path:~w~n",[Path]),
-            handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache], Path)
-    end.
+handle(Req, State) ->
+    EndPoints1 = case leo_s3_endpoint:get_endpoints() of
+                     {ok, EndPoints0} ->
+                         lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
+                     _ -> []
+                 end,
+    {BinHost, _} = cowboy_http_req:raw_host(Req),
+    {BinRawPath, _} = cowboy_http_req:raw_path(Req),
+    BinPath = cowboy_http:urldecode(BinRawPath),
+    Key = leo_http:key(EndPoints1, binary_to_list(BinHost), binary_to_list(BinPath)),
+    handle(Req, State, Key).
 
-handle(Req0, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
-    Length = erlang:length(string:tokens(Path, ?STR_SLASH)),
-    {HTTPMethod, Req1} = case cowboy_http_req:method(Req0) of
-                             {?HTTP_POST, _Req1} -> {?HTTP_PUT, _Req1};
-                             {Other, _Req1}      -> {Other,     _Req1}
-                         end,
+handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
 
-    {Prefix, IsDir, Req2} =
-        case cowboy_http_req:qs_val(?QUERY_PREFIX, Req1) of
-            {undefined, _Req2} ->
-                {undefined, false, _Req2};
-            {Param, _Req2} ->
-                {binary_to_list(Param), true, _Req2}
-        end,
+    HTTPMethod = case cowboy_http_req:method(Req) of
+                     {?HTTP_POST, _} -> ?HTTP_PUT;
+                     {Other, _}      -> Other
+                 end,
 
-    case catch exec(first, HTTPMethod, Req2, Path, #req_params{
-                                               token_length     = Length,
-                                               min_layers       = NumOfMinLayers,
-                                               max_layers       = NumOfMaxLayers,
-                                               has_inner_cache  = HasInnerCache,
-                                               is_dir           = IsDir,
-                                               qs_prefix        = Prefix
-                                              }) of
-        {'EXIT', Reason} ->
-            ?error("loop/3", "path:~w, reason:~w", [Path, Reason]),
-            {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
-            {ok, Req3, State};
-        {ok, Req4} ->
-            erlang:garbage_collect(self()),
-            {ok, Req4, State}
+    {Prefix, IsDir, Path2, Req2} = case cowboy_http_req:qs_val(<<"prefix">>, Req) of
+                                       {undefined, Req1} ->
+                                           HasTermSlash = case string:right(Path, 1) of
+                                               ?STR_SLASH -> true;
+                                               _Else      -> false
+                                           end,
+                                           {none, HasTermSlash, Path, Req1};
+                                       {BinParam, Req1} ->
+                                           NewPath = case string:right(Path, 1) of
+                                               ?STR_SLASH -> Path;
+                                               _Else      -> Path ++ ?STR_SLASH
+                                           end,
+                                           {binary_to_list(BinParam), true, NewPath, Req1}
+                                   end,
+    TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
+
+?info("loop1/4", "req:~p, path:~p", [Req2, Path2]),
+
+    case cowboy_http_req:qs_val(<<"acl">>, Req2) of
+        {undefined, _} ->
+            case catch auth(Req2, HTTPMethod, Path2, TokenLen) of
+                {error, _Cause} ->
+                    {ok, Req3} = cowboy_http_req:reply(403, [?SERVER_HEADER], Req2),
+                    {ok, Req3, State};
+                {ok, AccessKeyId} ->
+                    {RangeHeader, _} = cowboy_http_req:header('Range', Req2),
+                    case catch exec1(HTTPMethod, Req2, Path2,
+                                     #req_params{token_length     = TokenLen,
+                                                 access_key_id    = AccessKeyId,
+                                                 min_layers       = NumOfMinLayers,
+                                                 max_layers       = NumOfMaxLayers,
+                                                 has_inner_cache  = HasInnerCache,
+                                                 range_header     = RangeHeader,
+                                                 is_dir           = IsDir,
+                                                 is_cached        = true,
+                                                 qs_prefix        = Prefix}) of
+                        {'EXIT', Reason} ->
+                            ?error("loop1/4", "path:~p, reason:~p", [Path2, Reason]),
+                            {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
+                            {ok, Req3, State};
+                        {ok, Req3} ->
+                            Req4 = cowboy_http_req:compact(Req3),
+                            %erlang:garbage_collect(self()),
+                            {ok, Req4, State}
+                    end;
+                {'EXIT', Reason} ->
+                    ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
+                    {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
+                    {ok, Req3, State}
+            end;
+        _ ->
+            {ok, Req3} = cowboy_http_req:reply(404, [?SERVER_HEADER], Req2),
+            {ok, Req3, State}
     end.
 
 terminate(_Req, _State) ->
     ok.
 
-
-%%--------------------------------------------------------------------
-%%% INTERNAL FUNCTIONS
-%%--------------------------------------------------------------------
 %% @doc constraint violation.
 %%
-exec(first, _HTTPMethod, Req,_Key, #req_params{token_length = Len,
-                                               min_layers   = Min,
-                                               max_layers   = Max}) when Len < (Min - 1);
-                                                                         Len > Max ->
+exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
+                                         max_layers   = Max}) when Len > Max ->
     cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
 
-%% @doc operations on buckets.
+%% @doc GET operation on buckets & Dirs.
 %%
-exec(first, ?HTTP_GET, Req, Key, #req_params{token_length  = _TokenLen,
-                                             is_dir        = true,
-                                             access_key_id = AccessKeyId,
-                                             qs_prefix     = Prefix}) ->
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
+                                       access_key_id = AccessKeyId,
+                                       qs_prefix     = Prefix}) ->
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
-            cowboy_http_req:reply(200, [?SERVER_HEADER], XML, Req);
+            {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
+            cowboy_http_req:reply(200, [?SERVER_HEADER,
+                               {<<"Content-Type">>, "application/xml"},
+                               {<<"Date">>, leo_http:rfc1123_date(leo_date:now())}
+                              ], Req2);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -158,29 +202,123 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{token_length  = _TokenLen,
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
     end;
 
+%% @doc PUT operation on buckets.
+%%
+exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
+                                       access_key_id = AccessKeyId}) ->
+    case leo_s3_http_bucket:put_bucket(AccessKeyId, Key) of
+        ok ->
+            cowboy_http_req:reply(200, [?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
+        {error, timeout} ->
+            cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
+    end;
+
+%% @doc DELETE operation on buckets.
+%%
+exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
+                                          access_key_id = AccessKeyId}) ->
+    case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
+        ok ->
+            cowboy_http_req:reply(204, [?SERVER_HEADER], Req);
+        not_found ->
+            cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
+        {error, timeout} ->
+            cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
+    end;
+
+%% @doc HEAD operation on buckets.
+%%
+exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
+                                        access_key_id = AccessKeyId}) ->
+    case leo_s3_http_bucket:head_bucket(AccessKeyId, Key) of
+        ok ->
+            cowboy_http_req:reply(200, [?SERVER_HEADER], Req);
+        not_found ->
+            cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
+        {error, timeout} ->
+            cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
+    end;
+
+%% @doc GET operation on Object with Range Header.
+%%
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
+                                       range_header = RangeHeader}) when RangeHeader =/= undefined ->
+    [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
+    ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
+    {Start, End} = case length(ByteRangeSet) of
+                       1 ->
+                           [StartStr|_] = ByteRangeSet,
+                           {list_to_integer(StartStr), 0};
+                       2 ->
+                           [StartStr,EndStr|_] = ByteRangeSet,
+                           {list_to_integer(StartStr), list_to_integer(EndStr) + 1};
+                       _ ->
+                           {undefined, undefined}
+                   end,
+    case Start of
+        undefined ->
+            cowboy_http_req:reply(416, [?SERVER_HEADER], Req);
+        _ ->
+            case leo_gateway_rpc_handler:get(Key, Start, End) of
+                {ok, _Meta, RespObject} ->
+                    Mime = mochiweb_util:guess_mime(Key),
+                    {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
+                    cowboy_http_req:reply(206,
+                                 [?SERVER_HEADER,
+                                  {<<"Content-Type">>,  Mime}],
+                                 Req2);
+                {error, not_found} ->
+                    cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
+                {error, timeout} ->
+                    cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
+            end
+    end;
+
 %% @doc GET operation on Object if inner cache is enabled.
 %%
-exec(first, ?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir          = false,
-                                                          has_inner_cache = true} = Params) ->
+exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
+                                                    is_cached = true,
+                                                    has_inner_cache = true} = Params) ->
     case ecache_server:get(Key) of
         undefined ->
-            exec(first, HTTPMethod, Req, Key, Params#req_params{has_inner_cache = false});
+            exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         BinCached ->
             Cached = binary_to_term(BinCached),
-            exec(next, HTTPMethod, Req, Key, Params, Cached)
+            exec2(HTTPMethod, Req, Key, Params, Cached)
     end;
 
 %% @doc GET operation on Object.
 %%
-exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false}) ->
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         {ok, Meta, RespObject} ->
+            Mime = mochiweb_util:guess_mime(Key),
+
+            case HasInnerCache of
+                true ->
+                    BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
+                                                   mtime = Meta#metadata.timestamp,
+                                                   content_type = Mime,
+                                                   body = RespObject}),
+                    ecache_server:set(Key, BinVal);
+                _ ->
+                    ok
+            end,
+            {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
-                                  [?SERVER_HEADER,
-                                   {<<"Content-Type">>,  mochiweb_util:guess_mime(Key)},
-                                   {<<"ETag">>,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
-                                  RespObject, Req);
+                         [?SERVER_HEADER,
+                          {<<"Content-Type">>,  Mime},
+                          {<<"Etag">>,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                          {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                         Req2);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -191,15 +329,15 @@ exec(first, ?HTTP_GET, Req, Key, #req_params{is_dir = false}) ->
 
 %% @doc HEAD operation on Object.
 %%
-exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
+exec1(?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)},
-                                   {<<"ETag">>,           leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                                   {<<"Content-Length">>, Meta#metadata.dsize},
-                                   {<<"Last-Modified">>,  leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                                  {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)},
+                                  {<<"Etag">>,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                  {<<"Content-Length">>, Meta#metadata.dsize},
+                                  {<<"Last-Modified">>,  leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -213,7 +351,7 @@ exec(first, ?HTTP_HEAD, Req, Key, #req_params{is_dir = false}) ->
 
 %% @doc DELETE operation on Object.
 %%
-exec(first, ?HTTP_DELETE, Req, Key, #req_params{is_dir = false}) ->
+exec1(?HTTP_DELETE, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             cowboy_http_req:reply(204, [?SERVER_HEADER], Req);
@@ -227,11 +365,22 @@ exec(first, ?HTTP_DELETE, Req, Key, #req_params{is_dir = false}) ->
 
 %% @doc POST/PUT operation on Objects.
 %%
-exec(first, ?HTTP_PUT, Req, Key, #req_params{is_dir = false}) ->
+exec1(?HTTP_PUT, Req, Key, Params) ->
+    do_put(get_header(Req, <<"X-Amz-Metadata-Directive">>), Req, Key, Params);
+
+%% @doc invalid request.
+%%
+exec1(_, Req, _, _) ->
+    cowboy_http_req:reply(400, [?SERVER_HEADER], Req).
+
+%% @doc POST/PUT operation on Objects. NORMAL
+%%
+do_put("", Req, Key, _Params) ->
     {Has, _Req} = cowboy_http_req:has_body(Req),
     {ok, Bin, Req2} = case Has of
                           %% for support uploading zero byte files.
                           false -> {ok, <<>>, Req};
+                          %% Cowboy handle a `Expect` header automatically
                           true -> cowboy_http_req:body(Req)
                       end,
     {Size, Req3} = cowboy_http_req:body_length(Req2),
@@ -244,39 +393,21 @@ exec(first, ?HTTP_PUT, Req, Key, #req_params{is_dir = false}) ->
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req3)
     end;
 
-%% @doc invalid request.
+%% @doc POST/PUT operation on Objects. COPY/REPLACE
 %%
-exec(first, _, Req, _, _) ->
-    cowboy_http_req:reply(400, [?SERVER_HEADER], Req).
-
-%% @doc GET operation with Etag
-%%
-exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false,
-                                            has_inner_cache = true}, Cached) ->
-    case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
-        {ok, match} ->
-            cowboy_http_req:reply(200,
-                                  [?SERVER_HEADER,
-                                   {<<"Content-Type">>,  Cached#cache.content_type},
-                                   {<<"ETag">>,          leo_hex:integer_to_hex(Cached#cache.etag)},
-                                   {<<"X-From-Cache">>,  <<"True">>},
-                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Cached#cache.mtime)}],
-                                  Cached#cache.body, Req);
+do_put(Directive, Req, Key, _Params) ->
+    CS = get_header(Req, <<"X-Amz-Copy-Source">>),
+    % need to trim head '/' when cooperating with s3fs(-c)
+    CS2 = case string:left(CS, 1) of
+        "/" ->
+            [_H|Rest] = CS,
+            Rest;
+        _ ->
+            CS
+    end,
+    case leo_gateway_rpc_handler:get(CS2) of
         {ok, Meta, RespObject} ->
-            Mime = mochiweb_util:guess_mime(Key),
-            BinVal = term_to_binary(#cache{
-                                       etag = Meta#metadata.checksum,
-                                       mtime = Meta#metadata.timestamp,
-                                       content_type = Mime,
-                                       body = RespObject
-                                      }),
-            ecache_server:set(Key, BinVal),
-            cowboy_http_req:reply(200,
-                                  [?SERVER_HEADER,
-                                   {<<"Content-Type">>,  Mime},
-                                   {<<"ETag">>,          leo_hex:integer_to_hex(Meta#metadata.checksum)},
-                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
-                                  RespObject, Req);
+            do_put_2(Directive, Req, Key, Meta, RespObject);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -284,6 +415,130 @@ exec(next, ?HTTP_GET, Req, Key, #req_params{is_dir = false,
         {error, timeout} ->
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
     end.
+
+%% @doc POST/PUT operation on Objects. COPY
+%%
+do_put_2(Directive, Req, Key, Meta, Bin) ->
+    Size = size(Bin),
+    case {Directive, leo_gateway_rpc_handler:put(Key, Bin, Size)} of
+        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY, ok} ->
+            resp_copyobj_xml(Req, Meta);
+        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
+            do_put_3(Req, Key, Meta);
+        {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
+        {_, {error, timeout}} ->
+            cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
+    end.
+
+%% @doc POST/PUT operation on Objects. REPLACE
+%%
+do_put_3(Req, Key, Meta) when Key == Meta#metadata.key ->
+    resp_copyobj_xml(Req, Meta);
+do_put_3(Req, _Key, Meta) ->
+    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
+        ok ->
+            resp_copyobj_xml(Req, Meta);
+        {error, not_found} ->
+            resp_copyobj_xml(Req, Meta);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
+        {error, timeout} ->
+            cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
+    end.
+
+resp_copyobj_xml(Req, Meta) ->
+    XML = io_lib:format(?XML_COPY_OBJ_RESULT,
+                        [leo_http:web_date(Meta#metadata.timestamp),
+                         erlang:integer_to_list(Meta#metadata.checksum, 16)]),
+    {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
+    cowboy_http_req:reply(200, [?SERVER_HEADER,
+                          {<<"Content-Type">>, "application/xml"},
+                          {<<"Date">>,         leo_http:rfc1123_date(leo_date:now())}
+                          ], Req2).
+
+%% @doc GET operation with Etag
+%%
+exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
+    case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
+        {ok, match} ->
+            {ok, Req2} = cowboy_http_req:set_resp_body(Cached#cache.body, Req),
+            cowboy_http_req:reply(200,
+                                  [?SERVER_HEADER,
+                                   {<<"Content-Type">>,  Cached#cache.content_type},
+                                   {<<"Etag">>,          erlang:integer_to_list(Cached#cache.etag, 16)},
+                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Cached#cache.mtime)},
+                                   {<<"X-From-Cache">>, <<"True">>}],
+                                  Req2);
+        {ok, Meta, RespObject} ->
+            Mime = mochiweb_util:guess_mime(Key),
+            BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
+                                           mtime = Meta#metadata.timestamp,
+                                           content_type = Mime,
+                                           body = RespObject}),
+            ecache_server:set(Key, BinVal),
+            {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
+            cowboy_http_req:reply(200,
+                                  [?SERVER_HEADER,
+                                   {<<"Content-Type">>,  Mime},
+                                   {<<"Etag">>,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                                  Req2);
+        {error, not_found} ->
+            cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
+        {error, timeout} ->
+            cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
+    end.
+
+%% @doc getter helper function. return "" if specified header is undefined
+get_header(Req, Key) ->
+    case cowboy_http_req:header(Key, Req) of
+        {undefined, _} ->
+            "";
+        {Val, _} ->
+            binary_to_list(Val)
+    end.
+
+%% @doc auth
+auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
+                                           (TokenLen > 1 andalso
+                                                           (HTTPMethod == ?HTTP_PUT orelse
+                                                            HTTPMethod == ?HTTP_DELETE)) ->
+    %% bucket operations must be needed to auth
+    %% AND alter object operations as well
+    case cowboy_http_req:header('Authorization', Req) of
+        {undefined, _} ->
+            {error, undefined};
+        {BinAuthorization, _} ->
+            Bucket = case TokenLen >= 1 of
+                         true  -> hd(string:tokens(Path, ?STR_SLASH));
+                         false -> []
+                     end,
+
+            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
+            %{RawUri, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
+            {BinRawUri, _} = cowboy_http_req:raw_path(Req),
+            {BinQueryString, _} = cowboy_http_req:raw_qs(Req),
+            %{Headers, _} = cowboy_http_req:headers(Req), %% need to implement retrieving amz headers for cowboy
+            SignParams = #sign_params{http_verb    = HTTPMethod,
+                                      content_md5  = get_header(Req, 'Content-MD5'),
+                                      content_type = get_header(Req, 'Content-Type'),
+                                      date         = get_header(Req, 'Date'),
+                                      bucket       = Bucket,
+                                      uri          = binary_to_list(BinRawUri),
+                                      query_str    = binary_to_list(BinQueryString),
+                                      amz_headers  = [] % Headers
+                                     },
+            leo_s3_auth:authenticate(binary_to_list(BinAuthorization), SignParams, IsCreateBucketOp),
+            %% @debug
+            {ok, []}
+    end;
+
+auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
+    {ok, []}.
+
 
 
 %% @doc get options from mochiweb.
