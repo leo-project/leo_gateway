@@ -40,8 +40,27 @@
 %% TEST
 %%--------------------------------------------------------------------
 -ifdef(EUNIT).
-api_mochiweb_test_() ->
-    {setup, fun setup_mochiweb/0, fun teardown/1,
+%%%api_mochiweb_test_() ->
+%%%    {setup, fun setup_mochiweb/0, fun teardown/1,
+%%%     {with, [
+%%%             fun get_bucket_list_error_/1,
+%%%             fun get_bucket_list_empty_/1,
+%%%             fun get_bucket_list_normal1_/1,
+%%%             fun head_object_error_/1,
+%%%             fun head_object_notfound_/1,
+%%%             fun head_object_normal1_/1,
+%%%             fun get_object_error_/1,
+%%%             fun get_object_notfound_/1,
+%%%             fun get_object_normal1_/1,
+%%%             fun delete_object_error_/1,
+%%%             fun delete_object_notfound_/1,
+%%%             fun delete_object_normal1_/1,
+%%%             fun put_object_error_/1,
+%%%             fun put_object_normal1_/1
+%%%            ]}}.
+%%%
+api_cowboy_test_() ->
+    {setup, fun setup_cowboy/0, fun teardown/1,
      {with, [
              fun get_bucket_list_error_/1,
              fun get_bucket_list_empty_/1,
@@ -58,26 +77,6 @@ api_mochiweb_test_() ->
              fun put_object_error_/1,
              fun put_object_normal1_/1
             ]}}.
-
-%% TODO
-%% api_cowboy_test_() ->
-%%     {setup, fun setup_cowboy/0, fun teardown/1,
-%%      {with, [
-%%              fun get_bucket_list_error_/1,
-%%              fun get_bucket_list_empty_/1,
-%%              fun get_bucket_list_normal1_/1,
-%%              fun head_object_error_/1,
-%%              fun head_object_notfound_/1,
-%%              fun head_object_normal1_/1,
-%%              fun get_object_error_/1,
-%%              fun get_object_notfound_/1,
-%%              fun get_object_normal1_/1,
-%%              fun delete_object_error_/1,
-%%              fun delete_object_notfound_/1,
-%%              fun delete_object_normal1_/1,
-%%              fun put_object_error_/1,
-%%              fun put_object_normal1_/1
-%%             ]}}.
 
 -define(SSL_CERT_DATA,
     "-----BEGIN CERTIFICATE-----\n" ++
@@ -154,19 +153,21 @@ setup(InitFun, TermFun) ->
     inets:start(),
     [TermFun, Node0, Node1].
 
-setup_mochiweb() ->
-    InitFun = fun() -> leo_s3_http_mochi:start([{port,8080},
+%%%setup_mochiweb() ->
+%%%    InitFun = fun() -> leo_s3_http_mochi:start([{port,8080},
+%%%                                                {ssl_port,8443},
+%%%                                                {ssl_certfile,"./cert.pem"},
+%%%                                                {ssl_keyfile, "./key.pem"}]) end,
+%%%    TermFun = fun() -> leo_s3_http_mochi:stop() end,
+%%%    setup(InitFun, TermFun).
+%%%
+setup_cowboy() ->
+    InitFun = fun() -> leo_s3_http_cowboy:start([{port,8080},{acceptor_pool_size,32},
                                                 {ssl_port,8443},
                                                 {ssl_certfile,"./cert.pem"},
                                                 {ssl_keyfile, "./key.pem"}]) end,
-    TermFun = fun() -> leo_s3_http_mochi:stop() end,
+    TermFun = fun() -> leo_s3_http_cowboy:stop() end,
     setup(InitFun, TermFun).
-
-%% TODO
-%% setup_cowboy() ->
-%%     InitFun = fun() -> leo_s3_http_cowboy:start([{port,8080},{acceptor_pool_size,32}]) end,
-%%     TermFun = fun() -> leo_s3_http_cowboy:stop() end,
-%%     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->
     inets:stop(),

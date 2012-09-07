@@ -73,12 +73,11 @@ start(Options) ->
                       ]}
                ],
     cowboy:start_listener(?MODULE, PoolSize,
-                          cowboy_tcp_transport, [{max_keepalive, 0}|Options5],
+                          cowboy_tcp_transport, Options5,
                           cowboy_http_protocol, [{dispatch, Dispatch}]
                          ),
     cowboy:start_listener(ssl_proc_name(), PoolSize,
 		          cowboy_ssl_transport, [
-			      {max_keepalive, 0}, 
 			      {port, SSLPort}, 
                               {certfile, SSLCert},
 			      {keyfile, SSLKey}],
@@ -518,10 +517,9 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                      end,
 
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
-            %{RawUri, QueryString, _} = mochiweb_util:urlsplit_path(Req:get(raw_path)),
             {BinRawUri, _} = cowboy_http_req:raw_path(Req),
             {BinQueryString, _} = cowboy_http_req:raw_qs(Req),
-            %{Headers, _} = cowboy_http_req:headers(Req), %% need to implement retrieving amz headers for cowboy
+            {Headers, _} = cowboy_http_req:headers(Req),
             SignParams = #sign_params{http_verb    = HTTPMethod,
                                       content_md5  = get_header(Req, 'Content-MD5'),
                                       content_type = get_header(Req, 'Content-Type'),
@@ -529,11 +527,9 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                       bucket       = Bucket,
                                       uri          = binary_to_list(BinRawUri),
                                       query_str    = binary_to_list(BinQueryString),
-                                      amz_headers  = [] % Headers
+                                      amz_headers  = leo_http:get_amz_headers4cow(Headers)
                                      },
-            leo_s3_auth:authenticate(binary_to_list(BinAuthorization), SignParams, IsCreateBucketOp),
-            %% @debug
-            {ok, []}
+            leo_s3_auth:authenticate(binary_to_list(BinAuthorization), SignParams, IsCreateBucketOp)
     end;
 
 auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
