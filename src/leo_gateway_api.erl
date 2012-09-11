@@ -31,12 +31,12 @@
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([get_cluster_node_status/0,
+-export([get_node_status/0,
          register_in_monitor/1,
          purge/1
         ]).
 
-%% @doc purge API
+%% @doc Purge an object into the cache
 -spec(purge(string()) -> ok).
 purge(Path) ->
     HookMods = mochiweb_socket_server:get(leo_s3_http_mochi, hook_modules),
@@ -44,10 +44,10 @@ purge(Path) ->
     _ = mochiweb:on_purge_hook_modules(Path, HookMods),
     ok.
 
-%% @doc get cluster node status (gateway).
+%% @doc Get node status (gateway).
 %%
--spec(get_cluster_node_status() -> {ok, #cluster_node_status{}}).
-get_cluster_node_status() ->
+-spec(get_node_status() -> {ok, #cluster_node_status{}}).
+get_node_status() ->
     {ok, Version} = application:get_key(leo_gateway, vsn),
     {RingHashCur, RingHashPrev} =
         case leo_redundant_manager_api:checksum(ring) of
@@ -75,7 +75,7 @@ get_cluster_node_status() ->
                               statistics    = Statistics}}.
 
 
-%% @doc register in a manager monitor.
+%% @doc Register into the manager-monitor.
 %%
 -spec(register_in_monitor(first|again) -> ok).
 register_in_monitor(RequestedTimes) ->
