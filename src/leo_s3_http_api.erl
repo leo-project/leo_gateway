@@ -110,7 +110,7 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
     {ok, _} = supervisor:start_child(Sup, ChildSpec),
     ok;
 
-start(Sup, cowboy, S3_HTTP_Config) ->
+start(_Sup, cowboy, S3_HTTP_Config) ->
     ListenPort     = proplists:get_value('port',             S3_HTTP_Config, 8080),
     NumOfAcceptors = proplists:get_value('num_of_acceptors', S3_HTTP_Config,   32),
     SSLListenPort  = proplists:get_value('ssl_port',         S3_HTTP_Config, 8443),
@@ -128,11 +128,7 @@ start(Sup, cowboy, S3_HTTP_Config) ->
                  {ssl_certfile, SSLCertFile},
                  {ssl_keyfile, SSLKeyFile},
                  {docroot, "."}],
-    ChildSpec =
-        {leo_s3_http_cowboy,
-         {leo_s3_http_cowboy, start, [WebConfig]},
-         permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic},
-    {ok, _} = supervisor:start_child(Sup, ChildSpec),
+    leo_s3_http_cowboy:start(WebConfig),
     ok.
 
 
