@@ -50,7 +50,7 @@ start(Options) ->
     {SSLPort,  Options2} = get_option(ssl_port,     Options1),
     {SSLCert,  Options3} = get_option(ssl_certfile, Options2),
     {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
-    HookModules = proplists:get_value(hook_modules, Options4),
+    HookModules = leo_misc:get_value(hook_modules, Options4),
 
     HasInnerCache = HookModules =:= undefined,
     case HasInnerCache of
@@ -115,7 +115,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                  end,
 
     QueryString = Req:parse_qs(),
-    {Prefix, IsDir, Path2} = case proplists:get_value(?QUERY_PREFIX, QueryString, undefined) of
+    {Prefix, IsDir, Path2} = case leo_misc:get_value(?QUERY_PREFIX, QueryString, undefined) of
                                  undefined ->
                                      HasTermSlash = case string:right(Path, 1) of
                                                         ?STR_SLASH -> true;
@@ -131,7 +131,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
                              end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
 
-    case proplists:get_value(?QUERY_ACL, QueryString, undefined) of
+    case leo_misc:get_value(?QUERY_ACL, QueryString, undefined) of
         undefined ->
             case catch auth(Req, HTTPMethod, Path2, TokenLen) of
                 {error, _Cause} ->
@@ -537,6 +537,6 @@ auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
 -spec(get_option(atom(), list()) ->
              {any(), any()}).
 get_option(Option, Options) ->
-    {proplists:get_value(Option, Options),
-     proplists:delete(Option, Options)}.
+    {leo_misc:get_value(Option, Options),
+     lists:keydelete(Option, 1, Options)}.
 

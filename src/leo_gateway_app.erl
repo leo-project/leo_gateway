@@ -64,7 +64,7 @@ start(_Type, _StartArgs) ->
     DefLogDir = "./log/",
     LogDir    = case application:get_env(App, log_appender) of
                     {ok, [{file, Options}|_]} ->
-                        proplists:get_value(path, Options,  DefLogDir);
+                        leo_misc:get_value(path, Options,  DefLogDir);
                     _ ->
                         DefLogDir
                 end,
