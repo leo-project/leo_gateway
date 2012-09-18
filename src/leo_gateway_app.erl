@@ -110,6 +110,15 @@ after_process({ok, Pid} = Res) ->
                                                                   {d, SystemConf#system_conf.d},
                                                                   {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
 
+            %% Launch S3Libs:Auth/Bucket/EndPoint
+            ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
+
+            %% Launch a listener - [s3_http]
+            case ?env_listener() of
+                ?S3_HTTP ->
+                    ok = leo_s3_http_api:start(Pid, App)
+            end,
+
             %% Register in THIS-Process
             ok = leo_gateway_api:register_in_monitor(first),
             lists:foldl(fun(N, false) ->
@@ -122,15 +131,6 @@ after_process({ok, Pid} = Res) ->
                            (_, true) ->
                                 void
                         end, false, NewManagerNodes),
-
-            %% Launch S3Libs:Auth/Bucket/EndPoint
-            ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
-
-            %% Launch a listener - [s3_http]
-            case ?env_listener() of
-                ?S3_HTTP ->
-                    ok = leo_s3_http_api:start(Pid, App)
-            end,
             Res;
         Error ->
             io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
