@@ -48,17 +48,17 @@
              tuple()).
 start(Sup, AppName) ->
     S3_HTTP_Config = ?env_s3_http(AppName),
-    HTTPServer = proplists:get_value('http_server', S3_HTTP_Config, 'mochiweb'),
+    HTTPServer = leo_misc:get_value('http_server', S3_HTTP_Config, 'mochiweb'),
     start(Sup, HTTPServer, S3_HTTP_Config).
 
 -spec(start(pid(), http_server(), list()) ->
              tuple()).
 start(Sup, mochiweb, S3_HTTP_Config) ->
-    ListenPort     = proplists:get_value('port',             S3_HTTP_Config, 8080),
-    NumOfAcceptors = proplists:get_value('num_of_acceptors', S3_HTTP_Config,   32),
-    SSLListenPort  = proplists:get_value('ssl_port',         S3_HTTP_Config, 8443),
-    SSLCertFile    = proplists:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
-    SSLKeyFile     = proplists:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
+    ListenPort     = leo_misc:get_value('port',             S3_HTTP_Config, 8080),
+    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
+    SSLListenPort  = leo_misc:get_value('ssl_port',         S3_HTTP_Config, 8443),
+    SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
+    SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
     io:format("*             port: ~p~n", [ListenPort]),
     io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
     io:format("*         ssl port: ~p~n", [SSLListenPort]),
@@ -66,13 +66,13 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
     io:format("*      ssl keyfile: ~p~n", [SSLKeyFile]),
 
     HookModules =
-        case proplists:get_value('cache_plugin', S3_HTTP_Config) of
+        case leo_misc:get_value('cache_plugin', S3_HTTP_Config) of
             undefined -> [];
             ModCache ->
-                CacheExpire          = proplists:get_value('cache_expire',          S3_HTTP_Config, 300),
-                CacheMaxContentLen   = proplists:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
-                CachableContentTypes = proplists:get_value('cachable_content_type', S3_HTTP_Config, []),
-                CachablePathPatterns = proplists:get_value('cachable_path_pattern', S3_HTTP_Config, []),
+                CacheExpire          = leo_misc:get_value('cache_expire',          S3_HTTP_Config, 300),
+                CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
+                CachableContentTypes = leo_misc:get_value('cachable_content_type', S3_HTTP_Config, []),
+                CachablePathPatterns = leo_misc:get_value('cachable_path_pattern', S3_HTTP_Config, []),
                 io:format("*        mod cache: ~p~n", [ModCache]),
                 io:format("*     cache_expire: ~p~n", [CacheExpire]),
                 io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
@@ -111,11 +111,11 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
     ok;
 
 start(_Sup, cowboy, S3_HTTP_Config) ->
-    ListenPort     = proplists:get_value('port',             S3_HTTP_Config, 8080),
-    NumOfAcceptors = proplists:get_value('num_of_acceptors', S3_HTTP_Config,   32),
-    SSLListenPort  = proplists:get_value('ssl_port',         S3_HTTP_Config, 8443),
-    SSLCertFile    = proplists:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
-    SSLKeyFile     = proplists:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
+    ListenPort     = leo_misc:get_value('port',             S3_HTTP_Config, 8080),
+    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
+    SSLListenPort  = leo_misc:get_value('ssl_port',         S3_HTTP_Config, 8443),
+    SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
+    SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
     io:format("*             port: ~p~n", [ListenPort]),
     io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
     io:format("*         ssl port: ~p~n", [SSLListenPort]),

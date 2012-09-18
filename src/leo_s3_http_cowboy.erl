@@ -55,7 +55,7 @@ start(Options) ->
     {SSLCert,  Options3} = get_option(ssl_certfile, Options2),
     {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
     {PoolSize, Options5} = get_option(acceptor_pool_size, Options4),
-    HookModules = proplists:get_value(hook_modules, Options5),
+    HookModules = leo_misc:get_value(hook_modules, Options5),
 
     HasInnerCache = HookModules =:= undefined,
     case HasInnerCache of
@@ -542,7 +542,7 @@ auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
 -spec(get_option(atom(), list()) ->
              {any(), any()}).
 get_option(Option, Options) ->
-    {proplists:get_value(Option, Options),
-     proplists:delete(Option, Options)}.
+    {leo_misc:get_value(Option, Options),
+     lists:keydelete(Option, 1, Options)}.
 
 
