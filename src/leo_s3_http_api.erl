@@ -121,14 +121,41 @@ start(_Sup, cowboy, S3_HTTP_Config) ->
     io:format("*         ssl port: ~p~n", [SSLListenPort]),
     io:format("*     ssl certfile: ~p~n", [SSLCertFile]),
     io:format("*      ssl keyfile: ~p~n", [SSLKeyFile]),
-    WebConfig = [
+
+    HookModules =
+        case proplists:get_value('cache_plugin', S3_HTTP_Config) of
+            undefined -> [];
+            ModCache ->
+                CacheExpire          = proplists:get_value('cache_expire',          S3_HTTP_Config, 300),
+                CacheMaxContentLen   = proplists:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
+                CachableContentTypes = proplists:get_value('cachable_content_type', S3_HTTP_Config, []),
+                CachablePathPatterns = proplists:get_value('cachable_path_pattern', S3_HTTP_Config, []),
+                io:format("*        mod cache: ~p~n", [ModCache]),
+                io:format("*     cache_expire: ~p~n", [CacheExpire]),
+                io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
+                io:format("*    content_types: ~p~n", [CachableContentTypes]),
+                io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
+                [{ModCache, [{expire,                CacheExpire},
+                             {max_content_len,       CacheMaxContentLen},
+                             {cachable_content_type, CachableContentTypes},
+                             {cachable_path_pattern, CachablePathPatterns}
+                            ]}]
+        end,
+
+    WebConfig0 = [
                  {port, ListenPort},
                  {acceptor_pool_size, NumOfAcceptors},
                  {ssl_port, SSLListenPort},
                  {ssl_certfile, SSLCertFile},
                  {ssl_keyfile, SSLKeyFile},
                  {docroot, "."}],
-    leo_s3_http_cowboy:start(WebConfig),
+    WebConfig1 =
+        case HookModules of
+            [] -> WebConfig0;
+            _  -> [{hook_modules, HookModules}|WebConfig0]
+        end,
+
+    leo_s3_http_cowboy:start(WebConfig1),
     ok.
 
 

@@ -42,6 +42,13 @@
 -undef(SERVER_HEADER).
 -define(SERVER_HEADER,   {<<"Server">>,<<"LeoFS">>}).
 
+-record(cache_condition, {
+          expire                = 0  :: integer(), %% specified per sec
+          max_content_len       = 0  :: integer(), %% No cache if Content-Length of a response header was &gt this
+          content_types         = [] :: list(),    %% like ["image/png", "image/gif", "image/jpeg"]
+          path_patterns         = [] :: list()     %% compiled regular expressions
+         }).
+
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
@@ -57,31 +64,52 @@ start(Options) ->
     {PoolSize, Options5} = get_option(acceptor_pool_size, Options4),
     HookModules = leo_misc:get_value(hook_modules, Options5),
 
-    HasInnerCache = HookModules =:= undefined,
-    case HasInnerCache of
-        true ->
-            application:start(ecache);
-        _ ->
-            void
-    end,
     LayerOfDirs = ?env_layer_of_dirs(),
-
-    application:start(cowboy),
+    HasInnerCache = HookModules =:= undefined,
     Dispatch = [
                 {'_', [
                        {'_', ?MODULE, [LayerOfDirs, HasInnerCache]}
                       ]}
                ],
+    HttpOpts = case HasInnerCache of
+        true ->
+            %% using inner cache
+            [{dispatch, Dispatch}];
+        _ ->
+            CacheCondition = #cache_condition{
+                expire          = proplists:get_value(expire, Options5, 300),
+                max_content_len = proplists:get_value(max_content_len, Options5, 1024 * 1024),
+                content_types   = proplists:get_value(cachable_content_type, Options5, []),
+                path_patterns   = lists:foldl(fun(P, Acc) ->
+                                                   case re:compile(P) of
+                                                       {ok, MP} ->
+                                                           [MP|Acc];
+                                                       _Error ->
+                                                           Acc
+                                                   end
+                                           end, [], proplists:get_value(cachable_path_pattern, Options5, []))
+
+            },
+%%@TODO
+?info("start/1", "cache:~p", [CacheCondition]),
+            [{dispatch,   Dispatch},
+             {onrequest,  onrequest(CacheCondition)},
+             {onresponse, onresponse(CacheCondition)}]
+    end,
+
+    application:start(ecache),
+    application:start(cowboy),
+
     cowboy:start_listener(?MODULE, PoolSize,
                           cowboy_tcp_transport, Options5,
-                          cowboy_http_protocol, [{dispatch, Dispatch}]
+                          cowboy_http_protocol, HttpOpts
                          ),
     cowboy:start_listener(ssl_proc_name(), PoolSize,
 		          cowboy_ssl_transport, [
 			      {port, SSLPort}, 
                               {certfile, SSLCert},
 			      {keyfile, SSLKey}],
-		          cowboy_http_protocol, [{dispatch, Dispatch}]
+		          cowboy_http_protocol, HttpOpts
 	).
 
 -spec(stop() ->
@@ -98,7 +126,145 @@ ssl_proc_name() ->
 init({_Any, http}, Req, Opts) ->
     {ok, Req, Opts}.
 
-handle(Req, State) ->
+onrequest(#cache_condition{expire = Expire}) ->
+    fun(Req) ->
+%%@TODO
+?info("onreq/1", "req:~p", [Req]),
+            {Method, _} = cowboy_http_req:method(Req),
+            case Method of
+                'GET' ->
+                    Key = gen_key(Req),
+                    case ecache_server:get(Key) of
+                        undefined ->
+                            Req;
+                        BinCached ->
+                            #cache{mtime        = MTime,
+                                   content_type = ContentType,
+                                   etag         = Checksum,
+                                   body         = Body
+                                  } = binary_to_term(BinCached),
+                            Now = leo_date:now(), 
+                            Diff = Now - MTime,
+                            case Diff > Expire of
+                                true ->
+                                    ecache_server:delete(Key),
+                                    Req;
+                                false ->
+                                    LastModified = leo_http:rfc1123_date(MTime),
+                                    Date  = leo_http:rfc1123_date(Now),
+                                    Heads = [?SERVER_HEADER,
+                                             {<<"Last-Modified">>, LastModified},
+                                             {<<"Content-Type">>,  ContentType},
+                                             {<<"Date">>,          Date},
+                                             {<<"Age">>,           integer_to_list(Diff)},
+                                             {<<"ETag">>,          integer_to_list(Checksum, 16)},
+                                             {<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)}],
+                
+                                    {IMSDateTime, _} = cowboy_http_req:parse_header('If-Modified-Since', Req),
+                                    IMSSec = calendar:datetime_to_gregorian_seconds(IMSDateTime),
+                                    case IMSSec of
+                                        MTime ->
+                                            {ok, Req2} = cowboy_http_req:reply(304, Heads, Req),
+                                            Req2;
+                                        _ ->
+                                            {ok, Req2} = cowboy_http_req:set_resp_body(Body, Req),
+                                            {ok, Req3} = cowboy_http_req:reply(200, Heads, Req2),
+                                            Req3
+                                    end
+                            end
+                    end;
+                _ -> Req
+            end
+    end.
+
+onresponse(#cache_condition{expire = Expire} = Config) ->
+                           
+    FilterFuns = [fun is_cachable_req_1/5,
+                  fun is_cachable_req_2/5,
+                  fun is_cachable_req_3/5],
+    fun(Status, Headers, Req) ->
+%%@TODO
+?info("onresp/3", "status:~p, headers:~p req:~p", [Status, Headers, Req]),
+        Key = gen_key(Req),
+        case lists:all(fun(Fun) -> Fun(Key, Config, Status, Headers, Req) end, FilterFuns) of
+            true ->
+                DateSec = case lists:keyfind(<<"Last-Modified">>, 1, Headers) of
+                              false ->
+                                  leo_date:now();
+                              {_, LM} ->
+                                  calendar:datetime_to_gregorian_seconds(cowboy_http:rfc1123_date(list_to_binary(LM)))
+                          end,
+                ContentType = case lists:keyfind(<<"Content-Type">>, 1, Headers) of
+                              false ->
+                                  <<"application/octet-stream">>;
+                              {_, Val} ->
+                                  Val
+                          end,
+                %%@TODO need to apply a patch to cowboy_http_req
+                %%1. append/export get_resp_body function
+                %%2. remain the resp_body field to receive in onresponse callback
+                {Body, _} = cowboy_http_req:get_resp_body(Req),
+                Bin = term_to_binary(
+                        #cache{mtime        = DateSec,
+                               etag         = leo_hex:binary_to_integer(erlang:md5(Body)),
+                               content_type = ContentType,
+                               body         = Body}),
+                _ = ecache_server:set(Key, Bin),
+                NewHeaders = [{<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)}|Headers],
+                {ok, Req2} = cowboy_http_req:reply(200, NewHeaders, Req),
+                Req2;
+            false -> Req
+        end
+    end.
+
+is_cachable_path(Path) ->
+    fun(MP) ->
+            case re:run(Path, MP) of
+                {match, _Cap} ->
+                    true;
+                _Else ->
+                    false
+            end
+    end.
+
+is_cachable_req_1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Headers, Req) ->
+    {Method, _} = cowboy_http_req:method(Req),
+%%@TODO FIXME:RESPONSE body's length
+    {BodySize, _} = cowboy_http_req:body_length(Req),
+    HasNOTCacheControl = case lists:keyfind(<<"Cache-Control">>, 1, Headers) of
+        false ->
+            true;
+        _ ->
+            false
+    end,
+    BodySize2 = case BodySize of
+        undefined -> 0;
+        Else -> Else
+    end,
+    Status =:= 200 andalso 
+    Method =:= 'GET' andalso 
+    BodySize2 > 0 andalso 
+    BodySize2 < MaxLen andalso 
+    HasNOTCacheControl.
+
+is_cachable_req_2(Key, #cache_condition{path_patterns = PPs}, _Status, _Headers, _Req) 
+                  when is_list(PPs) andalso length(PPs) > 0 ->
+    lists:any(is_cachable_path(Key), PPs);
+is_cachable_req_2(_, _, _Status, _Headers, _Req) ->
+    true.
+
+is_cachable_req_3(_Key, #cache_condition{content_types = CTs}, _Status, Headers, _Req) 
+                  when is_list(CTs) andalso length(CTs) > 0 ->
+    case lists:keyfind(<<"Content-Type">>, 1, Headers) of
+        false ->
+            false;
+        {_, ContentType} ->
+            lists:member(binary_to_list(ContentType), CTs)
+    end;
+is_cachable_req_3(_, _, _Status, _Headers, _Req) ->
+    true.
+
+gen_key(Req) ->
     EndPoints1 = case leo_s3_endpoint:get_endpoints() of
                      {ok, EndPoints0} ->
                          lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
@@ -107,7 +273,10 @@ handle(Req, State) ->
     {BinHost, _} = cowboy_http_req:raw_host(Req),
     {BinRawPath, _} = cowboy_http_req:raw_path(Req),
     BinPath = cowboy_http:urldecode(BinRawPath),
-    Key = leo_http:key(EndPoints1, binary_to_list(BinHost), binary_to_list(BinPath)),
+    leo_http:key(EndPoints1, binary_to_list(BinHost), binary_to_list(BinPath)).
+
+handle(Req, State) ->
+    Key = gen_key(Req),
     handle(Req, State, Key).
 
 handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
@@ -132,7 +301,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
                                            {binary_to_list(BinParam), true, NewPath, Req1}
                                    end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
-
+%%@TODO
 ?info("loop1/4", "req:~p, path:~p", [Req2, Path2]),
 
     case cowboy_http_req:qs_val(<<"acl">>, Req2) of
