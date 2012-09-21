@@ -90,8 +90,6 @@ start(Options) ->
                                            end, [], proplists:get_value(cachable_path_pattern, Options5, []))
 
             },
-%%@TODO
-?info("start/1", "cache:~p", [CacheCondition]),
             [{dispatch,   Dispatch},
              {onrequest,  onrequest(CacheCondition)},
              {onresponse, onresponse(CacheCondition)}]
@@ -128,53 +126,53 @@ init({_Any, http}, Req, Opts) ->
 
 onrequest(#cache_condition{expire = Expire}) ->
     fun(Req) ->
-%%@TODO
-?info("onreq/1", "req:~p", [Req]),
-            {Method, _} = cowboy_http_req:method(Req),
-            case Method of
-                'GET' ->
-                    Key = gen_key(Req),
-                    case ecache_server:get(Key) of
-                        undefined ->
-                            Req;
-                        BinCached ->
-                            #cache{mtime        = MTime,
-                                   content_type = ContentType,
-                                   etag         = Checksum,
-                                   body         = Body
-                                  } = binary_to_term(BinCached),
-                            Now = leo_date:now(), 
-                            Diff = Now - MTime,
-                            case Diff > Expire of
-                                true ->
-                                    ecache_server:delete(Key),
-                                    Req;
-                                false ->
-                                    LastModified = leo_http:rfc1123_date(MTime),
-                                    Date  = leo_http:rfc1123_date(Now),
-                                    Heads = [?SERVER_HEADER,
-                                             {<<"Last-Modified">>, LastModified},
-                                             {<<"Content-Type">>,  ContentType},
-                                             {<<"Date">>,          Date},
-                                             {<<"Age">>,           integer_to_list(Diff)},
-                                             {<<"ETag">>,          integer_to_list(Checksum, 16)},
-                                             {<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)}],
-                
-                                    {IMSDateTime, _} = cowboy_http_req:parse_header('If-Modified-Since', Req),
-                                    IMSSec = calendar:datetime_to_gregorian_seconds(IMSDateTime),
-                                    case IMSSec of
-                                        MTime ->
-                                            {ok, Req2} = cowboy_http_req:reply(304, Heads, Req),
-                                            Req2;
-                                        _ ->
-                                            {ok, Req2} = cowboy_http_req:set_resp_body(Body, Req),
-                                            {ok, Req3} = cowboy_http_req:reply(200, Heads, Req2),
-                                            Req3
-                                    end
-                            end
-                    end;
-                _ -> Req
-            end
+        {Method, _} = cowboy_http_req:method(Req),
+        case Method of
+            'GET' ->
+                Key = gen_key(Req),
+                case ecache_server:get(Key) of
+                    undefined ->
+                        Req;
+                    BinCached ->
+                        #cache{mtime        = MTime,
+                               content_type = ContentType,
+                               etag         = Checksum,
+                               body         = Body
+                              } = binary_to_term(BinCached),
+                        Now = leo_date:now(), 
+                        Diff = Now - MTime,
+                        case Diff > Expire of
+                            true ->
+                                ecache_server:delete(Key),
+                                Req;
+                            false ->
+                                LastModified = leo_http:rfc1123_date(MTime),
+                                Date  = leo_http:rfc1123_date(Now),
+                                Heads = [?SERVER_HEADER,
+                                         {<<"Last-Modified">>, LastModified},
+                                         {<<"Content-Type">>,  ContentType},
+                                         {<<"Date">>,          Date},
+                                         {<<"Age">>,           integer_to_list(Diff)},
+                                         {<<"Etag">>,          integer_to_list(Checksum, 16)},
+                                         {<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)}],
+            
+                                IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
+                                    {undefined, _} -> 0;
+                                    {IMSDateTime, _} -> calendar:datetime_to_gregorian_seconds(IMSDateTime)
+                                end,
+                                case IMSSec of
+                                    MTime ->
+                                        {ok, Req2} = cowboy_http_req:reply(304, Heads, Req),
+                                        Req2;
+                                    _ ->
+                                        {ok, Req2} = cowboy_http_req:set_resp_body(Body, Req),
+                                        {ok, Req3} = cowboy_http_req:reply(200, Heads, Req2),
+                                        Req3
+                                end
+                        end
+                end;
+            _ -> Req
+        end
     end.
 
 onresponse(#cache_condition{expire = Expire} = Config) ->
@@ -183,17 +181,10 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                   fun is_cachable_req_2/5,
                   fun is_cachable_req_3/5],
     fun(Status, Headers, Req) ->
-%%@TODO
-?info("onresp/3", "status:~p, headers:~p req:~p", [Status, Headers, Req]),
         Key = gen_key(Req),
         case lists:all(fun(Fun) -> Fun(Key, Config, Status, Headers, Req) end, FilterFuns) of
             true ->
-                DateSec = case lists:keyfind(<<"Last-Modified">>, 1, Headers) of
-                              false ->
-                                  leo_date:now();
-                              {_, LM} ->
-                                  calendar:datetime_to_gregorian_seconds(cowboy_http:rfc1123_date(list_to_binary(LM)))
-                          end,
+                DateSec = leo_date:now(),
                 ContentType = case lists:keyfind(<<"Content-Type">>, 1, Headers) of
                               false ->
                                   "application/octet-stream";
@@ -207,8 +198,11 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                                content_type = ContentType,
                                body         = Body}),
                 _ = ecache_server:set(Key, Bin),
-                NewHeaders = [{<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)}|Headers],
-                {ok, Req2} = cowboy_http_req:reply(200, NewHeaders, Req),
+                Headers2 = lists:keydelete(<<"Last-Modified">>, 1, Headers),
+                Headers3 = [{<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)},
+                            {<<"Last-Modified">>, leo_http:rfc1123_date(DateSec)}
+                            |Headers2],
+                {ok, Req2} = cowboy_http_req:reply(200, Headers3, Req),
                 Req2;
             false -> Req
         end
@@ -227,7 +221,6 @@ is_cachable_path(Path) ->
 is_cachable_req_1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Headers, Req) ->
     {Method, _} = cowboy_http_req:method(Req),
     {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
-    BodySize = size(Body),
     HasNOTCacheControl = case lists:keyfind(<<"Cache-Control">>, 1, Headers) of
         false ->
             true;
@@ -236,8 +229,9 @@ is_cachable_req_1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Head
     end,
     Status =:= 200 andalso 
     Method =:= 'GET' andalso 
-    BodySize > 0 andalso 
-    BodySize < MaxLen andalso 
+    is_binary(Body) andalso
+    size(Body) > 0 andalso 
+    size(Body) < MaxLen andalso 
     HasNOTCacheControl.
 
 is_cachable_req_2(Key, #cache_condition{path_patterns = PPs}, _Status, _Headers, _Req) 
@@ -294,8 +288,6 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
                                            {binary_to_list(BinParam), true, NewPath, Req1}
                                    end,
     TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
-%%@TODO
-?info("loop1/4", "req:~p, path:~p", [Req2, Path2]),
 
     case cowboy_http_req:qs_val(<<"acl">>, Req2) of
         {undefined, _} ->
@@ -681,7 +673,7 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
             {BinRawUri, _} = cowboy_http_req:raw_path(Req),
             {BinQueryString, _} = cowboy_http_req:raw_qs(Req),
-            {_Headers, _} = cowboy_http_req:headers(Req),
+            {Headers, _} = cowboy_http_req:headers(Req),
             SignParams = #sign_params{http_verb    = HTTPMethod,
                                       content_md5  = get_header(Req, 'Content-MD5'),
                                       content_type = get_header(Req, 'Content-Type'),
@@ -689,7 +681,7 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                       bucket       = Bucket,
                                       uri          = binary_to_list(BinRawUri),
                                       query_str    = binary_to_list(BinQueryString),
-                                      amz_headers  = [] %%leo_http:get_amz_headers4cow(Headers)
+                                      amz_headers  = leo_http:get_amz_headers4cow(Headers)
                                      },
             leo_s3_auth:authenticate(binary_to_list(BinAuthorization), SignParams, IsCreateBucketOp)
     end;
