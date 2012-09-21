@@ -9,7 +9,7 @@
     {leo_s3_libs,           ".*", {git, "https://github.com/leo-project/leo_s3_libs.git",           "develop" }},
     {ecache,                ".*", {git, "https://github.com/leo-project/ecache.git",                "develop" }},
     {mochiweb,              ".*", {git, "https://github.com/leo-project/mochiweb.git",              "develop" }},
-    {cowboy,                ".*", {git, "https://github.com/extend/cowboy.git",                     "develop" }},
+    {cowboy,                ".*", {git, "https://github.com/leo-project/cowboy.git",                "develop" }},
     {meck,                  ".*", {git, "https://github.com/eproxus/meck.git",                      {branch, "master"}}},
     {proper,                ".*", {git, "https://github.com/manopapad/proper.git",                  {branch, "master"}}}
 ]}.
