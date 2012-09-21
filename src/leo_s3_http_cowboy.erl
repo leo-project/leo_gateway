@@ -196,14 +196,11 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                           end,
                 ContentType = case lists:keyfind(<<"Content-Type">>, 1, Headers) of
                               false ->
-                                  <<"application/octet-stream">>;
+                                  "application/octet-stream";
                               {_, Val} ->
                                   Val
                           end,
-                %%@TODO need to apply a patch to cowboy_http_req
-                %%1. append/export get_resp_body function
-                %%2. remain the resp_body field to receive in onresponse callback
-                {Body, _} = cowboy_http_req:get_resp_body(Req),
+               {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
                 Bin = term_to_binary(
                         #cache{mtime        = DateSec,
                                etag         = leo_hex:binary_to_integer(erlang:md5(Body)),
@@ -229,22 +226,18 @@ is_cachable_path(Path) ->
 
 is_cachable_req_1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Headers, Req) ->
     {Method, _} = cowboy_http_req:method(Req),
-%%@TODO FIXME:RESPONSE body's length
-    {BodySize, _} = cowboy_http_req:body_length(Req),
+    {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
+    BodySize = size(Body),
     HasNOTCacheControl = case lists:keyfind(<<"Cache-Control">>, 1, Headers) of
         false ->
             true;
         _ ->
             false
     end,
-    BodySize2 = case BodySize of
-        undefined -> 0;
-        Else -> Else
-    end,
     Status =:= 200 andalso 
     Method =:= 'GET' andalso 
-    BodySize2 > 0 andalso 
-    BodySize2 < MaxLen andalso 
+    BodySize > 0 andalso 
+    BodySize < MaxLen andalso 
     HasNOTCacheControl.
 
 is_cachable_req_2(Key, #cache_condition{path_patterns = PPs}, _Status, _Headers, _Req) 
@@ -259,7 +252,7 @@ is_cachable_req_3(_Key, #cache_condition{content_types = CTs}, _Status, Headers,
         false ->
             false;
         {_, ContentType} ->
-            lists:member(binary_to_list(ContentType), CTs)
+            lists:member(ContentType, CTs)
     end;
 is_cachable_req_3(_, _, _Status, _Headers, _Req) ->
     true.
