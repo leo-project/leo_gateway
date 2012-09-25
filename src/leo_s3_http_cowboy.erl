@@ -485,13 +485,13 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
 exec1(?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
-            cowboy_http_req:reply(200,
-                                  [?SERVER_HEADER,
-                                  {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)},
-                                  {<<"Etag">>,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
-                                  {<<"Content-Length">>, Meta#metadata.dsize},
-                                  {<<"Last-Modified">>,  leo_http:rfc1123_date(Meta#metadata.timestamp)}],
-                                  Req);
+            TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
+            Headers   = [?SERVER_HEADER,
+                         {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)},
+                         {<<"Etag">>,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                         {<<"Content-Length">>, erlang:integer_to_list(Meta#metadata.dsize)},
+                         {<<"Last-Modified">>,  TimeStamp}],
+            cowboy_http_req:reply(200, Headers, Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
         {error, not_found} ->
