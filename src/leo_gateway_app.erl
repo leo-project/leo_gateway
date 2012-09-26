@@ -97,6 +97,9 @@ inspect_cluster_status(Res, ManagerNodes) ->
                 ?STATE_RUNNING ->
                     ok = after_process_1(SystemConf, Members)
             end;
+        {{ok,_SystemConf}, {error,_Cause}} ->
+            timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
+                              [ok, ManagerNodes]);
         Error ->
             io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
             Error
