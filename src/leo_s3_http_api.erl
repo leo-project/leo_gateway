@@ -31,6 +31,7 @@
 
 -include("leo_gateway.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
+-include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -type(http_server() :: mochiweb | cowboy).
@@ -55,15 +56,17 @@ start(Sup, AppName) ->
              tuple()).
 start(Sup, mochiweb, S3_HTTP_Config) ->
     ListenPort     = leo_misc:get_value('port',             S3_HTTP_Config, 8080),
-    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
     SSLListenPort  = leo_misc:get_value('ssl_port',         S3_HTTP_Config, 8443),
     SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
     SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
-    io:format("*             port: ~p~n", [ListenPort]),
-    io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
-    io:format("*         ssl port: ~p~n", [SSLListenPort]),
-    io:format("*     ssl certfile: ~p~n", [SSLCertFile]),
-    io:format("*      ssl keyfile: ~p~n", [SSLKeyFile]),
+    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
+
+    ?info("start/3", "engine: ~p",          [mochiweb]),
+    ?info("start/3", "port: ~p",            [ListenPort]),
+    ?info("start/3", "ssl port: ~p",        [SSLListenPort]),
+    ?info("start/3", "ssl certfile: ~p",    [SSLCertFile]),
+    ?info("start/3", "ssl keyfile: ~p",     [SSLKeyFile]),
+    ?info("start/3", "num of acceptors: ~p",[NumOfAcceptors]),
 
     HookModules =
         case leo_misc:get_value('cache_plugin', S3_HTTP_Config) of
@@ -73,11 +76,13 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
                 CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
                 CachableContentTypes = leo_misc:get_value('cachable_content_type', S3_HTTP_Config, []),
                 CachablePathPatterns = leo_misc:get_value('cachable_path_pattern', S3_HTTP_Config, []),
-                io:format("*        mod cache: ~p~n", [ModCache]),
-                io:format("*     cache_expire: ~p~n", [CacheExpire]),
-                io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
-                io:format("*    content_types: ~p~n", [CachableContentTypes]),
-                io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
+
+                ?info("start/3", "mod cache: ~p",       [ModCache]),
+                ?info("start/3", "cache expire: ~p",    [CacheExpire]),
+                ?info("start/3", "max_content_len: ~p", [CacheMaxContentLen]),
+                ?info("start/3", "content_types: ~p",   [CachableContentTypes]),
+                ?info("start/3", "path_patterns: ~p",   [CachablePathPatterns]),
+
                 [{ModCache, [{expire,                CacheExpire},
                              {max_content_len,       CacheMaxContentLen},
                              {cachable_content_type, CachableContentTypes},
@@ -112,42 +117,46 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
 
 start(_Sup, cowboy, S3_HTTP_Config) ->
     ListenPort     = leo_misc:get_value('port',             S3_HTTP_Config, 8080),
-    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
     SSLListenPort  = leo_misc:get_value('ssl_port',         S3_HTTP_Config, 8443),
     SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
     SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
-    io:format("*             port: ~p~n", [ListenPort]),
-    io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
-    io:format("*         ssl port: ~p~n", [SSLListenPort]),
-    io:format("*     ssl certfile: ~p~n", [SSLCertFile]),
-    io:format("*      ssl keyfile: ~p~n", [SSLKeyFile]),
+    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
+
+    ?info("start/3", "engine: ~p",          [cowboy]),
+    ?info("start/3", "port: ~p",            [ListenPort]),
+    ?info("start/3", "ssl port: ~p",        [SSLListenPort]),
+    ?info("start/3", "ssl certfile: ~p",    [SSLCertFile]),
+    ?info("start/3", "ssl keyfile: ~p",     [SSLKeyFile]),
+    ?info("start/3", "num of acceptors: ~p",[NumOfAcceptors]),
 
     WebConfig0 = [
-                 {port, ListenPort},
-                 {acceptor_pool_size, NumOfAcceptors},
-                 {ssl_port, SSLListenPort},
-                 {ssl_certfile, SSLCertFile},
-                 {ssl_keyfile, SSLKeyFile},
-                 {docroot, "."}],
+                  {port, ListenPort},
+                  {acceptor_pool_size, NumOfAcceptors},
+                  {ssl_port, SSLListenPort},
+                  {ssl_certfile, SSLCertFile},
+                  {ssl_keyfile, SSLKeyFile},
+                  {docroot, "."}],
 
     WebConfig1 = case proplists:get_value('cache_plugin', S3_HTTP_Config) of
-        undefined -> WebConfig0;
-        ModCache ->
-            CacheExpire          = proplists:get_value('cache_expire',          S3_HTTP_Config, 300),
-            CacheMaxContentLen   = proplists:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
-            CachableContentTypes = proplists:get_value('cachable_content_type', S3_HTTP_Config, []),
-            CachablePathPatterns = proplists:get_value('cachable_path_pattern', S3_HTTP_Config, []),
-            io:format("*        mod cache: ~p~n", [ModCache]),
-            io:format("*     cache_expire: ~p~n", [CacheExpire]),
-            io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
-            io:format("*    content_types: ~p~n", [CachableContentTypes]),
-            io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
-            [{hook_modules,          ModCache},
-             {expire,                CacheExpire},
-             {max_content_len,       CacheMaxContentLen},
-             {cachable_content_type, CachableContentTypes},
-             {cachable_path_pattern, CachablePathPatterns}|WebConfig0]
-    end,
+                     undefined -> WebConfig0;
+                     ModCache ->
+                         CacheExpire          = proplists:get_value('cache_expire',          S3_HTTP_Config, 300),
+                         CacheMaxContentLen   = proplists:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
+                         CachableContentTypes = proplists:get_value('cachable_content_type', S3_HTTP_Config, []),
+                         CachablePathPatterns = proplists:get_value('cachable_path_pattern', S3_HTTP_Config, []),
+
+                         ?info("start/3", "mod cache: ~p",       [ModCache]),
+                         ?info("start/3", "cache expire: ~p",    [CacheExpire]),
+                         ?info("start/3", "max_content_len: ~p", [CacheMaxContentLen]),
+                         ?info("start/3", "content_types: ~p",   [CachableContentTypes]),
+                         ?info("start/3", "path_patterns: ~p",   [CachablePathPatterns]),
+
+                         [{hook_modules,          ModCache},
+                          {expire,                CacheExpire},
+                          {max_content_len,       CacheMaxContentLen},
+                          {cachable_content_type, CachableContentTypes},
+                          {cachable_path_pattern, CachablePathPatterns}|WebConfig0]
+                 end,
     leo_s3_http_cowboy:start(WebConfig1),
     ok.
 
