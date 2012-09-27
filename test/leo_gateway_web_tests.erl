@@ -272,10 +272,12 @@ head_object_error_([_TermFun, _Node0, Node1]) ->
 head_object_normal1_([_TermFun, _Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head, 2, {ok,
-                                                                              {metadata, "a/b.png", 0, 4, 0, 0, 0, 1, [], 0, 63505750315, 19740926, 0, 0}}]),
+                                                                              {metadata, "a/b.png", 0, 4, 16384, 0, 0, 1, [], 0, 63505750315, 19740926, 0, 0}}]),
     try
-        {ok, {SC, _Body}} = httpc:request(head, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[]}, [], [{full_result, false}]),
-        ?assertEqual(200, SC)
+        {ok, {{_, SC, _}, Headers, _Body}} =
+            httpc:request(head, {"http://" ++ ?TARGET_HOST ++ ":8080/a/b.png",[{"connection", "close"}]}, [], []),
+        ?assertEqual(200, SC),
+        ?assertEqual("16384", proplists:get_value("content-length", Headers))
     catch
         throw:Reason ->
             throw(Reason)
