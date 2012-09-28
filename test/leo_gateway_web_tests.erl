@@ -75,7 +75,8 @@ api_cowboy_test_() ->
              fun delete_object_notfound_/1,
              fun delete_object_normal1_/1,
              fun put_object_error_/1,
-             fun put_object_normal1_/1
+             fun put_object_normal1_/1,
+             fun proper_/1
             ]}}.
 
 -define(SSL_CERT_DATA,
@@ -430,4 +431,8 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
         ok = meck:unload(leo_s3_auth)
     end,
     ok.
+
+proper_([_TermFun, _Node0, _Node1]) ->
+    leo_gateway_web_prop:test().
+
 -endif.
