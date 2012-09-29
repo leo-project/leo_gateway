@@ -31,6 +31,7 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
+-include_lib("leo_statistics/include/leo_statistics.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
@@ -110,10 +111,6 @@ inspect_cluster_status(Res, ManagerNodes) ->
 %%--------------------------------------------------------------------
 %% Internal Functions.
 %%--------------------------------------------------------------------
--define(STAT_INTERVAL_10,   10000).
--define(STAT_INTERVAL_60,   60000).
--define(STAT_INTERVAL_300, 300000).
-
 %% @doc After process of start_link
 %% @private
 -spec(after_process_0({ok, pid()} | {error, any()}) ->
@@ -136,13 +133,14 @@ after_process_1(SystemConf, Members) ->
     %% Launch SNMPA
     App = leo_gateway,
     ok = leo_statistics_api:start_link(leo_manager),
-    ok = leo_statistics_metrics_vm:start_link(?STAT_INTERVAL_10),
-    ok = leo_statistics_metrics_vm:start_link(?STAT_INTERVAL_60),
-    ok = leo_statistics_metrics_vm:start_link(?STAT_INTERVAL_300),
-    ok = leo_statistics_metrics_req:start_link(?STAT_INTERVAL_60),
-    ok = leo_statistics_metrics_req:start_link(?STAT_INTERVAL_300),
-    ok = leo_s3_http_cache_statistics:start_link(?STAT_INTERVAL_60),
-    ok = leo_s3_http_cache_statistics:start_link(?STAT_INTERVAL_300),
+
+    ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
+    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
     %% Launch Redundant-manager
     ManagerNodes    = ?env_manager_nodes(leo_gateway),
