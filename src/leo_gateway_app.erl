@@ -132,8 +132,7 @@ after_process_0(Error) ->
 after_process_1(SystemConf, Members) ->
     %% Launch SNMPA
     App = leo_gateway,
-    ok = leo_statistics_api:start_link(leo_manager),
-
+    ok = leo_statistics_api:start_link(leo_gateway),
     ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
     ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
     ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
