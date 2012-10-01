@@ -75,10 +75,10 @@ handle_call(sync, ?STAT_INTERVAL_1M) ->
                 Value            -> Value
             end,
 
-    #stats{get_op   = NumOfRead,
-           hit_cnt  = HitCount,
-           rec_num  = NumOfObjects,
-           rec_size = TotalOfSize} = Stats,
+    #stats{gets        = NumOfRead,
+           hits        = HitCount,
+           records     = NumOfObjects,
+           cached_size = TotalOfSize} = Stats,
 
     catch snmp_generic:variable_set(?SNMP_CACHE_HIT_COUNT,  HitCount),
     catch snmp_generic:variable_set(?SNMP_CACHE_MISS_COUNT, NumOfRead - HitCount),

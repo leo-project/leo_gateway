@@ -315,7 +315,7 @@ get_object_notfound_([_TermFun, Node0, Node1]) ->
     try
         {ok, {SC, _Body}} = httpc:request(get, {lists:append(["http://",
                                                               ?TARGET_HOST,
-                                                              ":8080/a/b.png"]), []}, [], [{full_result, false}]),
+                                                              ":8080/a/b/c.png"]), []}, [], [{full_result, false}]),
         ?assertEqual(404, SC)
     catch
         throw:Reason ->

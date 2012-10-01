@@ -131,9 +131,9 @@ onrequest(#cache_condition{expire = Expire}) ->
             'GET' ->
                 Key = gen_key(Req),
                 case ecache_server:get(Key) of
-                    undefined ->
+                    not_found ->
                         Req;
-                    BinCached ->
+                    {ok, BinCached} ->
                         #cache{mtime        = MTime,
                                content_type = ContentType,
                                etag         = Checksum,
@@ -143,7 +143,7 @@ onrequest(#cache_condition{expire = Expire}) ->
                         Diff = Now - MTime,
                         case Diff > Expire of
                             true ->
-                                ecache_server:delete(Key),
+                                _ = ecache_server:delete(Key),
                                 Req;
                             false ->
                                 LastModified = leo_http:rfc1123_date(MTime),
@@ -197,7 +197,9 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                                etag         = leo_hex:binary_to_integer(erlang:md5(Body)),
                                content_type = ContentType,
                                body         = Body}),
-                _ = ecache_server:set(Key, Bin),
+
+                _ = ecache_server:put(Key, Bin),
+
                 Headers2 = lists:keydelete(<<"Last-Modified">>, 1, Headers),
                 Headers3 = [{<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)},
                             {<<"Last-Modified">>, leo_http:rfc1123_date(DateSec)}
@@ -441,9 +443,9 @@ exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
                                                     is_cached = true,
                                                     has_inner_cache = true} = Params) ->
     case ecache_server:get(Key) of
-        undefined ->
+        not_found ->
             exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
-        BinCached ->
+        {ok, BinCached} ->
             Cached = binary_to_term(BinCached),
             exec2(HTTPMethod, Req, Key, Params, Cached)
     end;
@@ -461,7 +463,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                                                    mtime = Meta#metadata.timestamp,
                                                    content_type = Mime,
                                                    body = RespObject}),
-                    ecache_server:set(Key, BinVal);
+                    ecache_server:put(Key, BinVal);
                 _ ->
                     ok
             end,
@@ -629,7 +631,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
                                            mtime = Meta#metadata.timestamp,
                                            content_type = Mime,
                                            body = RespObject}),
-            ecache_server:set(Key, BinVal),
+
+            _ = ecache_server:put(Key, BinVal),
+
             {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,

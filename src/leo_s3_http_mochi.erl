@@ -275,9 +275,9 @@ exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
                                                     is_cached = true,
                                                     has_inner_cache = true} = Params) ->
     case ecache_server:get(Key) of
-        undefined ->
+        not_found ->
             exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
-        BinCached ->
+        {ok, BinCached} ->
             Cached = binary_to_term(BinCached),
             exec2(HTTPMethod, Req, Key, Params, Cached)
     end;
@@ -295,7 +295,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                                                    mtime = Meta#metadata.timestamp,
                                                    content_type = Mime,
                                                    body = RespObject}),
-                    ecache_server:set(Key, BinVal);
+                    ecache_server:put(Key, BinVal);
                 _ ->
                     ok
             end,
@@ -473,7 +473,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
                                            mtime = Meta#metadata.timestamp,
                                            content_type = Mime,
                                            body = RespObject}),
-            ecache_server:set(Key, BinVal),
+            _ = ecache_server:put(Key, BinVal),
             Req:respond({200,
                          [?SERVER_HEADER,
                           {?HTTP_HEAD_CONTENT_TYPE,  Mime},
