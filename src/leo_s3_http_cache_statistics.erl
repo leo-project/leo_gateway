@@ -34,7 +34,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_link/1]).
--export([init/0, handle_call/2]).
+-export([init/0, handle_call/1]).
 
 -define(SNMP_MSG_REPLICATE,  'num-of-msg-replicate').
 -define(SNMP_MSG_SYNC_VNODE, 'num-of-msg-sync-vnode').
@@ -67,9 +67,9 @@ init() ->
 
 %% @doc Synchronize values.
 %%
--spec(handle_call(sync, ?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M) ->
+-spec(handle_call({sync, ?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M}) ->
              ok).
-handle_call(sync, ?STAT_INTERVAL_1M) ->
+handle_call({sync, ?STAT_INTERVAL_1M}) ->
     Stats = case catch ecache_server:stats() of
                 {'EXIT', _Cause} -> #stats{};
                 Value            -> Value
@@ -86,6 +86,6 @@ handle_call(sync, ?STAT_INTERVAL_1M) ->
     catch snmp_generic:variable_set(?SNMP_CACHE_TOTAL_SIZE, TotalOfSize),
     ok;
 
-handle_call(sync, ?STAT_INTERVAL_5M) ->
+handle_call({sync, ?STAT_INTERVAL_5M}) ->
     ok.
 
