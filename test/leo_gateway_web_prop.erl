@@ -49,7 +49,7 @@ bucket() -> list(uri_char()).
 path()   -> list(uri_char()).
 
 test() ->
-    test(64).
+    test(128).
 test(N) ->
     proper:quickcheck(?MODULE:prop_http_req(), N).
 
@@ -60,47 +60,91 @@ prop_http_req() ->
                 Url = url_gen(Bucket, Path),
                 Headers = headers_gen(),
                 RawResp = raw_resp_gen(Method, Result, Body),
-                io:format(user, "method:~p url:~s, resp:~p~n",[Method, Url, RawResp]),
                 meck_begin(Method, RawResp),
                 try
-                    http_req(Method, Url, Headers, Body, RawResp)
+                    collect("http random requests", http_req(Method, Url, Headers, Body, RawResp))
                 catch
                     throw:Reason ->
-                        throw(Reason)
+                        io:format(user, "error:~p~n",[Reason]),
+                        false
                 after
                     meck_end(Method)
-                end,
-                true
+                end
             end). 
 
-meck_begin(_M, _R) ->
+meck_begin(Method, RawResp) ->
     meck:new(leo_s3_auth),
-    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}).
+    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
+    meck:new(leo_s3_endpoint),
+    meck:expect(leo_s3_endpoint, get_endpoints, 0, ["localhost"]),
+    meck:new(leo_gateway_rpc_handler),
+    meck:expect(leo_gateway_rpc_handler, Method, 1, RawResp),
+    meck:expect(leo_gateway_rpc_handler, Method, 2, RawResp),
+    meck:expect(leo_gateway_rpc_handler, Method, 3, RawResp).
 
 meck_end(_M) ->
-    meck:unload(leo_s3_auth).
+    meck:unload(leo_s3_auth),
+    meck:unload(leo_s3_endpoint),
+    meck:unload(leo_gateway_rpc_handler).
 
-http_req(_Method, _Url, _Headers, _Body, _RawResp) ->
-    nop.
+http_req(Method, Url, Headers, _Body, RawResp) when Method =/= 'put' ->
+    case httpc:request(Method, {Url, [{"connection", "close"}|Headers]}, [], [{body_format, binary}]) of
+        {ok, {{_, SC, _}, RespHeaders, RespBody}} ->
+            %io:format(user, "[not put]sc:~p headers:~p body:~p~n",[SC, RespHeaders, RespBody]),
+            http_check_resp(SC, RespHeaders, RespBody, Method, RawResp);
+        {error, Reason} ->
+            io:format(user, "[not put]error:~p~n",[Reason]),
+            true
+    end;
+http_req(Method, Url, Headers, Body, RawResp) ->
+    case httpc:request(Method, {Url, Headers, "text/plain", Body}, [], []) of
+        {ok, {{_, SC, _}, RespHeaders, RespBody}} ->
+            http_check_resp(SC, RespHeaders, RespBody, Method, RawResp);
+        {error, Reason} ->
+            io:format(user, "[put]error:~p~n",[Reason]),
+            true
+    end.
+
+http_check_resp(SC, _RespHeaders, _RespBody, _Method, {error, not_found}) ->
+    SC =:= 404;
+http_check_resp(SC, _RespHeaders, _RespBody, _Method, {error, ?ERR_TYPE_INTERNAL_ERROR}) ->
+    SC =:= 500;
+http_check_resp(SC, _RespHeaders, _RespBody, _Method, {error, timeout}) ->
+    SC =:= 504;
+http_check_resp(SC, _RespHeaders, _RespBody, 'delete', ok) ->
+    SC =:= 204;
+http_check_resp(SC, _RespHeaders, _RespBody, 'put', ok) ->
+    SC =:= 200;
+http_check_resp(SC, RespHeaders, _RespBody, 'head', {ok, #metadata{dsize = DSize}}) ->
+    ContentLength = list_to_integer(proplists:get_value("content-length", RespHeaders, "0")),
+    SC =:= 200 andalso ContentLength =:= DSize;
+http_check_resp(SC, RespHeaders, RespBody, 'get', {ok, #metadata{dsize = DSize}, Body}) ->
+    ContentLength = list_to_integer(proplists:get_value("content-length", RespHeaders, "0")),
+    SC =:= 200 andalso ContentLength =:= DSize andalso RespBody =:= Body;
+http_check_resp(_, _, _, _, _) ->
+    false.
 
 %% @doc inner functions
 url_gen(Bucket, Path) when length(Bucket) > 0 andalso length(Path) > 0 ->
-    io_lib:format("http://~s:~s/~s/~s",
-                  [?TARGET_HOST, 
-                   ?TARGET_PORT,
-                   Bucket,
-                   Path]);
+    lists:append(["http://",
+                 ?TARGET_HOST,":", 
+                 ?TARGET_PORT,"/",
+                 Bucket,"/",
+                 Path]);
 url_gen(Bucket, _Path) when length(Bucket) > 0 ->
-    io_lib:format("http://~s:~s/~s",
-                  [?TARGET_HOST, 
-                   ?TARGET_PORT,
-                   Bucket]);
+    lists:append(["http://",
+                 ?TARGET_HOST,":", 
+                 ?TARGET_PORT,"/",
+                 Bucket,"/",
+                 Bucket]);
 url_gen(_Bucket, _Path) ->
-    io_lib:format("http://~s:~s/default", [?TARGET_HOST, ?TARGET_PORT]).
+    lists:append(["http://",
+                 ?TARGET_HOST,":", 
+                 ?TARGET_PORT,"/bucket/file"]).
 
 
 headers_gen() ->
-    [].
+    [{"Authorization","auth"}].
 
 raw_resp_gen('head', 'ok', Body) ->
     {ok, #metadata{
