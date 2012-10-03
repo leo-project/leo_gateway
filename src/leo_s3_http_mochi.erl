@@ -183,40 +183,38 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
                               ], XML});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc PUT operation on buckets.
 %%
 exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
                                        access_key_id = AccessKeyId}) ->
-    [Bucket|_] = string:tokens(Key, "/"),
-    case leo_s3_http_bucket:put_bucket(AccessKeyId, Bucket) of
+    case leo_s3_http_bucket:put_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc DELETE operation on buckets.
 %%
 exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
                                           access_key_id = AccessKeyId}) ->
-    [Bucket|_] = string:tokens(Key, "/"),
-    case leo_s3_http_bucket:delete_bucket(AccessKeyId, Bucket) of
+    case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
             Req:respond({204, [?SERVER_HEADER], []});
         not_found ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc HEAD operation on buckets.
@@ -228,10 +226,10 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
             Req:respond({200, [?SERVER_HEADER], []});
         not_found ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc GET operation on Object with Range Header.
@@ -263,10 +261,10 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                                  RespObject});
                 {error, not_found} ->
                     Req:respond({404, [?SERVER_HEADER], []});
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    Req:respond({500, [?SERVER_HEADER], []});
                 {error, timeout} ->
-                    Req:respond({504, [?SERVER_HEADER], []});
-                {error, _Cause} ->
-                    Req:respond({500, [?SERVER_HEADER], []})
+                    Req:respond({504, [?SERVER_HEADER], []})
             end
     end;
 
@@ -309,10 +307,10 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                          RespObject});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc HEAD operation on Object.
@@ -330,10 +328,10 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
             Req:respond({404, [?SERVER_HEADER], []});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc DELETE operation on Object.
@@ -344,10 +342,10 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
             Req:respond({204, [?SERVER_HEADER], []});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Casue} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc POST/PUT operation on Objects.
@@ -381,10 +379,10 @@ do_put(undefined, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Casue} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end;
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
@@ -410,10 +408,10 @@ do_put(Directive, Req, Key, _Params) ->
             do_put_2(Directive, Req, Key, Meta, RespObject);
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end.
 
 %% @doc POST/PUT operation on Objects. COPY
@@ -425,10 +423,10 @@ do_put_2(Directive, Req, Key, Meta, Bin) ->
             resp_copyobj_xml(Req, Meta);
         {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
             do_put_3(Req, Key, Meta);
+        {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {_, {error, timeout}} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {_, {error, _Cause}} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end.
 
 %% @doc POST/PUT operation on Objects. REPLACE
@@ -441,10 +439,10 @@ do_put_3(Req, _Key, Meta) ->
             resp_copyobj_xml(Req, Meta);
         {error, not_found} ->
             resp_copyobj_xml(Req, Meta);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end.
 
 resp_copyobj_xml(Req, Meta) ->
@@ -483,10 +481,10 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
                          RespObject});
         {error, not_found} ->
             Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
         {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []});
-        {error, _Cause} ->
-            Req:respond({500, [?SERVER_HEADER], []})
+            Req:respond({504, [?SERVER_HEADER], []})
     end.
 
 
