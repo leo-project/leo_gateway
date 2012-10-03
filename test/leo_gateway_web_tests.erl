@@ -515,6 +515,6 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
     end.
 
 proper_([_TermFun, _Node0, _Node1]) ->
-    {timeout, 60, fun() -> leo_gateway_web_prop:test() end}.
+    {timeout, 600, fun() -> leo_gateway_web_prop:test() end}.
 
 -endif.

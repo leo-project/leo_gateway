@@ -63,12 +63,13 @@ start(Options) ->
     {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
     {PoolSize, Options5} = get_option(acceptor_pool_size, Options4),
     HookModules = leo_misc:get_value(hook_modules, Options5),
+    UseAuth     = leo_misc:get_value(use_auth, Options5, true),
 
     LayerOfDirs = ?env_layer_of_dirs(),
     HasInnerCache = HookModules =:= undefined,
     Dispatch = [
                 {'_', [
-                       {'_', ?MODULE, [LayerOfDirs, HasInnerCache]}
+                       {'_', ?MODULE, [LayerOfDirs, HasInnerCache, UseAuth]}
                       ]}
                ],
     HttpOpts = case HasInnerCache of
@@ -268,7 +269,7 @@ handle(Req, State) ->
     Key = gen_key(Req),
     handle(Req, State, Key).
 
-handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
+handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, Path) ->
 
     HTTPMethod = case cowboy_http_req:method(Req) of
                      {?HTTP_POST, _} -> ?HTTP_PUT;
@@ -293,7 +294,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache] = State, Path) ->
 
     case cowboy_http_req:qs_val(<<"acl">>, Req2) of
         {undefined, _} ->
-            case catch auth(Req2, HTTPMethod, Path2, TokenLen) of
+            case catch auth(UseAuth, Req2, HTTPMethod, Path2, TokenLen) of
                 {error, _Cause} ->
                     {ok, Req3} = cowboy_http_req:reply(403, [?SERVER_HEADER], Req2),
                     {ok, Req3, State};
@@ -659,7 +660,9 @@ get_header(Req, Key) ->
     end.
 
 %% @doc auth
-auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
+auth(false, _Req, _HTTPMethod, _Path, _TokenLen) ->
+    {ok, []};
+auth(true, Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                            (TokenLen > 1 andalso
                                                            (HTTPMethod == ?HTTP_PUT orelse
                                                             HTTPMethod == ?HTTP_DELETE)) ->
@@ -690,7 +693,7 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             leo_s3_auth:authenticate(binary_to_list(BinAuthorization), SignParams, IsCreateBucketOp)
     end;
 
-auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
+auth(true, _Req, _HTTPMethod, _Path, _TokenLen) ->
     {ok, []}.
 
 

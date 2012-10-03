@@ -28,7 +28,7 @@
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
 
--export([start/1, stop/0, loop/3]).
+-export([start/1, stop/0, loop/4]).
 
 -include("leo_gateway.hrl").
 -include("leo_s3_http.hrl").
@@ -51,6 +51,7 @@ start(Options) ->
     {SSLCert,  Options3} = get_option(ssl_certfile, Options2),
     {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
     HookModules = leo_misc:get_value(hook_modules, Options4),
+    UseAuth     = leo_misc:get_value(use_auth,     Options4, true),
 
     HasInnerCache = HookModules =:= undefined,
     case HasInnerCache of
@@ -61,7 +62,7 @@ start(Options) ->
     end,
     LayerOfDirs = ?env_layer_of_dirs(),
 
-    Loop = fun (Req) -> ?MODULE:loop(Req, LayerOfDirs, HasInnerCache) end,
+    Loop = fun (Req) -> ?MODULE:loop(Req, LayerOfDirs, HasInnerCache, UseAuth) end,
     mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options4]),
     mochiweb_http:start([{name, ssl_proc_name()},
                          {loop, Loop},
@@ -85,9 +86,9 @@ ssl_proc_name() ->
 
 %% @doc Handling HTTP-Request/Response
 %%
--spec(loop(any(), tuple(), boolean()) ->
+-spec(loop(any(), tuple(), boolean(), boolean()) ->
              ok).
-loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
+loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth) ->
     EndPoints1 = case leo_s3_endpoint:get_endpoints() of
                      {ok, EndPoints0} ->
                          lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
@@ -97,7 +98,7 @@ loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
     [Host|_]  = string:tokens(Req:get_header_value(?HTTP_HEAD_HOST), ":"),
     Key = leo_http:key(EndPoints1, Host, Req:get(path)),
 
-    loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Key).
+    loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth, Key).
 
 
 %%--------------------------------------------------------------------
@@ -105,9 +106,9 @@ loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache) ->
 %%--------------------------------------------------------------------
 %% @doc Handling HTTP-Request/Response
 %% @private
--spec(loop1(any(), tuple(), boolean(), string()) ->
+-spec(loop1(any(), tuple(), boolean(), boolean(), string()) ->
              ok).
-loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
+loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth, Path) ->
 
     HTTPMethod = case Req:get(method) of
                      ?HTTP_POST -> ?HTTP_PUT;
@@ -133,7 +134,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Path) ->
 
     case leo_misc:get_value(?QUERY_ACL, QueryString, undefined) of
         undefined ->
-            case catch auth(Req, HTTPMethod, Path2, TokenLen) of
+            case catch auth(UseAuth, Req, HTTPMethod, Path2, TokenLen) of
                 {error, _Cause} ->
                     Req:respond({403, [?SERVER_HEADER], []});
                 {ok, AccessKeyId} ->
@@ -500,7 +501,9 @@ get_header(Req, Key) ->
 
 
 %% @doc auth
-auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
+auth(false, _Req, _HTTPMethod, _Path, _TokenLen) ->
+    {ok, []};
+auth(true, Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                            (TokenLen > 1 andalso
                                                            (HTTPMethod == ?HTTP_PUT orelse
                                                             HTTPMethod == ?HTTP_DELETE)) ->
@@ -530,7 +533,7 @@ auth(Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             leo_s3_auth:authenticate(Authorization, SignParams, IsCreateBucketOp)
     end;
 
-auth(_Req, _HTTPMethod, _Path, _TokenLen) ->
+auth(true, _Req, _HTTPMethod, _Path, _TokenLen) ->
     {ok, []}.
 
 

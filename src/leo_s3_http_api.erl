@@ -60,6 +60,7 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
     SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
     SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
     NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
+    UseAuth        = leo_misc:get_value('use_auth',         S3_HTTP_Config, true),
 
     ?info("start/3", "engine: ~p",          [mochiweb]),
     ?info("start/3", "port: ~p",            [ListenPort]),
@@ -67,6 +68,7 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
     ?info("start/3", "ssl certfile: ~p",    [SSLCertFile]),
     ?info("start/3", "ssl keyfile: ~p",     [SSLKeyFile]),
     ?info("start/3", "num of acceptors: ~p",[NumOfAcceptors]),
+    ?info("start/3", "use auth: ~p",        [UseAuth]),
 
     HookModules =
         case leo_misc:get_value('cache_plugin', S3_HTTP_Config) of
@@ -101,6 +103,7 @@ start(Sup, mochiweb, S3_HTTP_Config) ->
                   {ssl_port, SSLListenPort},
                   {ssl_certfile, SSLCertFile},
                   {ssl_keyfile, SSLKeyFile},
+                  {use_auth, UseAuth},
                   {docroot, "."}],
     WebConfig1 =
         case HookModules of
@@ -121,6 +124,7 @@ start(_Sup, cowboy, S3_HTTP_Config) ->
     SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
     SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
     NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
+    UseAuth        = leo_misc:get_value('use_auth',         S3_HTTP_Config, true),
 
     ?info("start/3", "engine: ~p",          [cowboy]),
     ?info("start/3", "port: ~p",            [ListenPort]),
@@ -128,6 +132,7 @@ start(_Sup, cowboy, S3_HTTP_Config) ->
     ?info("start/3", "ssl certfile: ~p",    [SSLCertFile]),
     ?info("start/3", "ssl keyfile: ~p",     [SSLKeyFile]),
     ?info("start/3", "num of acceptors: ~p",[NumOfAcceptors]),
+    ?info("start/3", "use auth: ~p",        [UseAuth]),
 
     WebConfig0 = [
                   {port, ListenPort},
@@ -135,6 +140,7 @@ start(_Sup, cowboy, S3_HTTP_Config) ->
                   {ssl_port, SSLListenPort},
                   {ssl_certfile, SSLCertFile},
                   {ssl_keyfile, SSLKeyFile},
+                  {use_auth, UseAuth},
                   {docroot, "."}],
 
     WebConfig1 = case proplists:get_value('cache_plugin', S3_HTTP_Config) of
