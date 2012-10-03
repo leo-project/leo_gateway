@@ -193,7 +193,8 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
 %%
 exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
                                        access_key_id = AccessKeyId}) ->
-    case leo_s3_http_bucket:put_bucket(AccessKeyId, Key) of
+    [Bucket|_] = string:tokens(Key, "/"),
+    case leo_s3_http_bucket:put_bucket(AccessKeyId, Bucket) of
         ok ->
             Req:respond({200, [?SERVER_HEADER], []});
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
