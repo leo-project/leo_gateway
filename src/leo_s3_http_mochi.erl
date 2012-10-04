@@ -38,38 +38,52 @@
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-define(SSL_PROC_NAME, list_to_atom(lists:append([?MODULE_STRING, "_ssl"]))).
+
+
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
 %% Start web-server
 %%
--spec(start(list()) ->
+-spec(start(#http_options{}) ->
              ok).
-start(Options) ->
-    {_DocRoot, Options1} = get_option(docroot,      Options),
-    {SSLPort,  Options2} = get_option(ssl_port,     Options1),
-    {SSLCert,  Options3} = get_option(ssl_certfile, Options2),
-    {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
-    HookModules = leo_misc:get_value(hook_modules, Options4),
-    UseAuth     = leo_misc:get_value(use_auth,     Options4, true),
-
-    HasInnerCache = HookModules =:= undefined,
-    case HasInnerCache of
-        true ->
-            application:start(ecache);
-        _ ->
-            void
+start(#http_options{port                  = Port,
+                    ssl_port              = SSLPort,
+                    ssl_certfile          = SSLCertFile,
+                    ssl_keyfile           = SSLKeyFile,
+                    num_of_acceptors      = NumOfAcceptors,
+                    use_auth              = UseAuth,
+                    cache_plugin          = CachePlugIn,
+                    cache_expire          = CacheExpire,
+                    cache_max_content_len = CacheMaxContentLen,
+                    cachable_content_type = CachableContentTypes,
+                    cachable_path_pattern = CachablePathPatterns}) ->
+    InternalCache = (CachePlugIn == []),
+    case InternalCache of
+        true  -> application:start(ecache);
+        false -> void
     end,
-    LayerOfDirs = ?env_layer_of_dirs(),
 
-    Loop = fun (Req) -> ?MODULE:loop(Req, LayerOfDirs, HasInnerCache, UseAuth) end,
-    mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options4]),
-    mochiweb_http:start([{name, ssl_proc_name()},
-                         {loop, Loop},
-                         {ssl, true},
-                         {ssl_opts, [{certfile, SSLCert},
-                                     {keyfile,  SSLKey}]},
-                         {port, SSLPort}]).
+    Loop    = fun (Req) -> ?MODULE:loop(Req, ?env_layer_of_dirs(), InternalCache, UseAuth) end,
+    HookMod = case InternalCache of
+                  true  -> [];
+                  false ->
+                      [{CachePlugIn, [{expire,                CacheExpire},
+                                      {max_content_len,       CacheMaxContentLen},
+                                      {cachable_content_type, CachableContentTypes},
+                                      {cachable_path_pattern, CachablePathPatterns}]}]
+              end,
+
+    mochiweb_http:start([{name, ?MODULE}, {loop, Loop},
+                         {ip, "0.0.0.0"}, {port, Port}, {acceptor_pool_size, NumOfAcceptors},
+                         {hook_modules, HookMod}]),
+    mochiweb_http:start([{name, ?SSL_PROC_NAME},
+                         {loop,     Loop},
+                         {ssl,      true},
+                         {port,     SSLPort},
+                         {ssl_opts, [{certfile, SSLCertFile},
+                                     {keyfile,  SSLKeyFile}]}]).
 
 
 %% @doc Stop web-server
@@ -78,11 +92,8 @@ start(Options) ->
              ok).
 stop() ->
     mochiweb_http:stop(?MODULE),
-    mochiweb_http:stop(ssl_proc_name()).
+    mochiweb_http:stop(?SSL_PROC_NAME).
 
-%% @doc ssl process name
-ssl_proc_name() ->
-    list_to_atom(?MODULE_STRING ++ "_ssl").
 
 %% @doc Handling HTTP-Request/Response
 %%
@@ -352,108 +363,13 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 %% @doc POST/PUT operation on Objects.
 %%
 exec1(?HTTP_PUT, Req, Key, _Params) ->
-    do_put(Req:get_header_value(?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, _Params);
+    put1(Req:get_header_value(?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, _Params);
 
 %% @doc invalid request.
 %%
 exec1(_, Req, _, _) ->
     Req:respond({400, [?SERVER_HEADER], []}).
 
-
-%% @doc POST/PUT operation on Objects. NORMAL
-%%
-do_put(undefined, Req, Key, _Params) ->
-    Size  = list_to_integer(Req:get_header_value("content-length")),
-    case Req:get_header_value(?HTTP_HEAD_EXPECT) of
-        ?HTTP_HEAD_100_CONTINUE ->
-            Req:respond({100, [?SERVER_HEADER], []});
-        _ ->
-            void
-    end,
-
-    Bin = case (Size == 0) of
-              %% for support uploading zero byte files.
-              true  -> <<>>;
-              false -> Req:recv(Size)
-          end,
-
-    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
-        ok ->
-            Req:respond({200, [?SERVER_HEADER], []});
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            Req:respond({500, [?SERVER_HEADER], []});
-        {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []})
-    end;
-
-%% @doc POST/PUT operation on Objects. COPY/REPLACE
-%%
-do_put(Directive, Req, Key, _Params) ->
-    case Req:get_header_value(?HTTP_HEAD_EXPECT) of
-        ?HTTP_HEAD_100_CONTINUE ->
-            Req:respond({100, [?SERVER_HEADER], []});
-        _ ->
-            void
-    end,
-    CS = Req:get_header_value(?HTTP_HEAD_X_AMZ_COPY_SOURCE),
-    % need to trim head '/' when cooperating with s3fs(-c)
-    CS2 = case string:left(CS, 1) of
-        "/" ->
-            [_H|Rest] = CS,
-            Rest;
-        _ ->
-            CS
-    end,
-    case leo_gateway_rpc_handler:get(CS2) of
-        {ok, Meta, RespObject} ->
-            do_put_2(Directive, Req, Key, Meta, RespObject);
-        {error, not_found} ->
-            Req:respond({404, [?SERVER_HEADER], []});
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            Req:respond({500, [?SERVER_HEADER], []});
-        {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []})
-    end.
-
-%% @doc POST/PUT operation on Objects. COPY
-%%
-do_put_2(Directive, Req, Key, Meta, Bin) ->
-    Size = size(Bin),
-    case {Directive, leo_gateway_rpc_handler:put(Key, Bin, Size)} of
-        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY, ok} ->
-            resp_copyobj_xml(Req, Meta);
-        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
-            do_put_3(Req, Key, Meta);
-        {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
-            Req:respond({500, [?SERVER_HEADER], []});
-        {_, {error, timeout}} ->
-            Req:respond({504, [?SERVER_HEADER], []})
-    end.
-
-%% @doc POST/PUT operation on Objects. REPLACE
-%%
-do_put_3(Req, Key, Meta) when Key == Meta#metadata.key ->
-    resp_copyobj_xml(Req, Meta);
-do_put_3(Req, _Key, Meta) ->
-    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
-        ok ->
-            resp_copyobj_xml(Req, Meta);
-        {error, not_found} ->
-            resp_copyobj_xml(Req, Meta);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            Req:respond({500, [?SERVER_HEADER], []});
-        {error, timeout} ->
-            Req:respond({504, [?SERVER_HEADER], []})
-    end.
-
-resp_copyobj_xml(Req, Meta) ->
-    XML = io_lib:format(?XML_COPY_OBJ_RESULT,
-                        [leo_http:web_date(Meta#metadata.timestamp),
-                         erlang:integer_to_list(Meta#metadata.checksum, 16)]),
-    Req:respond({200, [?SERVER_HEADER,
-                       {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
-                       {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_date:now())}
-                      ], XML}).
 
 %% @doc GET operation with Etag
 %%
@@ -489,6 +405,95 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
     end.
 
 
+%% @doc POST/PUT operation on Objects. NORMAL
+%%
+put1(undefined, Req, Key, _Params) ->
+    Size  = list_to_integer(Req:get_header_value("content-length")),
+    case Req:get_header_value(?HTTP_HEAD_EXPECT) of
+        ?HTTP_HEAD_100_CONTINUE ->
+            Req:respond({100, [?SERVER_HEADER], []});
+        _ ->
+            void
+    end,
+
+    Bin = case (Size == 0) of
+              %% for support uploading zero byte files.
+              true  -> <<>>;
+              false -> Req:recv(Size)
+          end,
+
+    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
+        ok ->
+            Req:respond({200, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end;
+
+%% @doc POST/PUT operation on Objects. COPY/REPLACE
+%%
+put1(Directive, Req, Key, _Params) ->
+    case Req:get_header_value(?HTTP_HEAD_EXPECT) of
+        ?HTTP_HEAD_100_CONTINUE ->
+            Req:respond({100, [?SERVER_HEADER], []});
+        _ ->
+            void
+    end,
+    CS = Req:get_header_value(?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+    %% need to trim head '/' when cooperating with s3fs(-c)
+    CS2 = case string:left(CS, 1) of
+              "/" ->
+                  [_H|Rest] = CS,
+                  Rest;
+              _ ->
+                  CS
+          end,
+    case leo_gateway_rpc_handler:get(CS2) of
+        {ok, Meta, RespObject} ->
+            put2(Directive, Req, Key, Meta, RespObject);
+        {error, not_found} ->
+            Req:respond({404, [?SERVER_HEADER], []});
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end.
+
+
+%% @doc POST/PUT operation on Objects. COPY
+%%
+put2(Directive, Req, Key, Meta, Bin) ->
+    Size = size(Bin),
+    case {Directive, leo_gateway_rpc_handler:put(Key, Bin, Size)} of
+        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY, ok} ->
+            resp_copyobj_xml(Req, Meta);
+        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
+            put3(Req, Key, Meta);
+        {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {_, {error, timeout}} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end.
+
+
+%% @doc POST/PUT operation on Objects. REPLACE
+%%
+put3(Req, Key, Meta) when Key == Meta#metadata.key ->
+    resp_copyobj_xml(Req, Meta);
+put3(Req, _Key, Meta) ->
+    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
+        ok ->
+            resp_copyobj_xml(Req, Meta);
+        {error, not_found} ->
+            resp_copyobj_xml(Req, Meta);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            Req:respond({500, [?SERVER_HEADER], []});
+        {error, timeout} ->
+            Req:respond({504, [?SERVER_HEADER], []})
+    end.
+
+
 %% @doc getter helper function. return "" if specified header is undefined
 get_header(Req, Key) ->
     case Req:get_header_value(Key) of
@@ -499,13 +504,26 @@ get_header(Req, Key) ->
     end.
 
 
+%% @doc
+%% @private
+resp_copyobj_xml(Req, Meta) ->
+    XML = io_lib:format(?XML_COPY_OBJ_RESULT,
+                        [leo_http:web_date(Meta#metadata.timestamp),
+                         erlang:integer_to_list(Meta#metadata.checksum, 16)]),
+    Req:respond({200, [?SERVER_HEADER,
+                       {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
+                       {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_date:now())}
+                      ], XML}).
+
+
 %% @doc auth
+%% @private
 auth(false, _Req, _HTTPMethod, _Path, _TokenLen) ->
     {ok, []};
 auth(true, Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
-                                           (TokenLen > 1 andalso
-                                                           (HTTPMethod == ?HTTP_PUT orelse
-                                                            HTTPMethod == ?HTTP_DELETE)) ->
+                                                 (TokenLen > 1 andalso
+                                                                 (HTTPMethod == ?HTTP_PUT orelse
+                                                                  HTTPMethod == ?HTTP_DELETE)) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case Req:get_header_value("Authorization") of
@@ -534,13 +552,4 @@ auth(true, Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
 
 auth(true, _Req, _HTTPMethod, _Path, _TokenLen) ->
     {ok, []}.
-
-
-%% @doc get options from mochiweb.
-%%
--spec(get_option(atom(), list()) ->
-             {any(), any()}).
-get_option(Option, Options) ->
-    {leo_misc:get_value(Option, Options),
-     lists:keydelete(Option, 1, Options)}.
 

@@ -79,6 +79,20 @@
         ++ "</CopyObjectResult>").
 
 
+-record(http_options, {
+          port = 0                   :: integer(),
+          ssl_port = 0               :: integer(),
+          ssl_certfile = []          :: string(),
+          ssl_keyfile = []           :: string(),
+          num_of_acceptors = 0       :: integer(),
+          use_auth = true            :: boolean(),
+          cache_plugin = []          :: string(),
+          cache_expire = 0           :: integer(),
+          cache_max_content_len = 0  :: integer(),
+          cachable_content_type = [] :: list(),
+          cachable_path_pattern = [] :: list()
+         }).
+
 -record(req_params, {
           access_key_id     :: string(),
           token_length      :: integer(),

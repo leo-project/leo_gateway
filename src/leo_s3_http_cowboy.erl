@@ -55,60 +55,56 @@
 %%--------------------------------------------------------------------
 %% start web-server.
 %%
--spec(start(list()) ->
+-spec(start(#http_options{}) ->
              ok).
-start(Options) ->
-    {_DocRoot, Options1} = get_option(docroot, Options),
-    {SSLPort,  Options2} = get_option(ssl_port,     Options1),
-    {SSLCert,  Options3} = get_option(ssl_certfile, Options2),
-    {SSLKey,   Options4} = get_option(ssl_keyfile,  Options3),
-    {PoolSize, Options5} = get_option(acceptor_pool_size, Options4),
-    HookModules = leo_misc:get_value(hook_modules, Options5),
-    UseAuth     = leo_misc:get_value(use_auth, Options5, true),
+start(#http_options{port                  = Port,
+                    ssl_port              = SSLPort,
+                    ssl_certfile          = SSLCertFile,
+                    ssl_keyfile           = SSLKeyFile,
+                    num_of_acceptors      = NumOfAcceptors,
+                    use_auth              = UseAuth,
+                    cache_plugin          = CachePlugIn,
+                    cache_expire          = CacheExpire,
+                    cache_max_content_len = CacheMaxContentLen,
+                    cachable_content_type = CachableContentTypes,
+                    cachable_path_pattern = CachablePathPatterns}) ->
 
-    LayerOfDirs = ?env_layer_of_dirs(),
-    HasInnerCache = HookModules =:= undefined,
-    Dispatch = [
-                {'_', [
-                       {'_', ?MODULE, [LayerOfDirs, HasInnerCache, UseAuth]}
-                      ]}
-               ],
-    HttpOpts = case HasInnerCache of
-                   true ->
-                       %% using inner cache
-                       [{dispatch, Dispatch}];
-                   _ ->
-                       CacheCondition = #cache_condition{
-                         expire          = proplists:get_value(expire, Options5, 300),
-                         max_content_len = proplists:get_value(max_content_len, Options5, 1024 * 1024),
-                         content_types   = proplists:get_value(cachable_content_type, Options5, []),
-                         path_patterns   = lists:foldl(
-                                             fun(P, Acc) ->
-                                                     case re:compile(P) of
-                                                         {ok, MP} ->
-                                                             [MP|Acc];
-                                                         _Error ->
-                                                             Acc
-                                                     end
-                                             end, [],
-                                             proplists:get_value(cachable_path_pattern, Options5, []))
-                        },
-                       [{dispatch,   Dispatch},
-                        {onrequest,  onrequest(CacheCondition)},
-                        {onresponse, onresponse(CacheCondition)}]
-               end,
+    InternalCache = (CachePlugIn == []),
+    Dispatch      = [{'_', [{'_', ?MODULE,
+                             [?env_layer_of_dirs(), InternalCache, UseAuth]}]}],
+
+    Config = case InternalCache of
+                 %% Using inner-cache
+                 true ->
+                     [{dispatch, Dispatch}];
+                 %% Using cache-plugin
+                 false ->
+                     PathPatterns1 = lists:foldl(
+                                       fun(P, Acc) ->
+                                               case re:compile(P) of
+                                                   {ok, MP} -> [MP|Acc];
+                                                   _        -> Acc
+                                               end
+                                       end, [], CachablePathPatterns),
+
+                     CacheCondition = #cache_condition{expire          = CacheExpire,
+                                                       max_content_len = CacheMaxContentLen,
+                                                       content_types   = CachableContentTypes,
+                                                       path_patterns   = PathPatterns1},
+                     [{dispatch,   Dispatch},
+                      {onrequest,  onrequest(CacheCondition)},
+                      {onresponse, onresponse(CacheCondition)}]
+             end,
 
     application:start(ecache),
-    application:start(cowboy),
-
-    cowboy:start_listener(?MODULE, PoolSize,
-                          cowboy_tcp_transport, Options5,
-                          cowboy_http_protocol, HttpOpts),
-    cowboy:start_listener(?SSL_PROC_NAME, PoolSize,
-                          cowboy_ssl_transport, [{port, SSLPort},
-                                                 {certfile, SSLCert},
-                                                 {keyfile, SSLKey}],
-                          cowboy_http_protocol, HttpOpts).
+    cowboy:start_listener(?MODULE, NumOfAcceptors,
+                          cowboy_tcp_transport, [{port, Port}],
+                          cowboy_http_protocol, Config),
+    cowboy:start_listener(?SSL_PROC_NAME, NumOfAcceptors,
+                          cowboy_ssl_transport, [{port,     SSLPort},
+                                                 {certfile, SSLCertFile},
+                                                 {keyfile,  SSLKeyFile}],
+                          cowboy_http_protocol, Config).
 
 
 %% @doc
@@ -176,7 +172,6 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, 
                             {ok, Req3, State};
                         {ok, Req3} ->
                             Req4 = cowboy_http_req:compact(Req3),
-                                                %erlang:garbage_collect(self()),
                             {ok, Req4, State}
                     end;
                 {'EXIT', Reason} ->
@@ -563,7 +558,7 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 %% @doc POST/PUT operation on Objects.
 %% @private
 exec1(?HTTP_PUT, Req, Key, Params) ->
-    do_put1(get_header(Req, <<"X-Amz-Metadata-Directive">>), Req, Key, Params);
+    put1(get_header(Req, <<"X-Amz-Metadata-Directive">>), Req, Key, Params);
 
 %% @doc invalid request.
 %% @private
@@ -611,7 +606,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-do_put1("", Req, Key, _Params) ->
+put1("", Req, Key, _Params) ->
     {Has, _Req} = cowboy_http_req:has_body(Req),
     {ok, Bin, Req2} = case Has of
                           %% for support uploading zero byte files.
@@ -631,7 +626,7 @@ do_put1("", Req, Key, _Params) ->
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
-do_put1(Directive, Req, Key, _Params) ->
+put1(Directive, Req, Key, _Params) ->
     CS = get_header(Req, <<"X-Amz-Copy-Source">>),
                                                 % need to trim head '/' when cooperating with s3fs(-c)
     CS2 = case string:left(CS, 1) of
@@ -643,7 +638,7 @@ do_put1(Directive, Req, Key, _Params) ->
           end,
     case leo_gateway_rpc_handler:get(CS2) of
         {ok, Meta, RespObject} ->
-            do_put2(Directive, Req, Key, Meta, RespObject);
+            put2(Directive, Req, Key, Meta, RespObject);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -654,13 +649,13 @@ do_put1(Directive, Req, Key, _Params) ->
 
 %% @doc POST/PUT operation on Objects. COPY
 %% @private
-do_put2(Directive, Req, Key, Meta, Bin) ->
+put2(Directive, Req, Key, Meta, Bin) ->
     Size = size(Bin),
     case {Directive, leo_gateway_rpc_handler:put(Key, Bin, Size)} of
         {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY, ok} ->
             resp_copyobj_xml(Req, Meta);
         {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
-            do_put3(Req, Key, Meta);
+            put3(Req, Key, Meta);
         {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
             cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
         {_, {error, timeout}} ->
@@ -670,9 +665,9 @@ do_put2(Directive, Req, Key, Meta, Bin) ->
 
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
-do_put3(Req, Key, Meta) when Key == Meta#metadata.key ->
+put3(Req, Key, Meta) when Key == Meta#metadata.key ->
     resp_copyobj_xml(Req, Meta);
-do_put3(Req, _Key, Meta) ->
+put3(Req, _Key, Meta) ->
     case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
         ok ->
             resp_copyobj_xml(Req, Meta);
@@ -696,7 +691,7 @@ get_header(Req, Key) ->
     end.
 
 
-%% @doc POST/PUT operation on Objects. REPLACE
+%% @doc
 %% @private
 resp_copyobj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
@@ -746,13 +741,4 @@ auth(true, Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
 
 auth(true, _Req, _HTTPMethod, _Path, _TokenLen) ->
     {ok, []}.
-
-
-%% @doc get options from mochiweb.
-%% @private
--spec(get_option(atom(), list()) ->
-             {any(), any()}).
-get_option(Option, Options) ->
-    {leo_misc:get_value(Option, Options),
-     lists:keydelete(Option, 1, Options)}.
 
