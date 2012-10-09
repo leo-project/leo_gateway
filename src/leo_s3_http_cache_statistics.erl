@@ -70,7 +70,7 @@ init() ->
 -spec(handle_call({sync, ?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M}) ->
              ok).
 handle_call({sync, ?STAT_INTERVAL_1M}) ->
-    Stats = case catch ecache_server:stats() of
+    Stats = case catch ecache_api:stats() of
                 {'EXIT', _Cause} -> #stats{};
                 Value            -> Value
             end,

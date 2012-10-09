@@ -19,7 +19,7 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo S3 HTTP - Mochiweb
+%% Leo S3 HTTP
 %% @doc
 %% @end
 %%======================================================================
@@ -34,6 +34,7 @@
 -define(QUERY_MAX_KEYS,  "max-keys").
 -define(QUERY_ACL,       "acl").
 -define(STR_SLASH,       "/").
+-define(BIN_SLASH,       <<"/">>).
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
@@ -46,10 +47,11 @@
 -define(HTTP_HEAD_LAST_MODIFIED, "Last-Modified").
 -define(HTTP_HEAD_EXPECT,        "Expect").
 -define(HTTP_HEAD_100_CONTINUE,  "100-continue").
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         "x-amz-metadata-directive").
--define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            "x-amz-copy-source").
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    "COPY").
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, "REPLACE").
+
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"x-amz-metadata-directive">>).
+-define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"x-amz-copy-source">>).
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 
 %% s3 response xmls
 -define(XML_BUCKET_LIST,

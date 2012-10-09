@@ -33,6 +33,7 @@
 
 -include("leo_gateway.hrl").
 -include("leo_s3_http.hrl").
+
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
@@ -126,27 +127,25 @@ handle(Req, State) ->
     handle(Req, State, Key).
 
 handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, Path) ->
-
     HTTPMethod = case cowboy_http_req:method(Req) of
                      {?HTTP_POST, _} -> ?HTTP_PUT;
                      {Other, _}      -> Other
                  end,
 
-    {Prefix, IsDir, Path2, Req2} = case cowboy_http_req:qs_val(<<"prefix">>, Req) of
-                                       {undefined, Req1} ->
-                                           HasTermSlash = case string:right(Path, 1) of
-                                                              ?STR_SLASH -> true;
-                                                              _Else      -> false
-                                                          end,
-                                           {none, HasTermSlash, Path, Req1};
-                                       {BinParam, Req1} ->
-                                           NewPath = case string:right(Path, 1) of
-                                                         ?STR_SLASH -> Path;
-                                                         _Else      -> Path ++ ?STR_SLASH
-                                                     end,
-                                           {binary_to_list(BinParam), true, NewPath, Req1}
-                                   end,
-    TokenLen = erlang:length(string:tokens(Path2, ?STR_SLASH)),
+    {Prefix, IsDir, Path2, Req2} =
+        case cowboy_http_req:qs_val(<<"prefix">>, Req) of
+            {undefined, Req1} ->
+                HasTermSlash = (?BIN_SLASH ==
+                                    binary:part(Path, {byte_size(Path)-1, 1})),
+                {none, HasTermSlash, Path, Req1};
+            {BinParam, Req1} ->
+                NewPath = case binary:part(Path, {byte_size(Path)-1, 1}) of
+                              ?BIN_SLASH -> Path;
+                              _Else      -> <<Path/binary, ?BIN_SLASH/binary>>
+                          end,
+                {BinParam, true, NewPath, Req1}
+        end,
+    TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
 
     case cowboy_http_req:qs_val(<<"acl">>, Req2) of
         {undefined, _} ->
@@ -156,6 +155,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, 
                     {ok, Req3, State};
                 {ok, AccessKeyId} ->
                     {RangeHeader, _} = cowboy_http_req:header('Range', Req2),
+
                     case catch exec1(HTTPMethod, Req2, Path2,
                                      #req_params{token_length     = TokenLen,
                                                  access_key_id    = AccessKeyId,
@@ -205,7 +205,7 @@ onrequest(#cache_condition{expire = Expire}) ->
 %% @private
 onrequest_fun1(?HTTP_GET, Req, Expire) ->
     Key = gen_key(Req),
-    Ret = ecache_server:get(Key),
+    Ret = ecache_api:get(Key),
     onrequest_fun2(Req, Expire, Key, Ret);
 onrequest_fun1(_, Req, _) ->
     Req.
@@ -226,7 +226,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
 
     case (Diff > Expire) of
         true ->
-            _ = ecache_server:delete(Key),
+            _ = ecache_api:delete(Key),
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
@@ -282,7 +282,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                                    content_type = ContentType,
                                    body         = Body}),
 
-                    _ = ecache_server:put(Key, Bin),
+                    _ = ecache_api:put(Key, Bin),
 
                     Headers2 = lists:keydelete(<<"Last-Modified">>, 1, Headers),
                     Headers3 = [{<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)},
@@ -361,10 +361,10 @@ gen_key(Req) ->
                          lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
                      _ -> []
                  end,
-    {BinHost, _} = cowboy_http_req:raw_host(Req),
-    {BinRawPath, _} = cowboy_http_req:raw_path(Req),
-    BinPath = cowboy_http:urldecode(BinRawPath),
-    leo_http:key(EndPoints1, binary_to_list(BinHost), binary_to_list(BinPath)).
+    {Host,    _} = cowboy_http_req:raw_host(Req),
+    {RawPath, _} = cowboy_http_req:raw_path(Req),
+    Path = cowboy_http:urldecode(RawPath),
+    leo_http:key(EndPoints1, Host, Path).
 
 
 %% @doc constraint violation.
@@ -397,7 +397,13 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
 %% @private
 exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
                                        access_key_id = AccessKeyId}) ->
-    [Bucket|_] = string:tokens(Key, "/"),
+    Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
+                 true ->
+                     binary:part(Key, {0, byte_size(Key) -1});
+                 false ->
+                     Key
+             end,
+
     case leo_s3_http_bucket:put_bucket(AccessKeyId, Bucket) of
         ok ->
             cowboy_http_req:reply(200, [?SERVER_HEADER], Req);
@@ -441,6 +447,7 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                                        range_header = RangeHeader}) when RangeHeader =/= undefined ->
+    %% @TODO
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
@@ -479,7 +486,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
 exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
                                                     is_cached = true,
                                                     has_inner_cache = true} = Params) ->
-    case ecache_server:get(Key) of
+    case ecache_api:get(Key) of
         not_found ->
             exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj} ->
@@ -500,7 +507,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                                                    mtime = Meta#metadata.timestamp,
                                                    content_type = Mime,
                                                    body = RespObject}),
-                    ecache_server:put(Key, BinVal);
+                    ecache_api:put(Key, BinVal);
                 _ ->
                     ok
             end,
@@ -586,7 +593,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
                                            content_type = Mime,
                                            body = RespObject}),
 
-            _ = ecache_server:put(Key, BinVal),
+            _ = ecache_api:put(Key, BinVal),
 
             {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
@@ -606,7 +613,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-put1("", Req, Key, _Params) ->
+put1([], Req, Key, _Params) ->
     {Has, _Req} = cowboy_http_req:has_body(Req),
     {ok, Bin, Req2} = case Has of
                           %% for support uploading zero byte files.
@@ -628,14 +635,16 @@ put1("", Req, Key, _Params) ->
 %% @private
 put1(Directive, Req, Key, _Params) ->
     CS = get_header(Req, <<"X-Amz-Copy-Source">>),
-                                                % need to trim head '/' when cooperating with s3fs(-c)
-    CS2 = case string:left(CS, 1) of
-              "/" ->
+
+    %% need to trim head '/' when cooperating with s3fs(-c)
+    CS2 = case binary:part(Key, {0, 1}) of
+              ?BIN_SLASH ->
                   [_H|Rest] = CS,
                   Rest;
               _ ->
                   CS
           end,
+
     case leo_gateway_rpc_handler:get(CS2) of
         {ok, Meta, RespObject} ->
             put2(Directive, Req, Key, Meta, RespObject);
@@ -685,9 +694,9 @@ put3(Req, _Key, Meta) ->
 get_header(Req, Key) ->
     case cowboy_http_req:header(Key, Req) of
         {undefined, _} ->
-            "";
-        {Val, _} ->
-            binary_to_list(Val)
+            [];
+        {Bin, _} ->
+            Bin
     end.
 
 
@@ -706,39 +715,42 @@ resp_copyobj_xml(Req, Meta) ->
 
 %% @doc Authentication
 %% @private
-auth(false, _Req, _HTTPMethod, _Path, _TokenLen) ->
+auth(false,_Req,_HTTPMethod,_Path,_TokenLen) ->
     {ok, []};
-auth(true, Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
-                                                 (TokenLen > 1 andalso
-                                                                 (HTTPMethod == ?HTTP_PUT orelse
-                                                                  HTTPMethod == ?HTTP_DELETE)) ->
+auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
+                                                  (TokenLen > 1 andalso
+                                                                  (HTTPMethod == ?HTTP_PUT orelse
+                                                                   HTTPMethod == ?HTTP_DELETE)) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case cowboy_http_req:header('Authorization', Req) of
         {undefined, _} ->
             {error, undefined};
-        {BinAuthorization, _} ->
-            Bucket = case TokenLen >= 1 of
-                         true  -> hd(string:tokens(Path, ?STR_SLASH));
+        {_BinAuthorization, _} ->
+            Bucket = case (TokenLen >= 1) of
+                         true  -> hd(binary:split(Path, [?BIN_SLASH], [global]));
                          false -> []
                      end,
 
-            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
-            {BinRawUri, _} = cowboy_http_req:raw_path(Req),
+            _Iscreatebucketop    = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
+            {BinRawUri,      _} = cowboy_http_req:raw_path(Req),
             {BinQueryString, _} = cowboy_http_req:raw_qs(Req),
-            {Headers, _} = cowboy_http_req:headers(Req),
+            {Headers,        _} = cowboy_http_req:headers(Req),
+
             SignParams = #sign_params{http_verb    = HTTPMethod,
                                       content_md5  = get_header(Req, 'Content-MD5'),
                                       content_type = get_header(Req, 'Content-Type'),
                                       date         = get_header(Req, 'Date'),
                                       bucket       = Bucket,
-                                      uri          = binary_to_list(BinRawUri),
-                                      query_str    = binary_to_list(BinQueryString),
-                                      amz_headers  = leo_http:get_amz_headers4cow(Headers)
-                                     },
-            leo_s3_auth:authenticate(binary_to_list(BinAuthorization), SignParams, IsCreateBucketOp)
+                                      uri          = BinRawUri,
+                                      query_str    = BinQueryString,
+                                      amz_headers  = leo_http:get_amz_headers4cow(Headers)},
+            ?debugVal(SignParams),
+            %% @TODO
+            {ok, "05236"}
+            %%leo_s3_auth:authenticate(BinAuthorization, SignParams, IsCreateBucketOp)
     end;
 
-auth(true, _Req, _HTTPMethod, _Path, _TokenLen) ->
+auth(_,_,_,_,_) ->
     {ok, []}.
 

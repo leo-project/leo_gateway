@@ -60,10 +60,14 @@ get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
             Error
     end;
 get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
-    {ok, #redundancies{nodes = Redundancies}} =
-        leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
+    BucketStr = binary_to_list(Bucket),
+    PrefixStr = binary_to_list(Prefix),
 
-    Key =  Bucket ++ Prefix,
+    {ok, #redundancies{nodes = Redundancies}} =
+        leo_redundant_manager_api:get_redundancies_by_key(get, BucketStr),
+
+    Key =  lists:append([BucketStr,PrefixStr]),
+
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
@@ -83,7 +87,8 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
 -spec(put_bucket(string(), string()|none) ->
              ok|{error, any()}).
 put_bucket(AccessKeyId, Bucket) ->
-    leo_s3_bucket:put(AccessKeyId, Bucket).
+    BucketStr = binary_to_list(Bucket),
+    leo_s3_bucket:put(AccessKeyId, BucketStr).
 
 
 %% @doc delete bucket
@@ -91,7 +96,8 @@ put_bucket(AccessKeyId, Bucket) ->
 -spec(delete_bucket(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket(AccessKeyId, Bucket) ->
-    leo_s3_bucket:delete(AccessKeyId, Bucket).
+    BucketStr = binary_to_list(Bucket),
+    leo_s3_bucket:delete(AccessKeyId, BucketStr).
 
 
 %% @doc head bucket
@@ -99,7 +105,8 @@ delete_bucket(AccessKeyId, Bucket) ->
 -spec(head_bucket(string(), string()|none) ->
              ok|{error, any()}).
 head_bucket(AccessKeyId, Bucket) ->
-    leo_s3_bucket:head(AccessKeyId, Bucket).
+    BucketStr = binary_to_list(Bucket),
+    leo_s3_bucket:head(AccessKeyId, BucketStr).
 
 
 %% @doc Generate XML from matadata-list

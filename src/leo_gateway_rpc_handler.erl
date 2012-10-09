@@ -123,15 +123,18 @@ delete(Key) ->
 %%
 -spec(put(string(), binary(), integer()) ->
              ok|{error, any()}).
-put(Key, Body, Size) ->
-    _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
-    ReqParams = get_request_parameters(put, Key),
-    invoke(ReqParams#req_params.redundancies,
-           leo_storage_handler_object,
-           put,
-           [ReqParams#req_params.addr_id, Key, Body, Size,
-            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
-           []).
+put(Key, _Body, _Size) ->
+    %% @TODO
+    ?debugVal(Key),
+    ok.
+    %% _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
+    %% ReqParams = get_request_parameters(put, Key),
+    %% invoke(ReqParams#req_params.redundancies,
+    %%        leo_storage_handler_object,
+    %%        put,
+    %%        [ReqParams#req_params.addr_id, Key, Body, Size,
+    %%         ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+    %%        []).
 
 
 %% @doc do invoke rpc calls with handling retries
