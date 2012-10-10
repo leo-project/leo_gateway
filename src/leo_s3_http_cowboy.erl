@@ -147,6 +147,8 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, 
         end,
     TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
 
+?info("handle/4", "path:~p, req:~p", [Path2, Req2]),
+
     case cowboy_http_req:qs_val(<<"acl">>, Req2) of
         {undefined, _} ->
             case catch auth(UseAuth, Req2, HTTPMethod, Path2, TokenLen) of
@@ -316,19 +318,17 @@ is_cachable_path(Path) ->
 is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Headers, Req) ->
     {Method, _} = cowboy_http_req:method(Req),
     {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
-    HasNOTCacheControl = case lists:keyfind(<<"Cache-Control">>, 1, Headers) of
-                             false ->
-                                 true;
-                             _ ->
-                                 false
-                         end,
-    Status =:= 200 andalso
+    HasNOTCacheControl = 
+        case lists:keyfind(<<"Cache-Control">>, 1, Headers) of
+            false -> true;
+            _     -> false
+        end,
+    HasNOTCacheControl andalso
+        Status =:= 200 andalso
         Method =:= 'GET' andalso
         is_binary(Body) andalso
         size(Body) > 0 andalso
-        size(Body) < MaxLen andalso
-        HasNOTCacheControl.
-
+        size(Body) < MaxLen.
 
 %% @doc
 %% @private
@@ -466,6 +466,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
         _ ->
             case leo_gateway_rpc_handler:get(Key, Start, End) of
                 {ok, _Meta, RespObject} ->
+                    % @TODO
                     Mime = mochiweb_util:guess_mime(Key),
                     {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
                     cowboy_http_req:reply(206,
@@ -499,6 +500,7 @@ exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         {ok, Meta, RespObject} ->
+            % @TODO
             Mime = mochiweb_util:guess_mime(Key),
 
             case HasInnerCache of
@@ -533,7 +535,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
         {ok, #metadata{del = 0} = Meta} ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)},
+                         {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)}, % @TODO
                          {<<"Etag">>,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
                          {<<"Content-Length">>, erlang:integer_to_list(Meta#metadata.dsize)},
                          {<<"Last-Modified">>,  TimeStamp}],
@@ -587,6 +589,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
                                    {<<"X-From-Cache">>, <<"True">>}],
                                   Req2);
         {ok, Meta, RespObject} ->
+            % @TODO
             Mime = mochiweb_util:guess_mime(Key),
             BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
                                            mtime = Meta#metadata.timestamp,
@@ -619,9 +622,12 @@ put1([], Req, Key, _Params) ->
                           %% for support uploading zero byte files.
                           false -> {ok, <<>>, Req};
                           %% Cowboy handle a `Expect` header automatically
-                          true -> cowboy_http_req:body(Req)
+                          true ->
+?info("put1/4(has body)", "path:~p", [Key]),
+cowboy_http_req:body(Req)
                       end,
     {Size, Req3} = cowboy_http_req:body_length(Req2),
+?info("put1/4", "path:~p, size:~p req:~p", [Key, Size, Req3]),
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         ok ->
             cowboy_http_req:reply(200, [?SERVER_HEADER], Req3);
@@ -637,13 +643,14 @@ put1(Directive, Req, Key, _Params) ->
     CS = get_header(Req, <<"X-Amz-Copy-Source">>),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
-    CS2 = case binary:part(Key, {0, 1}) of
+    CS2 = case binary:part(CS, {0, 1}) of
               ?BIN_SLASH ->
-                  [_H|Rest] = CS,
-                  Rest;
+                  binary:part(CS, {1, byte_size(CS) -1});
               _ ->
                   CS
           end,
+
+?info("put1/4(copy)", "cs:~p", [CS2]),
 
     case leo_gateway_rpc_handler:get(CS2) of
         {ok, Meta, RespObject} ->
@@ -674,10 +681,16 @@ put2(Directive, Req, Key, Meta, Bin) ->
 
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
-put3(Req, Key, Meta) when Key == Meta#metadata.key ->
-    resp_copyobj_xml(Req, Meta);
-put3(Req, _Key, Meta) ->
-    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
+put3(Req, Key, Meta) ->
+    KeyList = binary_to_list(Key),
+    case KeyList == Meta#metadata.key of
+        true -> resp_copyobj_xml(Req, Meta);
+        false -> put4(Req, Meta)
+    end.
+
+put4(Req, Meta) ->
+    KeyBin = list_to_binary(Meta#metadata.key),
+    case leo_gateway_rpc_handler:delete(KeyBin) of
         ok ->
             resp_copyobj_xml(Req, Meta);
         {error, not_found} ->

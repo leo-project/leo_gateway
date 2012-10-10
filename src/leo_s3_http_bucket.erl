@@ -113,6 +113,7 @@ head_bucket(AccessKeyId, Bucket) ->
 %% @private
 generate_xml(Key, Prefix, MetadataList) ->
     DirLen = string:len(Key),
+    PrefixStr = binary_to_list(Prefix),
     Fun = fun(#metadata{key       = EntryKey,
                         dsize     = Length,
                         timestamp = TS,
@@ -127,11 +128,11 @@ generate_xml(Key, Prefix, MetadataList) ->
                               -1 ->
                                   %% directory.
                                   Acc ++ "<CommonPrefixes><Prefix>"
-                                      ++ Prefix ++ Entry ++ "</Prefix></CommonPrefixes>";
+                                      ++ PrefixStr ++ Entry ++ "</Prefix></CommonPrefixes>";
                               _ ->
                                   %% file.
                                   Acc ++ "<Contents>"
-                                      ++   "<Key>" ++ Prefix ++ Entry ++ "</Key>"
+                                      ++   "<Key>" ++ PrefixStr ++ Entry ++ "</Key>"
                                       ++   "<LastModified>" ++ leo_http:web_date(TS) ++ "</LastModified>"
                                       ++   "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
                                       ++   "<Size>" ++ integer_to_list(Length) ++ "</Size>"
@@ -144,7 +145,7 @@ generate_xml(Key, Prefix, MetadataList) ->
                           end
                   end
           end,
-    io_lib:format(?XML_OBJ_LIST, [Prefix, lists:foldl(Fun, [], MetadataList)]).
+    io_lib:format(?XML_OBJ_LIST, [PrefixStr, lists:foldl(Fun, [], MetadataList)]).
 
 generate_xml(MetadataList) ->
     Fun = fun(#bucket{name=Name, created_at=TS} , Acc) ->
