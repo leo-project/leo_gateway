@@ -75,9 +75,7 @@ prop_http_req() ->
 
 meck_begin(Method, Bucket, Path, RawResp) ->
     meck:new(leo_s3_auth),
-    meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
-    meck:new(leo_s3_endpoint),
-    meck:expect(leo_s3_endpoint, get_endpoints, 0, {ok, [{endpoint, "localhost", 0}]}),
+    meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
     meck_begin_1(Method, Bucket, Path, RawResp).
 meck_begin_1(Method, Bucket, Path, RawResp) when length(Bucket) > 0 andalso length(Path) > 0 ->
     meck:new(leo_gateway_rpc_handler),
@@ -99,7 +97,6 @@ meck_begin_1('get', _Bucket, _Path, RawResp) ->
 
 meck_end(Bucket, Path) ->
     meck:unload(leo_s3_auth),
-    meck:unload(leo_s3_endpoint),
     case length(Bucket) > 0 andalso length(Path) > 0 of
         true  -> meck:unload(leo_gateway_rpc_handler);
         false -> meck:unload(leo_s3_http_bucket)

@@ -51,7 +51,8 @@ get_bucket_list(AccessKeyId, Bucket) ->
 -spec(get_bucket_list(string(), none, char()|none, string()|none, integer(), string()|none) ->
              {ok, list(), string()}|{error, any()}).
 get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
-    case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
+    AccessKeyIdStr = binary_to_list(AccessKeyId),
+    case leo_s3_bucket:find_buckets_by_id(AccessKeyIdStr) of
         {ok, Meta} when is_list(Meta) =:= true ->
             {ok, Meta, generate_xml(Meta)};
         not_found ->
@@ -87,8 +88,9 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
 -spec(put_bucket(string(), string()|none) ->
              ok|{error, any()}).
 put_bucket(AccessKeyId, Bucket) ->
+    AccessKeyIdStr = binary_to_list(AccessKeyId),
     BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:put(AccessKeyId, BucketStr).
+    leo_s3_bucket:put(AccessKeyIdStr, BucketStr).
 
 
 %% @doc delete bucket
@@ -96,8 +98,9 @@ put_bucket(AccessKeyId, Bucket) ->
 -spec(delete_bucket(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket(AccessKeyId, Bucket) ->
+    AccessKeyIdStr = binary_to_list(AccessKeyId),
     BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:delete(AccessKeyId, BucketStr).
+    leo_s3_bucket:delete(AccessKeyIdStr, BucketStr).
 
 
 %% @doc head bucket
@@ -105,8 +108,9 @@ delete_bucket(AccessKeyId, Bucket) ->
 -spec(head_bucket(string(), string()|none) ->
              ok|{error, any()}).
 head_bucket(AccessKeyId, Bucket) ->
+    AccessKeyIdStr = binary_to_list(AccessKeyId),
     BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:head(AccessKeyId, BucketStr).
+    leo_s3_bucket:head(AccessKeyIdStr, BucketStr).
 
 
 %% @doc Generate XML from matadata-list

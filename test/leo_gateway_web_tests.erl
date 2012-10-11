@@ -152,6 +152,8 @@ setup(InitFun, TermFun) ->
                                            nodes = [{Node0,true}, {Node1,true}],
                                            n = 2, r = 1, w = 1, d = 1}}
                 end),
+    meck:new(leo_s3_endpoint),
+    meck:expect(leo_s3_endpoint, get_endpoints, 0, {ok, [{endpoint, <<"localhost">>, 0}]}),
 
     code:add_path("../cherly/ebin"),
     ok = file:write_file("./cert.pem", ?SSL_CERT_DATA),
@@ -399,7 +401,7 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, {error, not_found}]),
 
             meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
+            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} = httpc:request(delete, {lists:append(["http://",
@@ -424,7 +426,7 @@ delete_object_error_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, {error, foobar}]),
 
             meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
+            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} = httpc:request(delete, {lists:append(["http://",
@@ -448,7 +450,7 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 4, ok]),
 
             meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
+            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} = httpc:request(delete, {lists:append(["http://",
@@ -472,7 +474,7 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 6, {error, foobar}]),
 
             meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
+            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} = httpc:request(put, {lists:append(["http://",
@@ -497,7 +499,7 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 6, ok]),
 
             meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, "AccessKey"}),
+            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} = httpc:request(put, {lists:append(["http://",

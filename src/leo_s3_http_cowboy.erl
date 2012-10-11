@@ -616,7 +616,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-put1([], Req, Key, _Params) ->
+put1(<<>>, Req, Key, _Params) ->
     {Has, _Req} = cowboy_http_req:has_body(Req),
     {ok, Bin, Req2} = case Has of
                           %% for support uploading zero byte files.
@@ -707,7 +707,7 @@ put4(Req, Meta) ->
 get_header(Req, Key) ->
     case cowboy_http_req:header(Key, Req) of
         {undefined, _} ->
-            [];
+            <<>>;
         {Bin, _} ->
             Bin
     end.
@@ -739,18 +739,18 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
     case cowboy_http_req:header('Authorization', Req) of
         {undefined, _} ->
             {error, undefined};
-        {_BinAuthorization, _} ->
+        {BinAuthorization, _} ->
             Bucket = case (TokenLen >= 1) of
                          true  -> hd(binary:split(Path, [?BIN_SLASH], [global]));
-                         false -> []
+                         false -> <<>>
                      end,
 
-            _Iscreatebucketop    = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
+            IsCreateBucketOp    = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
             {BinRawUri,      _} = cowboy_http_req:raw_path(Req),
             {BinQueryString, _} = cowboy_http_req:raw_qs(Req),
             {Headers,        _} = cowboy_http_req:headers(Req),
 
-            SignParams = #sign_params{http_verb    = HTTPMethod,
+            SignParams = #sign_params{http_verb    = atom_to_binary(HTTPMethod, latin1),
                                       content_md5  = get_header(Req, 'Content-MD5'),
                                       content_type = get_header(Req, 'Content-Type'),
                                       date         = get_header(Req, 'Date'),
@@ -758,10 +758,10 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                       uri          = BinRawUri,
                                       query_str    = BinQueryString,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
-            ?debugVal(SignParams),
             %% @TODO
-            {ok, "05236"}
-            %%leo_s3_auth:authenticate(BinAuthorization, SignParams, IsCreateBucketOp)
+            %%{ok, "05236"}
+?info("auth/5", "auth:~p, sign:~p", [BinAuthorization, SignParams]),
+            leo_s3_auth:authenticate(BinAuthorization, SignParams, IsCreateBucketOp)
     end;
 
 auth(_,_,_,_,_) ->
