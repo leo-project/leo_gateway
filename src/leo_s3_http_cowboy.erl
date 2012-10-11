@@ -147,8 +147,6 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, 
         end,
     TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
 
-?info("handle/4", "path:~p, req:~p", [Path2, Req2]),
-
     case cowboy_http_req:qs_val(<<"acl">>, Req2) of
         {undefined, _} ->
             case catch auth(UseAuth, Req2, HTTPMethod, Path2, TokenLen) of
@@ -466,8 +464,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
         _ ->
             case leo_gateway_rpc_handler:get(Key, Start, End) of
                 {ok, _Meta, RespObject} ->
-                    % @TODO
-                    Mime = mochiweb_util:guess_mime(Key),
+                    Mime = leo_mime:guess_mime(Key),
                     {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
                     cowboy_http_req:reply(206,
                                           [?SERVER_HEADER,
@@ -500,8 +497,7 @@ exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         {ok, Meta, RespObject} ->
-            % @TODO
-            Mime = mochiweb_util:guess_mime(Key),
+            Mime = leo_mime:guess_mime(Key),
 
             case HasInnerCache of
                 true ->
@@ -535,7 +531,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
         {ok, #metadata{del = 0} = Meta} ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {<<"Content-Type">>,   mochiweb_util:guess_mime(Key)}, % @TODO
+                         {<<"Content-Type">>,   leo_mime:guess_mime(Key)},
                          {<<"Etag">>,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
                          {<<"Content-Length">>, erlang:integer_to_list(Meta#metadata.dsize)},
                          {<<"Last-Modified">>,  TimeStamp}],
@@ -589,8 +585,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
                                    {<<"X-From-Cache">>, <<"True">>}],
                                   Req2);
         {ok, Meta, RespObject} ->
-            % @TODO
-            Mime = mochiweb_util:guess_mime(Key),
+            Mime = leo_mime:guess_mime(Key),
             BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
                                            mtime = Meta#metadata.timestamp,
                                            content_type = Mime,
@@ -623,11 +618,9 @@ put1(<<>>, Req, Key, _Params) ->
                           false -> {ok, <<>>, Req};
                           %% Cowboy handle a `Expect` header automatically
                           true ->
-?info("put1/4(has body)", "path:~p", [Key]),
-cowboy_http_req:body(Req)
+                              cowboy_http_req:body(Req)
                       end,
     {Size, Req3} = cowboy_http_req:body_length(Req2),
-?info("put1/4", "path:~p, size:~p req:~p", [Key, Size, Req3]),
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         ok ->
             cowboy_http_req:reply(200, [?SERVER_HEADER], Req3);
@@ -649,8 +642,6 @@ put1(Directive, Req, Key, _Params) ->
               _ ->
                   CS
           end,
-
-?info("put1/4(copy)", "cs:~p", [CS2]),
 
     case leo_gateway_rpc_handler:get(CS2) of
         {ok, Meta, RespObject} ->
@@ -758,9 +749,6 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                       uri          = BinRawUri,
                                       query_str    = BinQueryString,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
-            %% @TODO
-            %%{ok, "05236"}
-?info("auth/5", "auth:~p, sign:~p", [BinAuthorization, SignParams]),
             leo_s3_auth:authenticate(BinAuthorization, SignParams, IsCreateBucketOp)
     end;
 
