@@ -716,33 +716,32 @@ put_large_object(Req0, Key, Size0, Params)->
     {ok, Id} = add_large_object_container(),
 
     {ok, TotalLength, TotalChunckedObjs, Req1} =
+        %% PUT children's data
         cowboy_http_req:body(Req0, Params#req_params.chunked_obj_size,
                              fun(_Index, _Size, _Bin) ->
-                                     %% @TODO
-                                     ?debugVal({_Index, _Size}),
-                                     ok = leo_gateway_large_object_handler:send(Id, _Index, _Size, _Bin)
+                                     ok = leo_gateway_large_object_handler:send(Id, Key, _Index, _Size, _Bin)
                              end),
     Result = leo_gateway_large_object_handler:result(Id),
-    ?debugVal(Result),
 
-    %% PUT Metadata (Original)
-    case (Size0 == TotalLength andalso Result == ok) of
-        true ->
-            %% TODO
-            ?debugVal({TotalLength, TotalChunckedObjs}),
-            case leo_gateway_rpc_handler:put(Key, <<>>, Size0) of
-                ok ->
-                    cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
-                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                    cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
-                {error, timeout} ->
-                    cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
-            end;
-        false ->
-            %% @TODO
-            %% rollback - delete chunked-files
-            cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
-    end.
+    %% PUT parent's data
+    Ret = case (Size0 == TotalLength andalso Result == ok) of
+              true ->
+                  %% TODO
+                  ?debugVal({TotalLength, TotalChunckedObjs}),
+                  case leo_gateway_rpc_handler:put(Key, <<>>, Size0) of
+                      ok ->
+                          cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
+                      {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                          cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
+                      {error, timeout} ->
+                          cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
+                  end;
+              false ->
+                  ok = leo_gateway_large_object_handler:rollback(Id, Key, TotalChunckedObjs),
+                  cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
+          end,
+    ok = leo_gateway_large_object_handler:reset(Id),
+    Ret.
 
 
 %% @doc getter helper function. return "" if specified header is undefined

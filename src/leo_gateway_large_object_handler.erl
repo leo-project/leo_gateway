@@ -30,7 +30,7 @@
 
 %% Application callbacks
 -export([start_link/1, stop/1]).
--export([send/4, result/1]).
+-export([send/5, rollback/3, result/1, reset/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -62,17 +62,30 @@ stop(Id) ->
     gen_server:call(Id, stop).
 
 
--spec(send(atom(), integer(), integer(), binary()) ->
+-spec(send(atom(), binary(), integer(), integer(), binary()) ->
              ok | {error, any()}).
-send(Id, Index, Size, Bin) ->
-    ?debugVal({Id, Index, Size}),
-    gen_server:cast(Id, {send, Index, Size, Bin}).
+send(Id, Key, Index, Size, Bin) ->
+    ?debugVal({Id, Key, Index, Size}),
+    gen_server:cast(Id, {send, Key, Index, Size, Bin}).
+
+
+-spec(rollback(atom(), binary(), integer()) ->
+             ok | {error, any()}).
+rollback(Id, Key, TotalOfChunkedObjs) ->
+    ?debugVal({Id, Key, TotalOfChunkedObjs}),
+    gen_server:cast(Id, {rollback, Key, TotalOfChunkedObjs}).
 
 
 -spec(result(atom()) ->
              ok | {error, any()}).
 result(Id) ->
     gen_server:call(Id, {result}).
+
+
+-spec(reset(atom()) ->
+             ok | {error, any()}).
+reset(Id) ->
+    gen_server:call(Id, {reset}).
 
 
 %%====================================================================
@@ -99,17 +112,27 @@ handle_call({result}, _From, #state{result = Result} = State) ->
                 _  ->
                     {error, send_failed}
             end,
-    {reply, Reply, State}.
+    {reply, Reply, State};
+
+
+handle_call({reset}, _From, State) ->
+    {reply, ok, State#state{result = []}}.
 
 
 %% Function: handle_cast(Msg, State) -> {noreply, State}          |
 %%                                      {noreply, State, Timeout} |
 %%                                      {stop, Reason, State}
 %% Description: Handling cast message
-handle_cast({send, Index, _Size, _Result}, #state{result = Acc} = State) ->
+handle_cast({send, _Key, Index, _Size, _Result}, #state{result = Acc} = State) ->
     %% @TODO
     Ret = {ok, Index},
     {noreply, State#state{result = [Ret|Acc]}};
+
+
+handle_cast({rollback, _Key, _TotalOfChunkedObjs}, State) ->
+    %% @TODO
+    {noreply, State#state{result = []}};
+
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
