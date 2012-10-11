@@ -618,50 +618,31 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-put1(<<>>, Req, Key, #req_params{chunked_obj_size   = ChunkedObjSize,
-                                 threshold_obj_size = ThresholdObjSize}) ->
+put1(<<>>, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
-    {Size1, Bin1, Req1} =
-        case (Size0 >= ThresholdObjSize) of
-            true ->
-                ?debugVal({over, ThresholdObjSize}),
-                %% {ok, Id} = add_large_object_container(),
-                %% ?debugVal(Id),
 
-                {ok, TotalLength, TotalChunckedObjs, Req0} =
-                    cowboy_http_req:body(Req, ChunkedObjSize,
-                                         fun(_Index, _Size, _Bin0) ->
-                                                 %% @TODO
-                                                 ?debugVal({_Index, _Size})
-                                         end),
-                %% PUT Metadata (Original)
-                case (Size0 == TotalLength) of
-                    true ->
-                        ?debugVal({TotalLength, TotalChunckedObjs}),
-                        {0, <<>>, Req0};
-                    false ->
-                        %% rollback - delete chunked-files
-                        cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
-                end;
-            false ->
-                ?debugVal({less, ThresholdObjSize}),
-                {HasBody, _} = cowboy_http_req:has_body(Req),
-                case HasBody of
-                    true ->
+    case (Size0 >= Params#req_params.threshold_obj_size) of
+        true ->
+            put_large_object(Req, Key, Size0, Params);
+        false ->
+            ?debugVal(not_large_object),
+            {Size1, Bin1, Req1} =
+                case cowboy_http_req:has_body(Req) of
+                    {true, _} ->
                         {ok, Bin0, Req0} = cowboy_http_req:body(Req),
                         {Size0, Bin0, Req0};
-                    false ->
+                    {false, _} ->
                         {0, <<>>, Req}
-                end
-        end,
+                end,
 
-    case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
-        ok ->
-            cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
-        {error, timeout} ->
-            cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
+            case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
+                ok ->
+                    cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
+                {error, timeout} ->
+                    cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
+            end
     end;
 
 
@@ -728,6 +709,42 @@ put4(Req, Meta) ->
     end.
 
 
+%% @doc
+%% @private
+put_large_object(Req0, Key, Size0, Params)->
+    ?debugVal(put_large_object),
+    {ok, Id} = add_large_object_container(),
+
+    {ok, TotalLength, TotalChunckedObjs, Req1} =
+        cowboy_http_req:body(Req0, Params#req_params.chunked_obj_size,
+                             fun(_Index, _Size, _Bin) ->
+                                     %% @TODO
+                                     ?debugVal({_Index, _Size}),
+                                     ok = leo_gateway_large_object_handler:send(Id, _Index, _Size, _Bin)
+                             end),
+    Result = leo_gateway_large_object_handler:result(Id),
+    ?debugVal(Result),
+
+    %% PUT Metadata (Original)
+    case (Size0 == TotalLength andalso Result == ok) of
+        true ->
+            %% TODO
+            ?debugVal({TotalLength, TotalChunckedObjs}),
+            case leo_gateway_rpc_handler:put(Key, <<>>, Size0) of
+                ok ->
+                    cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
+                {error, timeout} ->
+                    cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
+            end;
+        false ->
+            %% @TODO
+            %% rollback - delete chunked-files
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
+    end.
+
+
 %% @doc getter helper function. return "" if specified header is undefined
 %% @private
 get_header(Req, Key) ->
@@ -790,3 +807,22 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
 auth(_,_,_,_,_) ->
     {ok, []}.
 
+
+%% @doc
+%% @private
+add_large_object_container() ->
+    Id = list_to_atom(pid_to_list(self())),
+    ?debugVal(Id),
+
+    ChildSpec = {Id,
+                 {leo_gateway_large_object_handler, start_link, [Id]},
+                 permanent, 2000, worker, [leo_gateway_large_object_handler]},
+
+    case supervisor:start_child(leo_gateway_sup, ChildSpec) of
+        {ok, _Pid} ->
+            {ok, Id};
+        {already_started, _} ->
+            {ok, Id};
+        {error, Cause} ->
+            {error, Cause}
+    end.
