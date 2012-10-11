@@ -96,6 +96,8 @@ get_options(HTTPServer, Options) ->
     CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', Options, 1000000),
     CachableContentTypes = leo_misc:get_value('cachable_content_type', Options, []),
     CachablePathPatterns = leo_misc:get_value('cachable_path_pattern', Options, []),
+    ChunkedObjSize       = leo_misc:get_value('chunked_obj_size',      Options, [4194304]), %% 4MB
+    ThresholdObjSize     = leo_misc:get_value('threshold_obj_size',    Options, [5242880]), %% 5MB
 
     ?info("start/3", "http-server: ~p",             [HTTPServer]),
     ?info("start/3", "port: ~p",                    [Port]),
@@ -109,6 +111,8 @@ get_options(HTTPServer, Options) ->
     ?info("start/3", "cache_max_content_len: ~p",   [CacheMaxContentLen]),
     ?info("start/3", "cacheable_content_types: ~p", [CachableContentTypes]),
     ?info("start/3", "cacheable_path_patterns: ~p", [CachablePathPatterns]),
+    ?info("start/3", "chunked_obj_size: ~p",        [ChunkedObjSize]),
+    ?info("start/3", "threshold_obj_size: ~p",      [ThresholdObjSize]),
 
 
     {ok, #http_options{port                  = Port,
@@ -121,4 +125,7 @@ get_options(HTTPServer, Options) ->
                        cache_expire          = CacheExpire,
                        cache_max_content_len = CacheMaxContentLen,
                        cachable_content_type = CachableContentTypes,
-                       cachable_path_pattern = CachablePathPatterns}}.
+                       cachable_path_pattern = CachablePathPatterns,
+                       chunked_obj_size      = ChunkedObjSize,
+                       threshold_obj_size    = ThresholdObjSize
+                      }}.

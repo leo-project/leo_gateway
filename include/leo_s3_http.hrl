@@ -92,7 +92,9 @@
           cache_expire = 0           :: integer(),
           cache_max_content_len = 0  :: integer(),
           cachable_content_type = [] :: list(),
-          cachable_path_pattern = [] :: list()
+          cachable_path_pattern = [] :: list(),
+          chunked_obj_size = 0       :: integer(),
+          threshold_obj_size = 0     :: integer()
          }).
 
 -record(req_params, {
@@ -104,7 +106,9 @@
           qs_prefix         :: string(),
           has_inner_cache   :: boolean(),
           range_header      :: string(),
-          is_cached         :: boolean()
+          is_cached         :: boolean(),
+          chunked_obj_size   :: integer(),
+          threshold_obj_size :: integer()
          }).
 
 -record(cache, {

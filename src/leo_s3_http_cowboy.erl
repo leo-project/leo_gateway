@@ -68,11 +68,15 @@ start(#http_options{port                  = Port,
                     cache_expire          = CacheExpire,
                     cache_max_content_len = CacheMaxContentLen,
                     cachable_content_type = CachableContentTypes,
-                    cachable_path_pattern = CachablePathPatterns}) ->
+                    cachable_path_pattern = CachablePathPatterns,
+                    chunked_obj_size      = ChunkedObjSize,
+                    threshold_obj_size    = ThresholdObjSize
+                   }) ->
 
     InternalCache = (CachePlugIn == []),
     Dispatch      = [{'_', [{'_', ?MODULE,
-                             [?env_layer_of_dirs(), InternalCache, UseAuth]}]}],
+                             [?env_layer_of_dirs(), InternalCache, UseAuth,
+                              ChunkedObjSize, ThresholdObjSize]}]}],
 
     Config = case InternalCache of
                  %% Using inner-cache
@@ -126,7 +130,8 @@ handle(Req, State) ->
     Key = gen_key(Req),
     handle(Req, State, Key).
 
-handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, Path) ->
+handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth,
+             ChunkedObjSize, ThresholdObjSize] = State, Path) ->
     HTTPMethod = case cowboy_http_req:method(Req) of
                      {?HTTP_POST, _} -> ?HTTP_PUT;
                      {Other, _}      -> Other
@@ -157,15 +162,17 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth] = State, 
                     {RangeHeader, _} = cowboy_http_req:header('Range', Req2),
 
                     case catch exec1(HTTPMethod, Req2, Path2,
-                                     #req_params{token_length     = TokenLen,
-                                                 access_key_id    = AccessKeyId,
-                                                 min_layers       = NumOfMinLayers,
-                                                 max_layers       = NumOfMaxLayers,
-                                                 has_inner_cache  = HasInnerCache,
-                                                 range_header     = RangeHeader,
-                                                 is_dir           = IsDir,
-                                                 is_cached        = true,
-                                                 qs_prefix        = Prefix}) of
+                                     #req_params{token_length       = TokenLen,
+                                                 access_key_id      = AccessKeyId,
+                                                 min_layers         = NumOfMinLayers,
+                                                 max_layers         = NumOfMaxLayers,
+                                                 has_inner_cache    = HasInnerCache,
+                                                 range_header       = RangeHeader,
+                                                 is_dir             = IsDir,
+                                                 is_cached          = true,
+                                                 qs_prefix          = Prefix,
+                                                 chunked_obj_size   = ChunkedObjSize,
+                                                 threshold_obj_size = ThresholdObjSize}) of
                         {'EXIT', Reason} ->
                             ?error("loop1/4", "path:~p, reason:~p", [Path2, Reason]),
                             {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
@@ -316,7 +323,7 @@ is_cachable_path(Path) ->
 is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Headers, Req) ->
     {Method, _} = cowboy_http_req:method(Req),
     {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
-    HasNOTCacheControl = 
+    HasNOTCacheControl =
         case lists:keyfind(<<"Cache-Control">>, 1, Headers) of
             false -> true;
             _     -> false
@@ -611,24 +618,52 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-put1(<<>>, Req, Key, _Params) ->
-    {Has, _Req} = cowboy_http_req:has_body(Req),
-    {ok, Bin, Req2} = case Has of
-                          %% for support uploading zero byte files.
-                          false -> {ok, <<>>, Req};
-                          %% Cowboy handle a `Expect` header automatically
-                          true ->
-                              cowboy_http_req:body(Req)
-                      end,
-    {Size, Req3} = cowboy_http_req:body_length(Req2),
-    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
+put1(<<>>, Req, Key, #req_params{chunked_obj_size   = ChunkedObjSize,
+                                 threshold_obj_size = ThresholdObjSize}) ->
+    {Size0, _} = cowboy_http_req:body_length(Req),
+    {Size1, Bin1, Req1} =
+        case (Size0 >= ThresholdObjSize) of
+            true ->
+                ?debugVal({over, ThresholdObjSize}),
+                %% {ok, Id} = add_large_object_container(),
+                %% ?debugVal(Id),
+
+                {ok, TotalLength, TotalChunckedObjs, Req0} =
+                    cowboy_http_req:body(Req, ChunkedObjSize,
+                                         fun(_Index, _Size, _Bin0) ->
+                                                 %% @TODO
+                                                 ?debugVal({_Index, _Size})
+                                         end),
+                %% PUT Metadata (Original)
+                case (Size0 == TotalLength) of
+                    true ->
+                        ?debugVal({TotalLength, TotalChunckedObjs}),
+                        {0, <<>>, Req0};
+                    false ->
+                        %% rollback - delete chunked-files
+                        cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
+                end;
+            false ->
+                ?debugVal({less, ThresholdObjSize}),
+                {HasBody, _} = cowboy_http_req:has_body(Req),
+                case HasBody of
+                    true ->
+                        {ok, Bin0, Req0} = cowboy_http_req:body(Req),
+                        {Size0, Bin0, Req0};
+                    false ->
+                        {0, <<>>, Req}
+                end
+        end,
+
+    case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
         ok ->
-            cowboy_http_req:reply(200, [?SERVER_HEADER], Req3);
+            cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_http_req:reply(500, [?SERVER_HEADER], Req3);
+            cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
         {error, timeout} ->
-            cowboy_http_req:reply(504, [?SERVER_HEADER], Req3)
+            cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
     end;
+
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
