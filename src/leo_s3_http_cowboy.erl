@@ -621,12 +621,10 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 put1(<<>>, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
-    %% ?debugVal({Size0, Params#req_params.threshold_obj_size}),
     case (Size0 >= Params#req_params.threshold_obj_size) of
         true ->
             put_large_object(Req, Key, Size0, Params);
         false ->
-            %% ?debugVal(not_large_object),
             {Size1, Bin1, Req1} =
                 case cowboy_http_req:has_body(Req) of
                     {true, _} ->
@@ -713,10 +711,11 @@ put4(Req, Meta) ->
 %% @doc
 %% @private
 put_large_object(Req0, Key, Size0, Params)->
-    %% ?debugVal(leo_gateway_sup),
     {ok, Pid} = add_large_object_handler(),
 
     %% PUT children's data
+    ChunkedSize = Params#req_params.chunked_obj_size,
+
     {ok, TotalLength, TotalChunckedObjs, Req1} =
         cowboy_http_req:body(Req0, Params#req_params.chunked_obj_size,
                              fun(_Index, _Size, _Bin) ->
@@ -724,9 +723,12 @@ put_large_object(Req0, Key, Size0, Params)->
                              end),
 
     Ret = case catch leo_gateway_large_object_handler:result(Pid) of
-              {ok, _Digest} when Size0 == TotalLength ->
+              {ok, Digest0} when Size0 == TotalLength ->
                   %% PUT parent's data
-                  case leo_gateway_rpc_handler:put(Key, <<>>, Size0) of
+                  Digest1 = leo_hex:binary_to_integer(Digest0),
+
+                  case leo_gateway_rpc_handler:put(
+                         Key, <<>>, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
                       ok ->
                           cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
                       {error, ?ERR_TYPE_INTERNAL_ERROR} ->

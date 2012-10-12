@@ -127,13 +127,18 @@ handle_call({result}, _From, #state{md5_context = Context,
 %%                                      {noreply, State, Timeout} |
 %%                                      {stop, Reason, State}
 %% Description: Handling cast message
-handle_cast({put, _Key, _Index, _Size, Bin}, #state{md5_context = Context,
-                                                    errors = Acc} = State) ->
-    %% @TODO
-    %% ?debugVal({_Key, _Index, _Size}),
-    NewContext = erlang:md5_update(Context, Bin),
-    {noreply, State#state{md5_context = NewContext,
-                          errors = Acc}};
+handle_cast({put, Key, Index, Size, Bin}, #state{md5_context = Context,
+                                                 errors = Acc} = State) ->
+    IndexBin = list_to_binary(integer_to_list(Index)),
+
+    case leo_gateway_rpc_handler:put(<<Key/binary, IndexBin/binary>>, Bin, Size, Index) of
+        ok ->
+            NewContext = erlang:md5_update(Context, Bin),
+            {noreply, State#state{md5_context = NewContext,
+                                  errors = Acc}};
+        {error, Cause} ->
+            {noreply, State#state{errors = [{Index, Cause}|Acc]}}
+    end;
 
 handle_cast({get, _Key, _TotalOfChunkedObjs, _Callback}, State) ->
     %% @TODO
