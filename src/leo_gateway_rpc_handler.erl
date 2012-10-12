@@ -63,7 +63,7 @@
              {ok, #metadata{}}|{error, any()}).
 head(Key) ->
     %% @TODO reduce converting costs by binary_to_list
-    KeyList = binary_to_list(Key), 
+    KeyList = binary_to_list(Key),
     ReqParams = get_request_parameters(head, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
@@ -77,7 +77,7 @@ head(Key) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key) ->
     %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key), 
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
     ReqParams = get_request_parameters(get, KeyList),
     invoke(ReqParams#req_params.redundancies,
@@ -89,7 +89,7 @@ get(Key) ->
              {ok, match}|{ok, #metadata{}, binary()}|{error, any()}).
 get(Key, ETag) ->
     %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key), 
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
     ReqParams = get_request_parameters(get, KeyList),
     invoke(ReqParams#req_params.redundancies,
@@ -102,13 +102,15 @@ get(Key, ETag) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key, StartPos, EndPos) ->
     %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key), 
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
     ReqParams = get_request_parameters(get, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, KeyList, StartPos, EndPos, ReqParams#req_params.req_id],
+           [ReqParams#req_params.addr_id,
+            KeyList, StartPos, EndPos,
+            ReqParams#req_params.req_id],
            []).
 
 
@@ -118,14 +120,16 @@ get(Key, StartPos, EndPos) ->
              ok|{error, any()}).
 delete(Key) ->
     %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key), 
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_DEL),
     ReqParams = get_request_parameters(delete, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            delete,
-           [ReqParams#req_params.addr_id, KeyList,
-            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [#object{addr_id   = ReqParams#req_params.addr_id,
+                    key       = KeyList,
+                    timestamp = ReqParams#req_params.timestamp},
+            ReqParams#req_params.req_id],
            []).
 
 
@@ -135,14 +139,18 @@ delete(Key) ->
              ok|{error, any()}).
 put(Key, Body, Size) ->
     %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key), 
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
     ReqParams = get_request_parameters(put, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            put,
-           [ReqParams#req_params.addr_id, KeyList, Body, Size,
-            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [#object{addr_id   = ReqParams#req_params.addr_id,
+                    key       = KeyList,
+                    data      = Body,
+                    dsize     = Size,
+                    timestamp = ReqParams#req_params.timestamp},
+            ReqParams#req_params.req_id],
            []).
 
 
