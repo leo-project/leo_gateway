@@ -85,12 +85,12 @@ start(Sup, cowboy = HTTPServer, S3_HTTP_Config) ->
 -spec(get_options(mochiweb | cowboy, list()) ->
              {ok, #http_options{}}).
 get_options(HTTPServer, Options) ->
+    UseS3API             = leo_misc:get_value('s3_api',                Options, true),
     Port                 = leo_misc:get_value('port',                  Options, 8080),
     SSLPort              = leo_misc:get_value('ssl_port',              Options, 8443),
     SSLCertFile          = leo_misc:get_value('ssl_certfile',          Options, "./server_cert.pem"),
     SSLKeyFile           = leo_misc:get_value('ssl_keyfile',           Options, "./server_key.pem"),
     NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',      Options,   32),
-    UseAuth              = leo_misc:get_value('use_auth',              Options, true),
     CachePlugIn          = leo_misc:get_value('cache_plugin',          Options, []),
     CacheExpire          = leo_misc:get_value('cache_expire',          Options, 300),
     CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', Options, 1000000),
@@ -99,13 +99,13 @@ get_options(HTTPServer, Options) ->
     ChunkedObjSize       = leo_misc:get_value('chunked_obj_size',      Options, [4194304]), %% 4MB
     ThresholdObjSize     = leo_misc:get_value('threshold_obj_size',    Options, [5242880]), %% 5MB
 
+    ?info("start/3", "s3-api: ~p",                  [UseS3API]),
     ?info("start/3", "http-server: ~p",             [HTTPServer]),
     ?info("start/3", "port: ~p",                    [Port]),
     ?info("start/3", "ssl port: ~p",                [SSLPort]),
     ?info("start/3", "ssl certfile: ~p",            [SSLCertFile]),
     ?info("start/3", "ssl keyfile: ~p",             [SSLKeyFile]),
     ?info("start/3", "num of acceptors: ~p",        [NumOfAcceptors]),
-    ?info("start/3", "use auth: ~p",                [UseAuth]),
     ?info("start/3", "cache_plugin: ~p",            [CachePlugIn]),
     ?info("start/3", "cache expire: ~p",            [CacheExpire]),
     ?info("start/3", "cache_max_content_len: ~p",   [CacheMaxContentLen]),
@@ -114,13 +114,12 @@ get_options(HTTPServer, Options) ->
     ?info("start/3", "chunked_obj_size: ~p",        [ChunkedObjSize]),
     ?info("start/3", "threshold_obj_size: ~p",      [ThresholdObjSize]),
 
-
-    {ok, #http_options{port                  = Port,
+    {ok, #http_options{s3_api                = UseS3API,
+                       port                  = Port,
                        ssl_port              = SSLPort,
                        ssl_certfile          = SSLCertFile,
                        ssl_keyfile           = SSLKeyFile,
                        num_of_acceptors      = NumOfAcceptors,
-                       use_auth              = UseAuth,
                        cache_plugin          = CachePlugIn,
                        cache_expire          = CacheExpire,
                        cache_max_content_len = CacheMaxContentLen,

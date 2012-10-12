@@ -87,7 +87,7 @@
           ssl_certfile = []          :: string(),
           ssl_keyfile = []           :: string(),
           num_of_acceptors = 0       :: integer(),
-          use_auth = true            :: boolean(),
+          s3_api = true              :: boolean(),
           cache_plugin = []          :: string(),
           cache_expire = 0           :: integer(),
           cache_max_content_len = 0  :: integer(),

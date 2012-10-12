@@ -63,7 +63,7 @@ start(#http_options{port                  = Port,
                     ssl_certfile          = SSLCertFile,
                     ssl_keyfile           = SSLKeyFile,
                     num_of_acceptors      = NumOfAcceptors,
-                    use_auth              = UseAuth,
+                    s3_api                = UseS3API,
                     cache_plugin          = CachePlugIn,
                     cache_expire          = CacheExpire,
                     cache_max_content_len = CacheMaxContentLen,
@@ -75,7 +75,7 @@ start(#http_options{port                  = Port,
 
     InternalCache = (CachePlugIn == []),
     Dispatch      = [{'_', [{'_', ?MODULE,
-                             [?env_layer_of_dirs(), InternalCache, UseAuth,
+                             [?env_layer_of_dirs(), InternalCache, UseS3API,
                               ChunkedObjSize, ThresholdObjSize]}]}],
 
     Config = case InternalCache of
@@ -130,7 +130,7 @@ handle(Req, State) ->
     Key = gen_key(Req),
     handle(Req, State, Key).
 
-handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth,
+handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
              ChunkedObjSize, ThresholdObjSize] = State, Path) ->
     HTTPMethod = case cowboy_http_req:method(Req) of
                      {?HTTP_POST, _} -> ?HTTP_PUT;
@@ -154,7 +154,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth,
 
     case cowboy_http_req:qs_val(<<"acl">>, Req2) of
         {undefined, _} ->
-            case catch auth(UseAuth, Req2, HTTPMethod, Path2, TokenLen) of
+            case catch auth(UseS3API, Req2, HTTPMethod, Path2, TokenLen) of
                 {error, _Cause} ->
                     {ok, Req3} = cowboy_http_req:reply(403, [?SERVER_HEADER], Req2),
                     {ok, Req3, State};

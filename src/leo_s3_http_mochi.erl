@@ -53,7 +53,7 @@ start(#http_options{port                  = Port,
                     ssl_certfile          = SSLCertFile,
                     ssl_keyfile           = SSLKeyFile,
                     num_of_acceptors      = NumOfAcceptors,
-                    use_auth              = UseAuth,
+                    s3_api                = UserS3API,
                     cache_plugin          = CachePlugIn,
                     cache_expire          = CacheExpire,
                     cache_max_content_len = CacheMaxContentLen,
@@ -65,7 +65,7 @@ start(#http_options{port                  = Port,
         false -> void
     end,
 
-    Loop    = fun (Req) -> ?MODULE:loop(Req, ?env_layer_of_dirs(), InternalCache, UseAuth) end,
+    Loop    = fun (Req) -> ?MODULE:loop(Req, ?env_layer_of_dirs(), InternalCache, UserS3API) end,
     HookMod = case InternalCache of
                   true  -> [];
                   false ->
@@ -99,7 +99,7 @@ stop() ->
 %%
 -spec(loop(any(), tuple(), boolean(), boolean()) ->
              ok).
-loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth) ->
+loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UserS3API) ->
     EndPoints1 = case leo_s3_endpoint:get_endpoints() of
                      {ok, EndPoints0} ->
                          lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
@@ -109,7 +109,7 @@ loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth) ->
     [Host|_]  = string:tokens(Req:get_header_value(?HTTP_HEAD_HOST), ":"),
     Key = leo_http:key(EndPoints1, Host, Req:get(path)),
 
-    loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth, Key).
+    loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UserS3API, Key).
 
 
 %%--------------------------------------------------------------------
@@ -119,7 +119,7 @@ loop(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth) ->
 %% @private
 -spec(loop1(any(), tuple(), boolean(), boolean(), string()) ->
              ok).
-loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth, Path) ->
+loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UserS3API, Path) ->
 
     HTTPMethod = case Req:get(method) of
                      ?HTTP_POST -> ?HTTP_PUT;
@@ -145,7 +145,7 @@ loop1(Req, {NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseAuth, Path) ->
 
     case leo_misc:get_value(?QUERY_ACL, QueryString, undefined) of
         undefined ->
-            case catch auth(UseAuth, Req, HTTPMethod, Path2, TokenLen) of
+            case catch auth(UserS3API, Req, HTTPMethod, Path2, TokenLen) of
                 {error, _Cause} ->
                     Req:respond({403, [?SERVER_HEADER], []});
                 {ok, AccessKeyId} ->
