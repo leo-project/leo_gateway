@@ -621,6 +621,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 put1(<<>>, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
+    %% ?debugVal({Size0, Params#req_params.threshold_obj_size}),
     case (Size0 >= Params#req_params.threshold_obj_size) of
         true ->
             put_large_object(Req, Key, Size0, Params);
@@ -712,22 +713,19 @@ put4(Req, Meta) ->
 %% @doc
 %% @private
 put_large_object(Req0, Key, Size0, Params)->
-    %% @TODO
-    {ok, Id} = add_large_object_container(),
+    %% ?debugVal(leo_gateway_sup),
+    {ok, Pid} = add_large_object_handler(),
 
+    %% PUT children's data
     {ok, TotalLength, TotalChunckedObjs, Req1} =
-        %% PUT children's data
         cowboy_http_req:body(Req0, Params#req_params.chunked_obj_size,
                              fun(_Index, _Size, _Bin) ->
-                                     ok = leo_gateway_large_object_handler:put(Id, Key, _Index, _Size, _Bin)
+                                     ok = leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
                              end),
-    Result = leo_gateway_large_object_handler:result(Id),
 
-    %% PUT parent's data
-    Ret = case (Size0 == TotalLength andalso Result == ok) of
-              true ->
-                  %% TODO
-                  %% ?debugVal({TotalLength, TotalChunckedObjs}),
+    Ret = case catch leo_gateway_large_object_handler:result(Pid) of
+              {ok, _Digest} when Size0 == TotalLength ->
+                  %% PUT parent's data
                   case leo_gateway_rpc_handler:put(Key, <<>>, Size0) of
                       ok ->
                           cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
@@ -736,11 +734,11 @@ put_large_object(Req0, Key, Size0, Params)->
                       {error, timeout} ->
                           cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
                   end;
-              false ->
-                  ok = leo_gateway_large_object_handler:rollback(Id, Key, TotalChunckedObjs),
+              _ ->
+                  ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunckedObjs),
                   cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
           end,
-    ok = leo_gateway_large_object_handler:reset(Id),
+    ok = leo_gateway_large_object_handler:stop(Pid),
     Ret.
 
 
@@ -809,17 +807,17 @@ auth(_,_,_,_,_) ->
 
 %% @doc
 %% @private
-add_large_object_container() ->
-    Id = list_to_atom(pid_to_list(self())),
-    ChildSpec = {Id,
-                 {leo_gateway_large_object_handler, start_link, [Id]},
-                 permanent, 2000, worker, [leo_gateway_large_object_handler]},
+add_large_object_handler() ->
+    ChildSpec = {{large_object, self()},
+                 {leo_gateway_large_object_handler, start_link, []},
+                 temporary, brutal_kill, worker, []},
 
     case supervisor:start_child(leo_gateway_sup, ChildSpec) of
-        {ok, _Pid} ->
-            {ok, Id};
-        {already_started, _} ->
-            {ok, Id};
+        {ok, Pid} ->
+            {ok, Pid};
+        {already_started, Pid} ->
+            {ok, Pid};
         {error, Cause} ->
             {error, Cause}
     end.
+

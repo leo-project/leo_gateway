@@ -29,8 +29,8 @@
 
 
 %% Application callbacks
--export([start_link/1, stop/1]).
--export([put/5, get/4, rollback/3, result/1, reset/1]).
+-export([start_link/0, stop/1]).
+-export([put/5, get/4, rollback/3, result/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -39,8 +39,9 @@
          code_change/3]).
 
 
--record(state, {id          :: atom(),
-                result = [] :: list()
+-record(state, {num_of_chunks  :: integer(),
+                md5_context    :: binary(),
+                errors = []    :: list()
                }).
 
 
@@ -49,50 +50,49 @@
 %% ===================================================================
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
--spec(start_link(atom()) ->
+-spec(start_link() ->
              ok | {error, any()}).
-start_link(Id) ->
-    gen_server:start_link({local, Id}, ?MODULE,
-                          [Id], []).
+start_link() ->
+    gen_server:start_link(?MODULE, [], []).
 
 %% @doc Stop this server
 %%
--spec(stop(atom()) -> ok).
-stop(Id) ->
-    gen_server:call(Id, stop).
+-spec(stop(pid()) -> ok).
+stop(Pid) ->
+    gen_server:call(Pid, stop).
 
 
--spec(put(atom(), binary(), integer(), integer(), binary()) ->
+%% @doc Insert a chunked object into the storage cluster
+%%
+-spec(put(pid(), binary(), integer(), integer(), binary()) ->
              ok | {error, any()}).
-put(Id, Key, Index, Size, Bin) ->
-    %% ?debugVal({Id, Key, Index, Size}),
-    gen_server:cast(Id, {send, Key, Index, Size, Bin}).
+put(Pid, Key, Index, Size, Bin) ->
+    gen_server:cast(Pid, {put, Key, Index, Size, Bin}).
 
 
--spec(get(atom(), binary(), integer(), function()) ->
+%% @doc Retrieve a chunked object from the storage cluster
+%%
+-spec(get(pid(), binary(), integer(), function()) ->
              ok | {error, any()}).
-get(Id, Key, TotalOfChunkedObjs, Callback) ->
-    %% ?debugVal({Id, Key, TotalOfChunkedObjs}),
-    gen_server:cast(Id, {get, Key, TotalOfChunkedObjs, Callback}).
+get(Pid, Key, TotalOfChunkedObjs, Callback) ->
+    gen_server:cast(Pid, {get, Key, TotalOfChunkedObjs, Callback}).
 
 
--spec(rollback(atom(), binary(), integer()) ->
+%% @doc Make a rollback before all operations
+%%
+-spec(rollback(pid(), binary(), integer()) ->
              ok | {error, any()}).
-rollback(Id, Key, TotalOfChunkedObjs) ->
-    ?debugVal({Id, Key, TotalOfChunkedObjs}),
-    gen_server:cast(Id, {rollback, Key, TotalOfChunkedObjs}).
+rollback(Pid, Key, TotalOfChunkedObjs) ->
+    %% ?debugVal({Pid, Key, TotalOfChunkedObjs}),
+    gen_server:cast(Pid, {rollback, Key, TotalOfChunkedObjs}).
 
 
--spec(result(atom()) ->
+%% @doc Retrieve a result
+%%
+-spec(result(pid()) ->
              ok | {error, any()}).
-result(Id) ->
-    gen_server:call(Id, {result}).
-
-
--spec(reset(atom()) ->
-             ok | {error, any()}).
-reset(Id) ->
-    gen_server:call(Id, {reset}).
+result(Pid) ->
+    gen_server:call(Pid, {result}).
 
 
 %%====================================================================
@@ -103,48 +103,45 @@ reset(Id) ->
 %%                         ignore               |
 %%                         {stop, Reason}
 %% Description: Initiates the server
-init([Id]) ->
-    {ok, #state{id     = Id,
-                result = []}}.
-
+init([]) ->
+    Context = erlang:md5_init(),
+    {ok, #state{md5_context = Context,
+                errors = []}}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
-
-handle_call({result}, _From, #state{result = Result} = State) ->
-    Reply = case lists:keyfind(error, 1, Result) of
-                false ->
-                    ok;
+handle_call({result}, _From, #state{md5_context = Context,
+                                    errors = Errors} = State) ->
+    Reply = case Errors of
+                [] ->
+                    Digest = erlang:md5_final(Context),
+                    {ok, Digest};
                 _  ->
-                    {error, send_failed}
+                    {error, Errors}
             end,
-    {reply, Reply, State};
-
-
-handle_call({reset}, _From, State) ->
-    {reply, ok, State#state{result = []}}.
+    {reply, Reply, State}.
 
 
 %% Function: handle_cast(Msg, State) -> {noreply, State}          |
 %%                                      {noreply, State, Timeout} |
 %%                                      {stop, Reason, State}
 %% Description: Handling cast message
-handle_cast({put, _Key, Index, _Size, _Result}, #state{result = Acc} = State) ->
+handle_cast({put, _Key, _Index, _Size, Bin}, #state{md5_context = Context,
+                                                    errors = Acc} = State) ->
     %% @TODO
-    Ret = {ok, Index},
-    {noreply, State#state{result = [Ret|Acc]}};
-
+    %% ?debugVal({_Key, _Index, _Size}),
+    NewContext = erlang:md5_update(Context, Bin),
+    {noreply, State#state{md5_context = NewContext,
+                          errors = Acc}};
 
 handle_cast({get, _Key, _TotalOfChunkedObjs, _Callback}, State) ->
     %% @TODO
     {noreply, State};
 
-
 handle_cast({rollback, _Key, _TotalOfChunkedObjs}, State) ->
     %% @TODO
-    {noreply, State#state{result = []}};
-
+    {noreply, State#state{errors = []}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
