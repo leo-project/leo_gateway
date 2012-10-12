@@ -625,7 +625,7 @@ put1(<<>>, Req, Key, Params) ->
         true ->
             put_large_object(Req, Key, Size0, Params);
         false ->
-            ?debugVal(not_large_object),
+            %% ?debugVal(not_large_object),
             {Size1, Bin1, Req1} =
                 case cowboy_http_req:has_body(Req) of
                     {true, _} ->
@@ -712,14 +712,14 @@ put4(Req, Meta) ->
 %% @doc
 %% @private
 put_large_object(Req0, Key, Size0, Params)->
-    ?debugVal(put_large_object),
+    %% @TODO
     {ok, Id} = add_large_object_container(),
 
     {ok, TotalLength, TotalChunckedObjs, Req1} =
         %% PUT children's data
         cowboy_http_req:body(Req0, Params#req_params.chunked_obj_size,
                              fun(_Index, _Size, _Bin) ->
-                                     ok = leo_gateway_large_object_handler:send(Id, Key, _Index, _Size, _Bin)
+                                     ok = leo_gateway_large_object_handler:put(Id, Key, _Index, _Size, _Bin)
                              end),
     Result = leo_gateway_large_object_handler:result(Id),
 
@@ -727,7 +727,7 @@ put_large_object(Req0, Key, Size0, Params)->
     Ret = case (Size0 == TotalLength andalso Result == ok) of
               true ->
                   %% TODO
-                  ?debugVal({TotalLength, TotalChunckedObjs}),
+                  %% ?debugVal({TotalLength, TotalChunckedObjs}),
                   case leo_gateway_rpc_handler:put(Key, <<>>, Size0) of
                       ok ->
                           cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
@@ -811,8 +811,6 @@ auth(_,_,_,_,_) ->
 %% @private
 add_large_object_container() ->
     Id = list_to_atom(pid_to_list(self())),
-    ?debugVal(Id),
-
     ChildSpec = {Id,
                  {leo_gateway_large_object_handler, start_link, [Id]},
                  permanent, 2000, worker, [leo_gateway_large_object_handler]},

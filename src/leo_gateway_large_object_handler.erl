@@ -30,7 +30,7 @@
 
 %% Application callbacks
 -export([start_link/1, stop/1]).
--export([send/5, rollback/3, result/1, reset/1]).
+-export([put/5, get/4, rollback/3, result/1, reset/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -62,11 +62,18 @@ stop(Id) ->
     gen_server:call(Id, stop).
 
 
--spec(send(atom(), binary(), integer(), integer(), binary()) ->
+-spec(put(atom(), binary(), integer(), integer(), binary()) ->
              ok | {error, any()}).
-send(Id, Key, Index, Size, Bin) ->
-    ?debugVal({Id, Key, Index, Size}),
+put(Id, Key, Index, Size, Bin) ->
+    %% ?debugVal({Id, Key, Index, Size}),
     gen_server:cast(Id, {send, Key, Index, Size, Bin}).
+
+
+-spec(get(atom(), binary(), integer(), function()) ->
+             ok | {error, any()}).
+get(Id, Key, TotalOfChunkedObjs, Callback) ->
+    %% ?debugVal({Id, Key, TotalOfChunkedObjs}),
+    gen_server:cast(Id, {get, Key, TotalOfChunkedObjs, Callback}).
 
 
 -spec(rollback(atom(), binary(), integer()) ->
@@ -123,10 +130,15 @@ handle_call({reset}, _From, State) ->
 %%                                      {noreply, State, Timeout} |
 %%                                      {stop, Reason, State}
 %% Description: Handling cast message
-handle_cast({send, _Key, Index, _Size, _Result}, #state{result = Acc} = State) ->
+handle_cast({put, _Key, Index, _Size, _Result}, #state{result = Acc} = State) ->
     %% @TODO
     Ret = {ok, Index},
     {noreply, State#state{result = [Ret|Acc]}};
+
+
+handle_cast({get, _Key, _TotalOfChunkedObjs, _Callback}, State) ->
+    %% @TODO
+    {noreply, State};
 
 
 handle_cast({rollback, _Key, _TotalOfChunkedObjs}, State) ->
