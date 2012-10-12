@@ -25,6 +25,7 @@
 
 -behaviour(gen_server).
 
+-include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 
@@ -83,7 +84,6 @@ get(Pid, Key, TotalOfChunkedObjs, Callback) ->
 -spec(rollback(pid(), binary(), integer()) ->
              ok | {error, any()}).
 rollback(Pid, Key, TotalOfChunkedObjs) ->
-    %% ?debugVal({Pid, Key, TotalOfChunkedObjs}),
     gen_server:cast(Pid, {rollback, Key, TotalOfChunkedObjs}).
 
 
@@ -137,6 +137,7 @@ handle_cast({put, Key, Index, Size, Bin}, #state{md5_context = Context,
             {noreply, State#state{md5_context = NewContext,
                                   errors = Acc}};
         {error, Cause} ->
+            ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
             {noreply, State#state{errors = [{Index, Cause}|Acc]}}
     end;
 
@@ -144,8 +145,13 @@ handle_cast({get, _Key, _TotalOfChunkedObjs, _Callback}, State) ->
     %% @TODO
     {noreply, State};
 
-handle_cast({rollback, _Key, _TotalOfChunkedObjs}, State) ->
-    %% @TODO
+handle_cast({rollback, Key, TotalOfChunkedObjs}, State) ->
+    case leo_gateway_rpc_handler:delete(Key, TotalOfChunkedObjs) of
+        ok ->
+            void;
+        {error, Cause} ->
+            ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause])
+    end,
     {noreply, State#state{errors = []}};
 
 handle_cast(_Msg, State) ->

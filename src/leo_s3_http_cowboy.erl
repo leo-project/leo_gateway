@@ -719,7 +719,7 @@ put_large_object(Req0, Key, Size0, Params)->
     {ok, TotalLength, TotalChunckedObjs, Req1} =
         cowboy_http_req:body(Req0, Params#req_params.chunked_obj_size,
                              fun(_Index, _Size, _Bin) ->
-                                     ok = leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
+                                     catch leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
                              end),
 
     Ret = case catch leo_gateway_large_object_handler:result(Pid) of
