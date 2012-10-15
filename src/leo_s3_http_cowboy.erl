@@ -243,7 +243,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      {<<"Content-Type">>,  ContentType},
                      {<<"Date">>,          Date},
                      {<<"Age">>,           integer_to_list(Diff)},
-                     {<<"Etag">>,          integer_to_list(Checksum, 16)},
+                     {<<"ETag">>,          integer_to_list(Checksum, 16)},
                      {<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)}],
 
             IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
@@ -635,8 +635,9 @@ put1(<<>>, Req, Key, Params) ->
                 end,
 
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
-                ok ->
-                    cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
+                {ok, ETag} ->
+                    cowboy_http_req:reply(200, [?SERVER_HEADER,
+                                                {<<"ETag">>, integer_to_list(ETag, 16)}], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
                 {error, timeout} ->
@@ -673,14 +674,15 @@ put1(Directive, Req, Key, _Params) ->
 %% @private
 put2(Directive, Req, Key, Meta, Bin) ->
     Size = size(Bin),
-    case {Directive, leo_gateway_rpc_handler:put(Key, Bin, Size)} of
-        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY, ok} ->
+
+    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
+        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
             resp_copyobj_xml(Req, Meta);
-        {?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, ok} ->
+        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
             put3(Req, Key, Meta);
-        {_, {error, ?ERR_TYPE_INTERNAL_ERROR}} ->
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
-        {_, {error, timeout}} ->
+        {error, timeout} ->
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
     end.
 
@@ -729,7 +731,7 @@ put_large_object(Req0, Key, Size0, Params)->
 
                   case leo_gateway_rpc_handler:put(
                          Key, <<>>, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
-                      ok ->
+                      {ok, _ETag} ->
                           cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
                       {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                           cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);

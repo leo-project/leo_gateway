@@ -292,12 +292,12 @@ get_object_with_etag_normal2_([_Node0, Node1]) ->
 delete_object_notfound_([Node0, Node1]) ->
     ok = rpc:call(Node0, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node0, meck, expect, [leo_storage_handler_object, delete,
-                                        fun(_Addr, _Key, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 {error, not_found}
                                         end]),
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete,
-                                        fun(_Addr, _Key, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 {error, not_found}
                                         end]),
     Res = leo_gateway_rpc_handler:delete(<<"bucket/key">>),
@@ -309,7 +309,7 @@ delete_object_notfound_([Node0, Node1]) ->
 delete_object_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete,
-                                        fun(_Addr, _Key, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 {error, foobar}
                                         end]),
     Res = leo_gateway_rpc_handler:delete(<<"bucket/key">>),
@@ -320,7 +320,7 @@ delete_object_error_([_Node0, Node1]) ->
 delete_object_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete,
-                                        fun(_Addr, _Key, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 ok
                                         end]),
     Res = leo_gateway_rpc_handler:delete(<<"bucket/key">>),
@@ -331,12 +331,12 @@ delete_object_normal1_([_Node0, Node1]) ->
 put_object_notfound_([Node0, Node1]) ->
     ok = rpc:call(Node0, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node0, meck, expect, [leo_storage_handler_object, put,
-                                        fun(_Addr, _Key, _Body, _Size, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 {error, not_found}
                                         end]),
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put,
-                                        fun(_Addr, _Key, _Body, _Size, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 {error, not_found}
                                         end]),
     Res = leo_gateway_rpc_handler:put(<<"bucket/key">>, <<"body">>, 4),
@@ -348,7 +348,7 @@ put_object_notfound_([Node0, Node1]) ->
 put_object_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put,
-                                        fun(_Addr, _Key, _Body, _Size, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 {error, foobar}
                                         end]),
     Res = leo_gateway_rpc_handler:put(<<"bucket/key">>, <<"body">>, 4),
@@ -359,7 +359,7 @@ put_object_error_([_Node0, Node1]) ->
 put_object_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put,
-                                        fun(_Addr, _Key, _Body, _Size, _ReqId, _Ts) ->
+                                        fun(_, _) ->
                                                 ok
                                         end]),
     Res = leo_gateway_rpc_handler:put(<<"bucket/key">>, <<"body">>, 4),

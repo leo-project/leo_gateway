@@ -145,13 +145,13 @@ handle_cast({get, _Key, _TotalOfChunkedObjs, _Callback}, State) ->
     %% @TODO
     {noreply, State};
 
-handle_cast({rollback, Key, TotalOfChunkedObjs}, State) ->
-    case leo_gateway_rpc_handler:delete(Key, TotalOfChunkedObjs) of
-        ok ->
-            void;
-        {error, Cause} ->
-            ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause])
-    end,
+handle_cast({rollback, _Key, _TotalOfChunkedObjs}, State) ->
+    %% case leo_gateway_rpc_handler:delete(Key, TotalOfChunkedObjs) of
+    %%     ok ->
+    %%         void;
+    %%     {error, Cause} ->
+    %%         ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause])
+    %% end,
     {noreply, State#state{errors = []}};
 
 handle_cast(_Msg, State) ->

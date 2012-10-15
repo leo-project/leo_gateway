@@ -151,29 +151,29 @@ http_check_resp(SC, RespHeaders, RespBody, Method, _) ->
 %% @doc inner functions
 url_gen(Bucket, Path) when length(Bucket) > 0 andalso length(Path) > 0 ->
     lists:append(["http://",
-                 ?TARGET_HOST,":", 
-                 ?TARGET_PORT,"/",
-                 Bucket,"/",
-                 Path]);
+                  ?TARGET_HOST,":", 
+                  ?TARGET_PORT,"/",
+                  Bucket,"/",
+                  Path]);
 url_gen(Bucket, _Path) when length(Bucket) > 0 ->
     lists:append(["http://",
-                 ?TARGET_HOST,":", 
-                 ?TARGET_PORT,"/",
-                 Bucket,"/"]);
+                  ?TARGET_HOST,":", 
+                  ?TARGET_PORT,"/",
+                  Bucket,"/"]);
 url_gen(_Bucket, _Path) ->
     lists:append(["http://",
-                 ?TARGET_HOST,":", 
-                 ?TARGET_PORT,"/default/"]).
+                  ?TARGET_HOST,":", 
+                  ?TARGET_PORT,"/default/"]).
 
 headers_gen() ->
     [{"connection", "close"},{"Authorization","auth"}].
 
 raw_resp_gen('head', Bucket, Path, 'ok', Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
     {ok, #metadata{
-             del = 0,
-             timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
-             checksum = 0,
-             dsize = size(Body)}};
+       del = 0,
+       timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+       checksum = 0,
+       dsize = size(Body)}};
 raw_resp_gen('head', _, _, 'ok', _) ->
     ok;
 raw_resp_gen('head', Bucket, Path, 'not_found', _Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
@@ -187,10 +187,10 @@ raw_resp_gen('head', _, _, 'error', _Body) ->
 
 raw_resp_gen('get', Bucket, Path, 'ok', Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
     {ok, #metadata{
-             del = 0,
-             timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
-             checksum = 0,
-             dsize = size(Body)}, Body};
+       del = 0,
+       timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+       checksum = 0,
+       dsize = size(Body)}, Body};
 raw_resp_gen('get', _, _, 'ok', Body) ->
     {ok, [], Body};
 raw_resp_gen('get', _, _, 'not_found', _Body) ->
@@ -219,6 +219,4 @@ raw_resp_gen('delete', _, _, 'timeout', _Body) ->
     {error, timeout};
 raw_resp_gen('delete', _, _, 'error', _Body) ->
     {error, ?ERR_TYPE_INTERNAL_ERROR}.
-
-
 

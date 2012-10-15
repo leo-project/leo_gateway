@@ -192,9 +192,12 @@ invoke([{_, false}|T], Mod, Method, Args, Errors) ->
 invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
     RPCKey = rpc:async_call(Node, Mod, Method, Args),
     case rpc:nb_yield(RPCKey, ?DEF_REQ_TIMEOUT) of
-        %% put | delete
+        %% delete
         {value, ok = Ret} ->
             Ret;
+        %% put
+        {value, {ok, {etag, ETag}}} ->
+            {ok, ETag};
         %% get-1
         {value, {ok, _Meta, _Bin} = Ret} ->
             Ret;
