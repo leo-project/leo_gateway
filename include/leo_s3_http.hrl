@@ -35,6 +35,7 @@
 -define(QUERY_ACL,       "acl").
 -define(STR_SLASH,       "/").
 -define(BIN_SLASH,       <<"/">>).
+-define(BIN_EMPTY,       <<>>).
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 

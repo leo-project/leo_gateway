@@ -70,9 +70,7 @@ start(#http_options{port                  = Port,
                     cachable_content_type = CachableContentTypes,
                     cachable_path_pattern = CachablePathPatterns,
                     chunked_obj_size      = ChunkedObjSize,
-                    threshold_obj_size    = ThresholdObjSize
-                   }) ->
-
+                    threshold_obj_size    = ThresholdObjSize}) ->
     InternalCache = (CachePlugIn == []),
     Dispatch      = [{'_', [{'_', ?MODULE,
                              [?env_layer_of_dirs(), InternalCache, UseS3API,
@@ -372,13 +370,18 @@ gen_key(Req) ->
     Path = cowboy_http:urldecode(RawPath),
     leo_http:key(EndPoints1, Host, Path).
 
-
+%% ---------------------------------------------------------------------
+%% -OPERATION
+%% ---------------------------------------------------------------------
 %% @doc constraint violation.
 %% @private
 exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
                                          max_layers   = Max}) when Len > Max ->
     cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
 
+%% ---------------------------------------------------------------------
+%% For BUCKET-OPERATION
+%% ---------------------------------------------------------------------
 %% @doc GET operation on buckets & Dirs.
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
@@ -449,11 +452,14 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
     end;
 
+%% ---------------------------------------------------------------------
+%% For OBJECT-OPERATION
+%% ---------------------------------------------------------------------
 %% @doc GET operation on Object with Range Header.
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                                        range_header = RangeHeader}) when RangeHeader =/= undefined ->
-    %% @TODO
+    %% TODO - Will support this function with v0.12.1
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
@@ -504,7 +510,8 @@ exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
-        {ok, Meta, RespObject} ->
+        %% For regular case (NOT a chunked object)
+        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
 
             case HasInnerCache of
@@ -513,9 +520,9 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                                                    mtime = Meta#metadata.timestamp,
                                                    content_type = Mime,
                                                    body = RespObject}),
-                    ecache_api:put(Key, BinVal);
-                _ ->
-                    ok
+                    _ = ecache_api:put(Key, BinVal);
+                false ->
+                    void
             end,
             {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
@@ -524,6 +531,15 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                                    {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
+
+        %% For a chunked object.
+        {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
+            {ok, Pid}  = add_large_object_handler(),
+            {ok, Req2} = cowboy_http_req:chunked_reply(200, [?SERVER_HEADER], Req),
+            {ok, Req3} = leo_gateway_large_object_handler:get(Pid, Key, TotalChunkedObjs, Req2),
+            ok = leo_gateway_large_object_handler:stop(Pid),
+            {ok, Req3};
+
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -531,6 +547,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
         {error, timeout} ->
             cowboy_http_req:reply(504, [?SERVER_HEADER], Req)
     end;
+
 
 %% @doc HEAD operation on Object.
 %% @private
@@ -739,11 +756,11 @@ put_large_object(Req0, Key, Size0, Params)->
                       {error, timeout} ->
                           cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
                   end;
-              _ ->
-                  ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunckedObjs),
+              {_, _Cause} ->
+                  %% ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunckedObjs),
                   cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
           end,
-    ok = leo_gateway_large_object_handler:stop(Pid),
+    catch leo_gateway_large_object_handler:stop(Pid),
     Ret.
 
 
