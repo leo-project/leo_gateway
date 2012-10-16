@@ -619,7 +619,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-put1(<<>>, Req, Key, Params) ->
+put1(?BIN_EMPTY, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
     case (Size0 >= Params#req_params.threshold_obj_size) of
@@ -632,7 +632,7 @@ put1(<<>>, Req, Key, Params) ->
                         {ok, Bin0, Req0} = cowboy_http_req:body(Req),
                         {Size0, Bin0, Req0};
                     {false, _} ->
-                        {0, <<>>, Req}
+                        {0, ?BIN_EMPTY, Req}
                 end,
 
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
@@ -731,7 +731,7 @@ put_large_object(Req0, Key, Size0, Params)->
                   Digest1 = leo_hex:binary_to_integer(Digest0),
 
                   case leo_gateway_rpc_handler:put(
-                         Key, <<>>, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
+                         Key, ?BIN_EMPTY, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
                       {ok, _ETag} ->
                           cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
                       {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -752,7 +752,7 @@ put_large_object(Req0, Key, Size0, Params)->
 get_header(Req, Key) ->
     case cowboy_http_req:header(Key, Req) of
         {undefined, _} ->
-            <<>>;
+            ?BIN_EMPTY;
         {Bin, _} ->
             Bin
     end.
@@ -787,7 +787,7 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
         {BinAuthorization, _} ->
             Bucket = case (TokenLen >= 1) of
                          true  -> hd(binary:split(Path, [?BIN_SLASH], [global]));
-                         false -> <<>>
+                         false -> ?BIN_EMPTY
                      end,
 
             IsCreateBucketOp    = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
