@@ -38,20 +38,30 @@
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
+%% @deplicate
 -define(HTTP_HEAD_RANGE,         "Range").
 -define(HTTP_HEAD_MD5,           "Content-MD5").
--define(HTTP_HEAD_CONTENT_TYPE,  "Content-Type").
--define(HTTP_HEAD_DATE,          "Date").
--define(HTTP_HEAD_ETAG,          "ETag").
 -define(HTTP_HEAD_HOST,          "Host").
--define(HTTP_HEAD_LAST_MODIFIED, "Last-Modified").
 -define(HTTP_HEAD_EXPECT,        "Expect").
 -define(HTTP_HEAD_100_CONTINUE,  "100-continue").
+
+%% http-header key
+-define(HTTP_HEAD_ACL,                <<"acl">>).
+-define(HTTP_HEAD_AGE,                <<"Age">>).
+-define(HTTP_HEAD_CACHE_CTRL,         <<"Cache-Control">>).
+-define(HTTP_HEAD_CONTENT_LENGTH,     <<"Content-Length">>).
+-define(HTTP_HEAD_CONTENT_TYPE,       <<"Content-Type">>).
+-define(HTTP_HEAD_DATE,               <<"Date">>).
+-define(HTTP_HEAD_ETAG,               <<"ETag">>).
+-define(HTTP_HEAD_LAST_MODIFIED,      <<"Last-Modified">>).
+-define(HTTP_HEAD_PREFIX,             <<"prefix">>).
 
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"x-amz-metadata-directive">>).
 -define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"x-amz-copy-source">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
+-define(HTTP_HEAD_X_FROM_CACHE,                 <<"X-From-Cache">>).
+
 
 %% s3 response xmls
 -define(XML_BUCKET_LIST,

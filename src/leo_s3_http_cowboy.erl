@@ -138,7 +138,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                  end,
 
     {Prefix, IsDir, Path2, Req2} =
-        case cowboy_http_req:qs_val(<<"prefix">>, Req) of
+        case cowboy_http_req:qs_val(?HTTP_HEAD_PREFIX, Req) of
             {undefined, Req1} ->
                 HasTermSlash = (?BIN_SLASH ==
                                     binary:part(Path, {byte_size(Path)-1, 1})),
@@ -152,7 +152,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
         end,
     TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
 
-    case cowboy_http_req:qs_val(<<"acl">>, Req2) of
+    case cowboy_http_req:qs_val(?HTTP_HEAD_ACL, Req2) of
         {undefined, _} ->
             case catch auth(UseS3API, Req2, HTTPMethod, Path2, TokenLen) of
                 {error, _Cause} ->
@@ -200,7 +200,8 @@ terminate(_Req, _State) ->
 %%--------------------------------------------------------------------
 %% Callbacks
 %%--------------------------------------------------------------------
-%% @doc
+%% @doc Handle request
+%% @private
 onrequest(#cache_condition{expire = Expire}) ->
     fun(Req) ->
             {Method, _} = cowboy_http_req:method(Req),
@@ -208,7 +209,7 @@ onrequest(#cache_condition{expire = Expire}) ->
     end.
 
 
-%% @doc
+%% @doc Handle request
 %% @private
 onrequest_fun1(?HTTP_GET, Req, Expire) ->
     Key = gen_key(Req),
@@ -218,7 +219,7 @@ onrequest_fun1(_, Req, _) ->
     Req.
 
 
-%% @doc
+%% @doc Handle request
 %% @private
 onrequest_fun2(Req, _, _, not_found) ->
     Req;
@@ -239,12 +240,12 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
             LastModified = leo_http:rfc1123_date(MTime),
             Date  = leo_http:rfc1123_date(Now),
             Heads = [?SERVER_HEADER,
-                     {<<"Last-Modified">>, LastModified},
-                     {<<"Content-Type">>,  ContentType},
-                     {<<"Date">>,          Date},
-                     {<<"Age">>,           integer_to_list(Diff)},
-                     {<<"ETag">>,          integer_to_list(Checksum, 16)},
-                     {<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)}],
+                     {?HTTP_HEAD_LAST_MODIFIED, LastModified},
+                     {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
+                     {?HTTP_HEAD_DATE,          Date},
+                     {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
+                     {?HTTP_HEAD_ETAG,          integer_to_list(Checksum, 16)},
+                     {?HTTP_HEAD_CACHE_CTRL,    "max-age=" ++ integer_to_list(Expire)}],
 
             IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
                          {undefined, _} ->
@@ -264,7 +265,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
     end.
 
 
-%% @doc
+%% @doc Handle response
 %% @private
 onresponse(#cache_condition{expire = Expire} = Config) ->
 
@@ -276,7 +277,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
             case lists:all(fun(Fun) -> Fun(Key, Config, Status, Headers, Req) end, FilterFuns) of
                 true ->
                     DateSec = leo_date:now(),
-                    ContentType = case lists:keyfind(<<"Content-Type">>, 1, Headers) of
+                    ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
                                       false ->
                                           "application/octet-stream";
                                       {_, Val} ->
@@ -291,9 +292,9 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
 
                     _ = ecache_api:put(Key, Bin),
 
-                    Headers2 = lists:keydelete(<<"Last-Modified">>, 1, Headers),
-                    Headers3 = [{<<"Cache-Control">>, "max-age=" ++ integer_to_list(Expire)},
-                                {<<"Last-Modified">>, leo_http:rfc1123_date(DateSec)}
+                    Headers2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Headers),
+                    Headers3 = [{?HTTP_HEAD_CACHE_CTRL,    "max-age=" ++ integer_to_list(Expire)},
+                                {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(DateSec)}
                                 |Headers2],
                     {ok, Req2} = cowboy_http_req:reply(200, Headers3, Req),
                     Req2;
@@ -324,15 +325,15 @@ is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Heade
     {Method, _} = cowboy_http_req:method(Req),
     {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
     HasNOTCacheControl =
-        case lists:keyfind(<<"Cache-Control">>, 1, Headers) of
+        case lists:keyfind(?HTTP_HEAD_CACHE_CTRL, 1, Headers) of
             false -> true;
             _     -> false
         end,
     HasNOTCacheControl andalso
         Status =:= 200 andalso
-        Method =:= 'GET' andalso
+        Method =:= ?HTTP_GET andalso
         is_binary(Body) andalso
-        size(Body) > 0 andalso
+        size(Body) > 0  andalso
         size(Body) < MaxLen.
 
 %% @doc
@@ -348,7 +349,7 @@ is_cachable_req2(_, _, _Status, _Headers, _Req) ->
 %% @private
 is_cachable_req3(_Key, #cache_condition{content_types = CTs}, _Status, Headers, _Req)
   when is_list(CTs) andalso length(CTs) > 0 ->
-    case lists:keyfind(<<"Content-Type">>, 1, Headers) of
+    case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
         false ->
             false;
         {_, ContentType} ->
@@ -387,8 +388,8 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
         {ok, Meta, XML} when is_list(Meta) == true ->
             {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
             cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                        {<<"Content-Type">>, "application/xml"},
-                                        {<<"Date">>, leo_http:rfc1123_date(leo_date:now())}
+                                        {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
+                                        {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_date:now())}
                                        ], Req2);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -475,7 +476,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                     {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
                     cowboy_http_req:reply(206,
                                           [?SERVER_HEADER,
-                                           {<<"Content-Type">>,  Mime}],
+                                           {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
                                           Req2);
                 {error, not_found} ->
                     cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -519,9 +520,9 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
             {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {<<"Content-Type">>,  Mime},
-                                   {<<"Etag">>,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
-                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                                   {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -538,10 +539,10 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
         {ok, #metadata{del = 0} = Meta} ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {<<"Content-Type">>,   leo_mime:guess_mime(Key)},
-                         {<<"Etag">>,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
-                         {<<"Content-Length">>, erlang:integer_to_list(Meta#metadata.dsize)},
-                         {<<"Last-Modified">>,  TimeStamp}],
+                         {?HTTP_HEAD_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
+                         {?HTTP_HEAD_ETAG,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                         {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
+                         {?HTTP_HEAD_LAST_MODIFIED,  TimeStamp}],
             cowboy_http_req:reply(200, Headers, Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -570,7 +571,7 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 %% @doc POST/PUT operation on Objects.
 %% @private
 exec1(?HTTP_PUT, Req, Key, Params) ->
-    put1(get_header(Req, <<"X-Amz-Metadata-Directive">>), Req, Key, Params);
+    put1(get_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params);
 
 %% @doc invalid request.
 %% @private
@@ -586,10 +587,10 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             {ok, Req2} = cowboy_http_req:set_resp_body(Cached#cache.body, Req),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {<<"Content-Type">>,  Cached#cache.content_type},
-                                   {<<"Etag">>,          erlang:integer_to_list(Cached#cache.etag, 16)},
-                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Cached#cache.mtime)},
-                                   {<<"X-From-Cache">>, <<"True">>}],
+                                   {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
+                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Cached#cache.etag, 16)},
+                                   {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
+                                   {?HTTP_HEAD_X_FROM_CACHE, <<"True">>}],
                                   Req2);
         {ok, Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
@@ -603,9 +604,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {<<"Content-Type">>,  Mime},
-                                   {<<"Etag">>,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
-                                   {<<"Last-Modified">>, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                                   {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -637,7 +638,7 @@ put1(<<>>, Req, Key, Params) ->
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                                {<<"ETag">>, integer_to_list(ETag, 16)}], Req1);
+                                                {?HTTP_HEAD_ETAG, integer_to_list(ETag, 16)}], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
                 {error, timeout} ->
@@ -649,7 +650,7 @@ put1(<<>>, Req, Key, Params) ->
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
 put1(Directive, Req, Key, _Params) ->
-    CS = get_header(Req, <<"X-Amz-Copy-Source">>),
+    CS = get_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
     CS2 = case binary:part(CS, {0, 1}) of
@@ -765,8 +766,8 @@ resp_copyobj_xml(Req, Meta) ->
                          erlang:integer_to_list(Meta#metadata.checksum, 16)]),
     {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
     cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                {<<"Content-Type">>, "application/xml"},
-                                {<<"Date">>,         leo_http:rfc1123_date(leo_date:now())}
+                                {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
+                                {?HTTP_HEAD_DATE,         leo_http:rfc1123_date(leo_date:now())}
                                ], Req2).
 
 
