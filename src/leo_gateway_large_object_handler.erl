@@ -136,17 +136,18 @@ handle_call(result, _From, #state{md5_context = Context,
 %%                                      {stop, Reason, State}
 %% Description: Handling cast message
 handle_cast({put, Key, Index, Size, Bin}, #state{md5_context = Context,
-                                                 errors = Acc} = State) ->
+                                                 errors = Errors} = State) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
 
-    case leo_gateway_rpc_handler:put(<<Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary>>, Bin, Size, Index) of
+    case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+                                     Bin, Size, Index) of
         {ok, _ETag} ->
             NewContext = erlang:md5_update(Context, Bin),
             {noreply, State#state{md5_context = NewContext,
-                                  errors = Acc}};
+                                  errors = Errors}};
         {error, Cause} ->
             ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-            {noreply, State#state{errors = [{Index, Cause}|Acc]}}
+            {noreply, State#state{errors = [{Index, Cause}|Errors]}}
     end;
 
 handle_cast({rollback, _Key, _TotalOfChunkedObjs}, State) ->
@@ -197,9 +198,9 @@ handle_loop(Key, Total, Req) ->
 handle_loop(_Key, Total, Total, Req) ->
     {ok, Req};
 handle_loop( Key, Total, Index, Req) ->
-    IndexBin = list_to_binary(integer_to_list(Index+1)),
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
 
-    case leo_gateway_rpc_handler:get(<<Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary>>) of
+    case leo_gateway_rpc_handler:get(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>) of
         {ok, _Metadata, Bin} ->
             ok = cowboy_http_req:chunk(Bin, Req),
             handle_loop(Key, Total, Index + 1, Req);

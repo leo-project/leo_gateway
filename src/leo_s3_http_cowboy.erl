@@ -45,10 +45,10 @@
 -define(SSL_PROC_NAME, list_to_atom(lists:append([?MODULE_STRING, "_ssl"]))).
 
 -record(cache_condition, {
-          expire                = 0  :: integer(), %% specified per sec
-          max_content_len       = 0  :: integer(), %% No cache if Content-Length of a response header was &gt this
-          content_types         = [] :: list(),    %% like ["image/png", "image/gif", "image/jpeg"]
-          path_patterns         = [] :: list()     %% compiled regular expressions
+          expire          = 0  :: integer(), %% specified per sec
+          max_content_len = 0  :: integer(), %% No cache if Content-Length of a response header was &gt this
+          content_types   = [] :: list(),    %% like ["image/png", "image/gif", "image/jpeg"]
+          path_patterns   = [] :: list()     %% compiled regular expressions
          }).
 
 %%--------------------------------------------------------------------
@@ -172,7 +172,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                                                  chunked_obj_size   = ChunkedObjSize,
                                                  threshold_obj_size = ThresholdObjSize}) of
                         {'EXIT', Reason} ->
-                            ?error("loop1/4", "path:~p, reason:~p", [Path2, Reason]),
+                            ?error("handle/3", "path:~p, cause:~p", [Path2, Reason]),
                             {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
                             {ok, Req3, State};
                         {ok, Req3} ->
@@ -180,7 +180,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                             {ok, Req4, State}
                     end;
                 {'EXIT', Reason} ->
-                    ?error("loop1/4", "path:~w, reason:~p", [Path2, Reason]),
+                    ?error("handle/3", "path:~p, cause:~p", [Path2, Reason]),
                     {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
                     {ok, Req3, State}
             end;
@@ -304,7 +304,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
 %%--------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------
-%% @doc
+%% @doc Judge cachable path
 %% @private
 is_cachable_path(Path) ->
     fun(MP) ->
@@ -317,7 +317,7 @@ is_cachable_path(Path) ->
     end.
 
 
-%% @doc
+%% @doc Judge cachable request
 %% @private
 is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Headers, Req) ->
     {Method, _} = cowboy_http_req:method(Req),
@@ -334,7 +334,7 @@ is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Heade
         size(Body) > 0  andalso
         size(Body) < MaxLen.
 
-%% @doc
+%% @doc Judge cachable request
 %% @private
 is_cachable_req2(Key, #cache_condition{path_patterns = PPs}, _Status, _Headers, _Req)
   when is_list(PPs) andalso length(PPs) > 0 ->
@@ -343,7 +343,7 @@ is_cachable_req2(_, _, _Status, _Headers, _Req) ->
     true.
 
 
-%% @doc
+%% @doc Judge cachable request
 %% @private
 is_cachable_req3(_Key, #cache_condition{content_types = CTs}, _Status, Headers, _Req)
   when is_list(CTs) andalso length(CTs) > 0 ->
@@ -357,7 +357,7 @@ is_cachable_req3(_, _, _Status, _Headers, _Req) ->
     true.
 
 
-%% @doc
+%% @doc Create a key
 %% @private
 gen_key(Req) ->
     EndPoints1 = case leo_s3_endpoint:get_endpoints() of
@@ -370,10 +370,11 @@ gen_key(Req) ->
     Path = cowboy_http:urldecode(RawPath),
     leo_http:key(EndPoints1, Host, Path).
 
+
 %% ---------------------------------------------------------------------
-%% -OPERATION
+%% INVALID OPERATION
 %% ---------------------------------------------------------------------
-%% @doc constraint violation.
+%% @doc Constraint violation.
 %% @private
 exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
                                          max_layers   = Max}) when Len > Max ->
@@ -534,12 +535,19 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
-            {ok, Pid}  = add_large_object_handler(),
+            {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
             {ok, Req2} = cowboy_http_req:chunked_reply(200, [?SERVER_HEADER], Req),
-            {ok, Req3} = leo_gateway_large_object_handler:get(Pid, Key, TotalChunkedObjs, Req2),
-            ok = leo_gateway_large_object_handler:stop(Pid),
-            {ok, Req3};
 
+            Ret = leo_gateway_large_object_handler:get(Pid, Key, TotalChunkedObjs, Req2),
+            catch leo_gateway_large_object_handler:stop(Pid),
+
+            case Ret of
+                {ok, Req3} ->
+                    {ok, Req3};
+                {error, Cause} ->
+                    ?error("exec1/4", "path:~p, cause:~p", [binary_to_list(Key), Cause]),
+                    cowboy_http_req:reply(500, [?SERVER_HEADER], Req)
+            end;
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -731,9 +739,8 @@ put4(Req, Meta) ->
 %% @doc
 %% @private
 put_large_object(Req0, Key, Size0, Params)->
-    {ok, Pid} = add_large_object_handler(),
-
     %% PUT children's data
+    {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
     ChunkedSize = Params#req_params.chunked_obj_size,
 
     {ok, TotalLength, TotalChunckedObjs, Req1} =
@@ -741,7 +748,6 @@ put_large_object(Req0, Key, Size0, Params)->
                              fun(_Index, _Size, _Bin) ->
                                      catch leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
                              end),
-
     Ret = case catch leo_gateway_large_object_handler:result(Pid) of
               {ok, Digest0} when Size0 == TotalLength ->
                   %% PUT parent's data
@@ -757,7 +763,7 @@ put_large_object(Req0, Key, Size0, Params)->
                           cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
                   end;
               {_, _Cause} ->
-                  %% ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunckedObjs),
+                  ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunckedObjs),
                   cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
           end,
     catch leo_gateway_large_object_handler:stop(Pid),
@@ -827,19 +833,18 @@ auth(_,_,_,_,_) ->
     {ok, []}.
 
 
-%% @doc
-%% @private
-add_large_object_handler() ->
-    ChildSpec = {{large_object, self()},
-                 {leo_gateway_large_object_handler, start_link, []},
-                 temporary, brutal_kill, worker, []},
-
-    case supervisor:start_child(leo_gateway_sup, ChildSpec) of
-        {ok, Pid} ->
-            {ok, Pid};
-        {already_started, Pid} ->
-            {ok, Pid};
-        {error, Cause} ->
-            {error, Cause}
-    end.
+%% %% @doc
+%% %% @private
+%% add_large_object_handler() ->
+%%     ChildSpec = {{large_object, self()},
+%%                  {leo_gateway_large_object_handler, start_link, []},
+%%                  temporary, brutal_kill, worker, []},
+%%     case supervisor:start_child(leo_gateway_sup, ChildSpec) of
+%%         {ok, Pid} ->
+%%             {ok, Pid};
+%%         {already_started, Pid} ->
+%%             {ok, Pid};
+%%         {error, Cause} ->
+%%             {error, Cause}
+%%     end.
 
