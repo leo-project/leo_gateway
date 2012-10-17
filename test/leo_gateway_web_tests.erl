@@ -219,7 +219,7 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
                                                     [{metadata, "localhost/a/b/pre/test.png",
                                                       0, 8, 0, 0,
                                                       0, 0, 0,
-                                                      0, 1, [], 0, 63511805822, 19740926, 0, 0}]}]),
+                                                      0, 0, 63511805822, 19740926, 0, 0}]}]),
             try
                 %% TODO
                 {ok, {SC,Body}} = httpc:request(get, {lists:append(["http://",
@@ -286,7 +286,7 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                                                 {ok, {metadata, "a/b.png",
                                                       0, 4, 16384, 0,
                                                       0, 0, 0,
-                                                      0, 1, [], 0, 63505750315, 19740926, 0, 0}}]),
+                                                      0, 1, 63505750315, 19740926, 0, 0}}]),
 
             try
                 %% TODO
@@ -351,7 +351,9 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3,
-                           {ok, {metadata, "", 0, 4, 0, 0, 0, 0, 0, 0, 1, [], 0,
+                           {ok, {metadata, "", 
+                                 0, 4, 4, 0, 
+                                 0, 0, 0, 0, 1,
                                  calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
                                  19740926, 0, 0}, <<"body">>}]),
 
@@ -476,7 +478,7 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
 put_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 2, ok]),
+            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 2, {ok, 1}]),
 
             meck:new(leo_s3_auth),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
@@ -500,6 +502,6 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
     end.
 
 proper_([_TermFun, _Node0, _Node1]) ->
-    {timeout, 600, fun() -> leo_gateway_web_prop:test() end}.
+    {timeout, 600, ?_assertEqual(true, leo_gateway_web_prop:test())}.
 
 -endif.

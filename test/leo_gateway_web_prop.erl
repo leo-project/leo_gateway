@@ -133,6 +133,8 @@ http_check_resp(SC, _RespHeaders, _RespBody, 'delete', ok) ->
     SC =:= 204;
 http_check_resp(SC, _RespHeaders, _RespBody, 'put', ok) ->
     SC =:= 200;
+http_check_resp(SC, _RespHeaders, _RespBody, 'put', {ok, _ETag}) ->
+    SC =:= 200;
 http_check_resp(SC, _RespHeaders, _RespBody, 'head', ok) ->
     SC =:= 200;
 http_check_resp(SC, RespHeaders, _RespBody, 'head', {ok, #metadata{dsize = DSize}}) ->
@@ -200,6 +202,10 @@ raw_resp_gen('get', _, _, 'timeout', _Body) ->
 raw_resp_gen('get', _, _, 'error', _Body) ->
     {error, ?ERR_TYPE_INTERNAL_ERROR};
 
+raw_resp_gen('put', Bucket, Path, 'ok', _Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
+    {ok, 1};
+raw_resp_gen('put', Bucket, Path, 'not_found', _Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
+    {ok, 1};
 raw_resp_gen('put', _, _, 'ok', _Body) ->
     ok;
 raw_resp_gen('put', _, _, 'not_found', _Body) ->
