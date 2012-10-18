@@ -70,7 +70,7 @@ stop(Pid) ->
 -spec(put(pid(), binary(), integer(), integer(), binary()) ->
              ok | {error, any()}).
 put(Pid, Key, Index, Size, Bin) ->
-    gen_server:cast(Pid, {put, Key, Index, Size, Bin}).
+    gen_server:call(Pid, {put, Key, Index, Size, Bin}).
 
 
 %% @doc Retrieve a chunked object from the storage cluster
@@ -86,7 +86,7 @@ get(Pid, Key, TotalOfChunkedObjs, Req) ->
 -spec(rollback(pid(), binary(), integer()) ->
              ok | {error, any()}).
 rollback(Pid, Key, TotalOfChunkedObjs) ->
-    gen_server:cast(Pid, {rollback, Key, TotalOfChunkedObjs}).
+    gen_server:call(Pid, {rollback, Key, TotalOfChunkedObjs}).
 
 
 %% @doc Retrieve a result
@@ -128,37 +128,35 @@ handle_call(result, _From, #state{md5_context = Context,
                 _  ->
                     {error, Errors}
             end,
-    {reply, Reply, State}.
+    {reply, Reply, State};
 
 
-%% Function: handle_cast(Msg, State) -> {noreply, State}          |
-%%                                      {noreply, State, Timeout} |
-%%                                      {stop, Reason, State}
-%% Description: Handling cast message
-handle_cast({put, Key, Index, Size, Bin}, #state{md5_context = Context,
-                                                 errors = Errors} = State) ->
+handle_call({put, Key, Index, Size, Bin}, _From, #state{md5_context = Context,
+                                                        errors = Errors} = State) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
 
     case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
                                      Bin, Size, Index) of
         {ok, _ETag} ->
             NewContext = erlang:md5_update(Context, Bin),
-            {noreply, State#state{md5_context = NewContext,
-                                  errors = Errors}};
+            ?debugVal({Index, NewContext}),
+            {reply, ok, State#state{md5_context = NewContext,
+                                    errors = Errors}};
         {error, Cause} ->
-            ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-            {noreply, State#state{errors = [{Index, Cause}|Errors]}}
+            ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {reply, {error, Cause}, State#state{errors = [{Index, Cause}|Errors]}}
     end;
 
-handle_cast({rollback, _Key, _TotalOfChunkedObjs}, State) ->
-    %% case leo_gateway_rpc_handler:delete(Key, TotalOfChunkedObjs) of
-    %%     ok ->
-    %%         void;
-    %%     {error, Cause} ->
-    %%         ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause])
-    %% end,
-    {noreply, State#state{errors = []}};
 
+handle_call({rollback, Key, TotalOfChunkedObjs}, _From, State) ->
+    ok = delete_chunked_objects(Key, TotalOfChunkedObjs),
+    {reply, ok, State#state{errors = []}}.
+
+
+%% Function: handle_cast(Msg, State) -> {noreply, State}          |
+%%                                      {noreply, State, Timeout} |
+%%                                      {stop, Reason, State}
+%% Description: Handling cast message
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -207,4 +205,24 @@ handle_loop( Key, Total, Index, Req) ->
         {error, Cause} ->
             {error, Cause}
     end.
+
+
+%% @doc Remove chunked objects
+%% @private
+-spec(delete_chunked_objects(binary(), integer()) ->
+             ok).
+delete_chunked_objects(_, 0) ->
+    ok;
+delete_chunked_objects(Key0, Index) ->
+    IndexBin = list_to_binary(integer_to_list(Index)),
+    Key1 = << Key0/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+
+    case leo_gateway_rpc_handler:delete(Key1) of
+        ok ->
+            void;
+        {error, Cause} ->
+            ?error("delete_chunked_objects/2", "key:~s, index:~p, cause:~p",
+                   [binary_to_list(Key0), Index, Cause])
+    end,
+    delete_chunked_objects(Key0, Index - 1).
 

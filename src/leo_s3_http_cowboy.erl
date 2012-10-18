@@ -536,6 +536,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
+            ?debugVal(TotalChunkedObjs),
             {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
             {ok, Req2} = cowboy_http_req:chunked_reply(200, [?SERVER_HEADER], Req),
 
@@ -740,33 +741,43 @@ put4(Req, Meta) ->
 %% @doc
 %% @private
 put_large_object(Req0, Key, Size0, Params)->
-    %% PUT children's data
+    %% PUT children's data (Chunked objects)
+    %%
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
     ChunkedSize = Params#req_params.chunked_obj_size,
 
-    {ok, TotalLength, TotalChunckedObjs, Req1} =
-        cowboy_http_req:body(Req0, Params#req_params.chunked_obj_size,
-                             fun(_Index, _Size, _Bin) ->
-                                     catch leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
-                             end),
-    Ret = case catch leo_gateway_large_object_handler:result(Pid) of
-              {ok, Digest0} when Size0 == TotalLength ->
+    Ret = case cowboy_http_req:body(
+                 Req0, Params#req_params.chunked_obj_size,
+                 fun(_Index, _Size, _Bin) ->
+                         catch leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
+                 end) of
+              {ok, TotalLength, TotalChunckedObjs, Req1} ->
                   %% PUT parent's data
-                  Digest1 = leo_hex:binary_to_integer(Digest0),
+                  %%
+                  case catch leo_gateway_large_object_handler:result(Pid) of
+                      {ok, Digest0} when Size0 == TotalLength ->
+                          Digest1 = leo_hex:binary_to_integer(Digest0),
 
-                  case leo_gateway_rpc_handler:put(
-                         Key, ?BIN_EMPTY, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
-                      {ok, _ETag} ->
-                          cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
-                      {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                          cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
-                      {error, timeout} ->
-                          cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
+                          case leo_gateway_rpc_handler:put(
+                                 Key, ?BIN_EMPTY, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
+                              {ok, _ETag} ->
+                                  cowboy_http_req:reply(200, [?SERVER_HEADER], Req1);
+                              {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                                  cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
+                              {error, timeout} ->
+                                  cowboy_http_req:reply(504, [?SERVER_HEADER], Req1)
+                          end;
+                      {_, _Cause} ->
+                          ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunckedObjs),
+                          cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
                   end;
-              {_, _Cause} ->
-                  ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunckedObjs),
+              {error, {NumOfChunkedObjs, Cause}} ->
+                  ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+
+                  ok = leo_gateway_large_object_handler:rollback(Pid, Key, NumOfChunkedObjs),
                   cowboy_http_req:reply(500, [?SERVER_HEADER], Req0)
           end,
+
     catch leo_gateway_large_object_handler:stop(Pid),
     Ret.
 
