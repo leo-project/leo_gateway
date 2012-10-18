@@ -48,17 +48,17 @@
 
 %% http-header key
 -define(HTTP_HEAD_ACL,                <<"acl">>).
--define(HTTP_HEAD_AGE,                <<"Age">>).
--define(HTTP_HEAD_CACHE_CTRL,         <<"Cache-Control">>).
--define(HTTP_HEAD_CONTENT_LENGTH,     <<"Content-Length">>).
--define(HTTP_HEAD_CONTENT_TYPE,       <<"Content-Type">>).
--define(HTTP_HEAD_DATE,               <<"Date">>).
--define(HTTP_HEAD_ETAG,               <<"ETag">>).
--define(HTTP_HEAD_LAST_MODIFIED,      <<"Last-Modified">>).
+-define(HTTP_HEAD_AGE,                'Age').
+-define(HTTP_HEAD_CACHE_CTRL,         'Cache-Control').
+-define(HTTP_HEAD_CONTENT_LENGTH,     'Content-Length').
+-define(HTTP_HEAD_CONTENT_TYPE,       'Content-Type').
+-define(HTTP_HEAD_DATE,               'Date').
+-define(HTTP_HEAD_ETAG,               'Etag').
+-define(HTTP_HEAD_LAST_MODIFIED,      'Last-Modified').
 -define(HTTP_HEAD_PREFIX,             <<"prefix">>).
 
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"x-amz-metadata-directive">>).
--define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"x-amz-copy-source">>).
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"X-Amz-Metadata-Directive">>).
+-define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_X_FROM_CACHE,                 <<"X-From-Cache">>).

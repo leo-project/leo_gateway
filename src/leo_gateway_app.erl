@@ -35,7 +35,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
--export([start/2, stop/1, inspect_cluster_status/2]).
+-export([start/2, stop/1, inspect_cluster_status/2, profile_output/0]).
 
 -define(CHECK_INTERVAL, 3000).
 
@@ -60,6 +60,7 @@
 %% @spec start(_Type, _StartArgs) -> ServerRet
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
+    consider_profiling(),
     leo_gateway_deps:ensure(),
     App = leo_gateway,
 
@@ -83,6 +84,23 @@ start(_Type, _StartArgs) ->
 stop(_State) ->
     ok.
 
+-spec profile_output() -> ok.
+profile_output() ->
+    eprof:stop_profiling(),
+    eprof:log("leo_gateway.procs.profile"),
+    eprof:analyze(procs),
+    eprof:log("leo_gateway.total.profile"),
+    eprof:analyze(total).
+
+-spec consider_profiling() -> profiling | not_profiling | {error, any()}.
+consider_profiling() ->
+    case application:get_env(profile) of
+        {ok, true} ->
+            {ok, _Pid} = eprof:start(),
+            eprof:start_profiling([self()]);
+        _ ->
+            not_profiling
+    end.
 
 %% @doc Inspect the cluster-status
 %%

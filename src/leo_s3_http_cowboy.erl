@@ -41,7 +41,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -undef(SERVER_HEADER).
--define(SERVER_HEADER, {<<"Server">>,<<"LeoFS">>}).
+-define(SERVER_HEADER, {'Server',<<"LeoFS">>}).
 -define(SSL_PROC_NAME, list_to_atom(lists:append([?MODULE_STRING, "_ssl"]))).
 
 -record(cache_condition, {
@@ -356,6 +356,7 @@ is_cachable_req3(_Key, #cache_condition{content_types = CTs}, _Status, Headers, 
 is_cachable_req3(_, _, _Status, _Headers, _Req) ->
     true.
 
+-compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2, get_header/2,auth/5]}).
 
 %% @doc Create a key
 %% @private
