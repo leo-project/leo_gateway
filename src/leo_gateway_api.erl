@@ -39,9 +39,8 @@
 %% @doc Purge an object into the cache
 -spec(purge(string()) -> ok).
 purge(Path) ->
-    HookMods = mochiweb_socket_server:get(leo_s3_http_mochi, hook_modules),
-    ?info("purge/1", "path: ~p hooks: ~p ~n",[Path, HookMods]),
-    _ = mochiweb:on_purge_hook_modules(Path, HookMods),
+    BinPath = list_to_binary(Path),
+    _ = ecache_api:delete(BinPath),
     ok.
 
 %% @doc Get node status (gateway).
