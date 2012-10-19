@@ -70,7 +70,7 @@ stop(Pid) ->
 -spec(put(pid(), binary(), integer(), integer(), binary()) ->
              ok | {error, any()}).
 put(Pid, Key, Index, Size, Bin) ->
-    gen_server:call(Pid, {put, Key, Index, Size, Bin}).
+    gen_server:call(Pid, {put, Key, Index, Size, Bin}, infinity).
 
 
 %% @doc Retrieve a chunked object from the storage cluster
@@ -78,7 +78,7 @@ put(Pid, Key, Index, Size, Bin) ->
 -spec(get(pid(), binary(), integer(), pid()) ->
              ok | {error, any()}).
 get(Pid, Key, TotalOfChunkedObjs, Req) ->
-    gen_server:call(Pid, {get, Key, TotalOfChunkedObjs, Req}).
+    gen_server:call(Pid, {get, Key, TotalOfChunkedObjs, Req}, infinity).
 
 
 %% @doc Make a rollback before all operations
@@ -139,7 +139,6 @@ handle_call({put, Key, Index, Size, Bin}, _From, #state{md5_context = Context,
                                      Bin, Size, Index) of
         {ok, _ETag} ->
             NewContext = erlang:md5_update(Context, Bin),
-            ?debugVal({Index, NewContext}),
             {reply, ok, State#state{md5_context = NewContext,
                                     errors = Errors}};
         {error, Cause} ->

@@ -536,7 +536,6 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
-            ?debugVal(TotalChunkedObjs),
             {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
             {ok, Req2} = cowboy_http_req:chunked_reply(200, [?SERVER_HEADER], Req),
 
