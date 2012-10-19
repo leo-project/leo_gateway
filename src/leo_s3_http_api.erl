@@ -28,12 +28,15 @@
 -author('Yosuke Hara').
 
 -export([start/2, start/3]).
+-export([get_options/2]).
 
 -include("leo_gateway.hrl").
+-include("leo_s3_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
+-include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--type(http_server() :: mochiweb | cowboy).
+-type(http_server() :: cowboy).
 
 -define(env_s3_http(AppName),
         case application:get_env(AppName, s3_http) of
@@ -42,114 +45,77 @@
         end).
 
 
+%%--------------------------------------------------------------------
+%% API
+%%--------------------------------------------------------------------
 %% @doc Provide processes which are cache and http_server
 %%
 -spec(start(pid(), atom()) ->
              tuple()).
 start(Sup, AppName) ->
     S3_HTTP_Config = ?env_s3_http(AppName),
-    HTTPServer = leo_misc:get_value('http_server', S3_HTTP_Config, 'mochiweb'),
+    HTTPServer = leo_misc:get_value('http_server', S3_HTTP_Config, 'cowboy'),
     start(Sup, HTTPServer, S3_HTTP_Config).
 
 -spec(start(pid(), http_server(), list()) ->
              tuple()).
-start(Sup, mochiweb, S3_HTTP_Config) ->
-    ListenPort     = leo_misc:get_value('port',             S3_HTTP_Config, 8080),
-    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
-    SSLListenPort  = leo_misc:get_value('ssl_port',         S3_HTTP_Config, 8443),
-    SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
-    SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
-    io:format("*             port: ~p~n", [ListenPort]),
-    io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
-    io:format("*         ssl port: ~p~n", [SSLListenPort]),
-    io:format("*     ssl certfile: ~p~n", [SSLCertFile]),
-    io:format("*      ssl keyfile: ~p~n", [SSLKeyFile]),
+start(Sup, cowboy = HTTPServer, S3_HTTP_Config) ->
+    {ok, HTTPOptions} = get_options(HTTPServer, S3_HTTP_Config),
 
-    HookModules =
-        case leo_misc:get_value('cache_plugin', S3_HTTP_Config) of
-            undefined -> [];
-            ModCache ->
-                CacheExpire          = leo_misc:get_value('cache_expire',          S3_HTTP_Config, 300),
-                CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
-                CachableContentTypes = leo_misc:get_value('cachable_content_type', S3_HTTP_Config, []),
-                CachablePathPatterns = leo_misc:get_value('cachable_path_pattern', S3_HTTP_Config, []),
-                io:format("*        mod cache: ~p~n", [ModCache]),
-                io:format("*     cache_expire: ~p~n", [CacheExpire]),
-                io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
-                io:format("*    content_types: ~p~n", [CachableContentTypes]),
-                io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
-                [{ModCache, [{expire,                CacheExpire},
-                             {max_content_len,       CacheMaxContentLen},
-                             {cachable_content_type, CachableContentTypes},
-                             {cachable_path_pattern, CachablePathPatterns}
-                            ]}]
-        end,
-
-    Ip = case os:getenv("MOCHIWEB_IP") of
-             false -> "0.0.0.0";
-             Any   -> Any
-         end,
-
-    WebConfig0 = [{ip, Ip},
-                  {port, ListenPort},
-                  {acceptor_pool_size, NumOfAcceptors},
-                  {ssl_port, SSLListenPort},
-                  {ssl_certfile, SSLCertFile},
-                  {ssl_keyfile, SSLKeyFile},
-                  {docroot, "."}],
-    WebConfig1 =
-        case HookModules of
-            [] -> WebConfig0;
-            _  -> lists:reverse([{hook_modules, HookModules}|WebConfig0])
-        end,
-
-    ChildSpec =
-        {leo_s3_http_mochi,
-         {leo_s3_http_mochi, start, [WebConfig1]},
-         permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic},
+    ChildSpec = {cowboy_sup,
+                 {cowboy_sup, start_link, []},
+                 permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [cowboy_sup]},
     {ok, _} = supervisor:start_child(Sup, ChildSpec),
-    ok;
 
-start(_Sup, cowboy, S3_HTTP_Config) ->
-    ListenPort     = leo_misc:get_value('port',             S3_HTTP_Config, 8080),
-    NumOfAcceptors = leo_misc:get_value('num_of_acceptors', S3_HTTP_Config,   32),
-    SSLListenPort  = leo_misc:get_value('ssl_port',         S3_HTTP_Config, 8443),
-    SSLCertFile    = leo_misc:get_value('ssl_certfile',     S3_HTTP_Config, "./server_cert.pem"),
-    SSLKeyFile     = leo_misc:get_value('ssl_keyfile',      S3_HTTP_Config, "./server_key.pem"),
-    io:format("*             port: ~p~n", [ListenPort]),
-    io:format("* num of acceptors: ~p~n", [NumOfAcceptors]),
-    io:format("*         ssl port: ~p~n", [SSLListenPort]),
-    io:format("*     ssl certfile: ~p~n", [SSLCertFile]),
-    io:format("*      ssl keyfile: ~p~n", [SSLKeyFile]),
-
-    WebConfig0 = [
-                 {port, ListenPort},
-                 {acceptor_pool_size, NumOfAcceptors},
-                 {ssl_port, SSLListenPort},
-                 {ssl_certfile, SSLCertFile},
-                 {ssl_keyfile, SSLKeyFile},
-                 {docroot, "."}],
-
-    WebConfig1 = case proplists:get_value('cache_plugin', S3_HTTP_Config) of
-        undefined -> WebConfig0;
-        ModCache ->
-            CacheExpire          = proplists:get_value('cache_expire',          S3_HTTP_Config, 300),
-            CacheMaxContentLen   = proplists:get_value('cache_max_content_len', S3_HTTP_Config, 1000000),
-            CachableContentTypes = proplists:get_value('cachable_content_type', S3_HTTP_Config, []),
-            CachablePathPatterns = proplists:get_value('cachable_path_pattern', S3_HTTP_Config, []),
-            io:format("*        mod cache: ~p~n", [ModCache]),
-            io:format("*     cache_expire: ~p~n", [CacheExpire]),
-            io:format("*  max_content_len: ~p~n", [CacheMaxContentLen]),
-            io:format("*    content_types: ~p~n", [CachableContentTypes]),
-            io:format("*    path_patterns: ~p~n", [CachablePathPatterns]),
-            [{hook_modules,          ModCache},
-             {expire,                CacheExpire},
-             {max_content_len,       CacheMaxContentLen},
-             {cachable_content_type, CachableContentTypes},
-             {cachable_path_pattern, CachablePathPatterns}|WebConfig0]
-    end,
-    leo_s3_http_cowboy:start(WebConfig1),
+    leo_s3_http_cowboy:start(HTTPOptions),
     ok.
 
 
+%% @doc Retrieve options
+%% @private
+-spec(get_options(cowboy, list()) ->
+             {ok, #http_options{}}).
+get_options(HTTPServer, Options) ->
+    UseS3API             = leo_misc:get_value('s3_api',                Options, true),
+    Port                 = leo_misc:get_value('port',                  Options, 8080),
+    SSLPort              = leo_misc:get_value('ssl_port',              Options, 8443),
+    SSLCertFile          = leo_misc:get_value('ssl_certfile',          Options, "./server_cert.pem"),
+    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',           Options, "./server_key.pem"),
+    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',      Options,   32),
+    CachePlugIn          = leo_misc:get_value('cache_plugin',          Options, []),
+    CacheExpire          = leo_misc:get_value('cache_expire',          Options, 300),
+    CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', Options, 1000000),
+    CachableContentTypes = leo_misc:get_value('cachable_content_type', Options, []),
+    CachablePathPatterns = leo_misc:get_value('cachable_path_pattern', Options, []),
+    ChunkedObjSize       = leo_misc:get_value('chunked_obj_size',      Options, [4194304]), %% 4MB
+    ThresholdObjSize     = leo_misc:get_value('threshold_obj_size',    Options, [5242880]), %% 5MB
 
+    ?info("start/3", "s3-api: ~p",                  [UseS3API]),
+    ?info("start/3", "http-server: ~p",             [HTTPServer]),
+    ?info("start/3", "port: ~p",                    [Port]),
+    ?info("start/3", "ssl port: ~p",                [SSLPort]),
+    ?info("start/3", "ssl certfile: ~p",            [SSLCertFile]),
+    ?info("start/3", "ssl keyfile: ~p",             [SSLKeyFile]),
+    ?info("start/3", "num of acceptors: ~p",        [NumOfAcceptors]),
+    ?info("start/3", "cache_plugin: ~p",            [CachePlugIn]),
+    ?info("start/3", "cache expire: ~p",            [CacheExpire]),
+    ?info("start/3", "cache_max_content_len: ~p",   [CacheMaxContentLen]),
+    ?info("start/3", "cacheable_content_types: ~p", [CachableContentTypes]),
+    ?info("start/3", "cacheable_path_patterns: ~p", [CachablePathPatterns]),
+    ?info("start/3", "chunked_obj_size: ~p",        [ChunkedObjSize]),
+    ?info("start/3", "threshold_obj_size: ~p",      [ThresholdObjSize]),
+
+    {ok, #http_options{s3_api                = UseS3API,
+                       port                  = Port,
+                       ssl_port              = SSLPort,
+                       ssl_certfile          = SSLCertFile,
+                       ssl_keyfile           = SSLKeyFile,
+                       num_of_acceptors      = NumOfAcceptors,
+                       cache_plugin          = CachePlugIn,
+                       cache_expire          = CacheExpire,
+                       cache_max_content_len = CacheMaxContentLen,
+                       cachable_content_type = CachableContentTypes,
+                       cachable_path_pattern = CachablePathPatterns,
+                       chunked_obj_size      = ChunkedObjSize,
+                       threshold_obj_size    = ThresholdObjSize
+                      }}.

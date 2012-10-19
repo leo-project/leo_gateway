@@ -33,7 +33,7 @@
          get/2,
          get/3,
          delete/1,
-         put/3,
+         put/3, put/4, put/6, put/7,
          invoke/5
         ]).
 
@@ -57,84 +57,131 @@
          }).
 
 
-%% @doc head object
+%% @doc Retrieve a metadata from the storage-cluster
 %%
--spec(head(string()) ->
+-spec(head(binary()) ->
              {ok, #metadata{}}|{error, any()}).
 head(Key) ->
-    ReqParams = get_request_parameters(head, Key),
+    %% @TODO reduce converting costs by binary_to_list
+    KeyList = binary_to_list(Key),
+    ReqParams = get_request_parameters(head, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            head,
-           [ReqParams#req_params.addr_id, Key],
+           [ReqParams#req_params.addr_id, KeyList],
            []).
 
-%% @doc get object
+%% @doc Retrieve an object from the storage-cluster
 %%
--spec(get(string()) ->
+-spec(get(binary()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key) ->
+    %% @TODO reduce converting cost by binary_to_list
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
-    ReqParams = get_request_parameters(get, Key),
+    ReqParams = get_request_parameters(get, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id],
+           [ReqParams#req_params.addr_id, KeyList, ReqParams#req_params.req_id],
            []).
--spec(get(string(), integer()) ->
+-spec(get(binary(), integer()) ->
              {ok, match}|{ok, #metadata{}, binary()}|{error, any()}).
 get(Key, ETag) ->
+    %% @TODO reduce converting cost by binary_to_list
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
-    ReqParams = get_request_parameters(get, Key),
+    ReqParams = get_request_parameters(get, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, Key, ETag, ReqParams#req_params.req_id],
+           [ReqParams#req_params.addr_id, KeyList, ETag, ReqParams#req_params.req_id],
            []).
 
--spec(get(string(), integer(), integer()) ->
+-spec(get(binary(), integer(), integer()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key, StartPos, EndPos) ->
+    %% @TODO reduce converting cost by binary_to_list
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
-    ReqParams = get_request_parameters(get, Key),
+    ReqParams = get_request_parameters(get, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, Key, StartPos, EndPos, ReqParams#req_params.req_id],
+           [ReqParams#req_params.addr_id,
+            KeyList, StartPos, EndPos,
+            ReqParams#req_params.req_id],
            []).
 
 
-%% @doc delete object
+%% @doc Remove an object from storage-cluster
 %%
--spec(delete(string()) ->
+-spec(delete(binary()) ->
              ok|{error, any()}).
 delete(Key) ->
+    %% @TODO reduce converting cost by binary_to_list
+    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_DEL),
-    ReqParams = get_request_parameters(delete, Key),
+    ReqParams = get_request_parameters(delete, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            delete,
-           [ReqParams#req_params.addr_id, Key,
-            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [#object{addr_id   = ReqParams#req_params.addr_id,
+                    key       = KeyList,
+                    timestamp = ReqParams#req_params.timestamp},
+            ReqParams#req_params.req_id],
            []).
 
 
-%% @doc put object
+%% @doc Insert an object into the storage-cluster (regular-case)
 %%
--spec(put(string(), binary(), integer()) ->
+-spec(put(binary(), binary(), integer()) ->
              ok|{error, any()}).
 put(Key, Body, Size) ->
+    put(Key, Body, Size, 0, 0, 0, 0).
+
+%% @doc Insert an object into the storage-cluster (child of chunked-object)
+%%
+-spec(put(binary(), binary(), integer(), integer()) ->
+             ok|{error, any()}).
+put(Key, Body, Size, Index) ->
+    put(Key, Body, Size, 0, 0, Index, 0).
+
+%% @doc Insert an object into the storage-cluster (parent of chunked-object)
+%%
+-spec(put(binary(), binary(), integer(), integer(), integer(), integer()) ->
+             ok|{error, any()}).
+put(Key, Body, Size, ChunkedSize, TotalOfChunks, Digest) ->
+    put(Key, Body, Size, ChunkedSize, TotalOfChunks, 0, Digest).
+
+%% @doc Insert an object into the storage-cluster
+%%
+-spec(put(binary(), binary(), integer(), integer(), integer(), integer(), integer()) ->
+             ok|{error, any()}).
+put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
+    %% @TODO reduce converting cost by binary_to_list
+    KeyList = binary_to_list(Key),
+
     _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
-    ReqParams = get_request_parameters(put, Key),
+    ReqParams = get_request_parameters(put, KeyList),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            put,
-           [ReqParams#req_params.addr_id, Key, Body, Size,
-            ReqParams#req_params.req_id, ReqParams#req_params.timestamp],
+           [#object{addr_id   = ReqParams#req_params.addr_id,
+                    key       = KeyList,
+                    data      = Body,
+                    dsize     = Size,
+                    timestamp = ReqParams#req_params.timestamp,
+                    csize     = ChunkedSize,
+                    cnumber   = TotalOfChunks,
+                    cindex    = ChunkIndex,
+                    checksum  = Digest
+                   },
+            ReqParams#req_params.req_id],
            []).
 
 
-%% @doc do invoke rpc calls with handling retries
+%% @doc Do invoke rpc calls with handling retries
 %%
 -spec(invoke(list(), atom(), atom(), list(), list()) ->
              ok|{ok, any()}|{error, any()}).
@@ -145,9 +192,12 @@ invoke([{_, false}|T], Mod, Method, Args, Errors) ->
 invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
     RPCKey = rpc:async_call(Node, Mod, Method, Args),
     case rpc:nb_yield(RPCKey, ?DEF_REQ_TIMEOUT) of
-        %% put | delete
+        %% delete
         {value, ok = Ret} ->
             Ret;
+        %% put
+        {value, {ok, {etag, ETag}}} ->
+            {ok, ETag};
         %% get-1
         {value, {ok, _Meta, _Bin} = Ret} ->
             Ret;
@@ -164,7 +214,7 @@ invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
     end.
 
 
-%% @doc get request parameters.
+%% @doc Get request parameters
 %%
 -spec(get_request_parameters(method(), string()) ->
              #req_params{}).
@@ -185,7 +235,7 @@ get_request_parameters(Method, Key) ->
                 timestamp    = Timestamp}.
 
 
-%% @doc error messeage filtering.
+%% @doc Error messeage filtering
 %%
 error_filter([not_found = Error|_T])              -> Error;
 error_filter([H|T])                               -> error_filter(T, H).
@@ -194,7 +244,7 @@ error_filter([not_found = Error|_T],       _Prev) -> Error;
 error_filter([_H|T],                        Prev) -> error_filter(T, Prev).
 
 
-%% @doc handle an error response.
+%% @doc Handle an error response
 %%
 handle_error(_Node, _Mod, _Method, _Args, {value, {error, not_found = Error}}) ->
     Error;

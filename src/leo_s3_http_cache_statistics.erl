@@ -33,7 +33,8 @@
 -include_lib("ecache/include/ecache.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([init/0, sync/1]).
+-export([start_link/1]).
+-export([init/0, handle_call/1]).
 
 -define(SNMP_MSG_REPLICATE,  'num-of-msg-replicate').
 -define(SNMP_MSG_SYNC_VNODE, 'num-of-msg-sync-vnode').
@@ -49,6 +50,13 @@
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
+start_link(Interval) ->
+    ok = leo_statistics_api:start_link(?MODULE, Interval),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Callback
+%%--------------------------------------------------------------------
 %% @doc Initialize metrics.
 %%
 -spec(init() ->
@@ -59,18 +67,18 @@ init() ->
 
 %% @doc Synchronize values.
 %%
--spec(sync(?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M) ->
+-spec(handle_call({sync, ?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M}) ->
              ok).
-sync(?STAT_INTERVAL_1M) ->
-    Stats = case catch ecache_server:stats() of
+handle_call({sync, ?STAT_INTERVAL_1M}) ->
+    Stats = case catch ecache_api:stats() of
                 {'EXIT', _Cause} -> #stats{};
                 Value            -> Value
             end,
 
-    #stats{get_op   = NumOfRead,
-           hit_cnt  = HitCount,
-           rec_num  = NumOfObjects,
-           rec_size = TotalOfSize} = Stats,
+    #stats{gets        = NumOfRead,
+           hits        = HitCount,
+           records     = NumOfObjects,
+           cached_size = TotalOfSize} = Stats,
 
     catch snmp_generic:variable_set(?SNMP_CACHE_HIT_COUNT,  HitCount),
     catch snmp_generic:variable_set(?SNMP_CACHE_MISS_COUNT, NumOfRead - HitCount),
@@ -78,6 +86,6 @@ sync(?STAT_INTERVAL_1M) ->
     catch snmp_generic:variable_set(?SNMP_CACHE_TOTAL_SIZE, TotalOfSize),
     ok;
 
-sync(?STAT_INTERVAL_5M) ->
+handle_call({sync, ?STAT_INTERVAL_5M}) ->
     ok.
 

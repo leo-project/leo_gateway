@@ -31,10 +31,13 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
+-include_lib("leo_statistics/include/leo_statistics.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
--export([start/2, stop/1]).
+-export([start/2, stop/1, inspect_cluster_status/2, profile_output/0]).
+
+-define(CHECK_INTERVAL, 3000).
 
 -ifdef(TEST).
 -define(get_several_info_from_manager(_Args),
@@ -57,6 +60,7 @@
 %% @spec start(_Type, _StartArgs) -> ServerRet
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
+    consider_profiling(),
     leo_gateway_deps:ensure(),
     App = leo_gateway,
 
@@ -72,7 +76,7 @@ start(_Type, _StartArgs) ->
 
     %% Launch Supervisor
     Res = leo_gateway_sup:start_link(),
-    after_process(Res).
+    after_process_0(Res).
 
 
 %% @spec stop(_State) -> ServerRet
@@ -80,65 +84,122 @@ start(_Type, _StartArgs) ->
 stop(_State) ->
     ok.
 
+-spec profile_output() -> ok.
+profile_output() ->
+    eprof:stop_profiling(),
+    eprof:log("leo_gateway.procs.profile"),
+    eprof:analyze(procs),
+    eprof:log("leo_gateway.total.profile"),
+    eprof:analyze(total).
+
+-spec consider_profiling() -> profiling | not_profiling | {error, any()}.
+consider_profiling() ->
+    case application:get_env(profile) of
+        {ok, true} ->
+            {ok, _Pid} = eprof:start(),
+            eprof:start_profiling([self()]);
+        _ ->
+            not_profiling
+    end.
+
+%% @doc Inspect the cluster-status
+%%
+-spec(inspect_cluster_status(any(), list()) ->
+             pid()).
+inspect_cluster_status(Res, ManagerNodes) ->
+    case ?get_several_info_from_manager(ManagerNodes) of
+        {{ok, SystemConf}, {ok, Members}} ->
+            case get_cluster_state(Members) of
+                ?STATE_STOP ->
+                    timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
+                                      [ok, ManagerNodes]);
+                ?STATE_RUNNING ->
+                    ok = after_process_1(SystemConf, Members)
+            end;
+        {{ok,_SystemConf}, {error,_Cause}} ->
+            timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
+                              [ok, ManagerNodes]);
+        Error ->
+            io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
+            Error
+    end,
+    Res.
+
 
 %%--------------------------------------------------------------------
 %% Internal Functions.
 %%--------------------------------------------------------------------
 %% @doc After process of start_link
 %% @private
--spec(after_process({ok, pid()} | {error, any()}) ->
+-spec(after_process_0({ok, pid()} | {error, any()}) ->
              {ok, pid()} | {error, any()}).
-after_process({ok, Pid} = Res) ->
-    App = leo_gateway,
-    ManagerNodes    = ?env_manager_nodes(App),
-    NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
+after_process_0({ok, _Pid} = Res) ->
+    ManagerNodes0  = ?env_manager_nodes(leo_gateway),
+    ManagerNodes1 = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes0),
 
-    case ?get_several_info_from_manager(NewManagerNodes) of
-        {{ok, SystemConf}, {ok, Members}} ->
-            %% Launch SNMPA
-            ok = leo_statistics_api:start(leo_gateway_sup, App,
-                                          [{snmp, [leo_statistics_metrics_vm,
-                                                   leo_statistics_metrics_req,
-                                                   leo_s3_http_cache_statistics]},
-                                           {stat, [leo_statistics_metrics_vm]}]),
+    %% Launch SNMPA
+    ok = leo_statistics_api:start_link(leo_gateway),
+    ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
+    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
-            %% Launch Redundant-manager
-            ok = leo_redundant_manager_api:start(gateway, NewManagerNodes, ?env_queue_dir(App)),
-            {ok,_,_} = leo_redundant_manager_api:create(Members, [{n, SystemConf#system_conf.n},
-                                                                  {r, SystemConf#system_conf.r},
-                                                                  {w, SystemConf#system_conf.w},
-                                                                  {d, SystemConf#system_conf.d},
-                                                                  {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
+    %% Launch Redundant-manager#1
+    ok = leo_redundant_manager_api:start(gateway),
 
-            %% Launch S3Libs:Auth/Bucket/EndPoint
-            ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
+    %% Launch S3Libs:Auth/Bucket/EndPoint
+    ok = leo_s3_libs:start(slave),
 
-            %% Launch a listener - [s3_http]
-            case ?env_listener() of
-                ?S3_HTTP ->
-                    ok = leo_s3_http_api:start(Pid, App)
-            end,
+    %% Launch a listener - [s3_http]
+    case ?env_listener() of
+        ?S3_HTTP ->
+            ok = leo_s3_http_api:start(leo_gateway_sup, leo_gateway)
+    end,
 
-            %% Register in THIS-Process
-            ok = leo_gateway_api:register_in_monitor(first),
-            lists:foldl(fun(N, false) ->
-                                {ok, Checksums} = leo_redundant_manager_api:checksum(ring),
-                                case rpc:call(N, leo_manager_api, notify,
-                                              [launched, gateway, node(), Checksums], ?DEF_TIMEOUT) of
-                                    ok -> true;
-                                    _  -> false
-                                end;
-                           (_, true) ->
-                                void
-                        end, false, NewManagerNodes),
-            Res;
-        Error ->
-            io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
-            Error
-    end;
-after_process(Error) ->
+    %% Check status of the storage-cluster
+    inspect_cluster_status(Res, ManagerNodes1);
+
+after_process_0(Error) ->
     io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
     Error.
+
+
+%% @doc After process of start_link
+%% @private
+-spec(after_process_1(#system_conf{}, list(#member{})) ->
+             ok).
+after_process_1(SystemConf, Members) ->
+    %% Launch Redundant-manager#2
+    ManagerNodes    = ?env_manager_nodes(leo_gateway),
+    NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
+
+    ok = leo_redundant_manager_api:start(gateway, NewManagerNodes, ?env_queue_dir(leo_gateway)),
+    {ok,_,_} = leo_redundant_manager_api:create(
+                 Members, [{n, SystemConf#system_conf.n},
+                           {r, SystemConf#system_conf.r},
+                           {w, SystemConf#system_conf.w},
+                           {d, SystemConf#system_conf.d},
+                           {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
+
+    %% Launch S3Libs:Auth/Bucket/EndPoint
+    ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
+
+    %% Register in THIS-Process
+    ok = leo_gateway_api:register_in_monitor(first),
+    lists:foldl(fun(N, false) ->
+                        {ok, Checksums} = leo_redundant_manager_api:checksum(ring),
+                        case rpc:call(N, leo_manager_api, notify,
+                                      [launched, gateway, node(), Checksums], ?DEF_TIMEOUT) of
+                            ok -> true;
+                            _  -> false
+                        end;
+                   (_, true) ->
+                        void
+                end, false, NewManagerNodes),
+    ok.
 
 
 %% @doc Retrieve system-configuration from manager-node(s)
@@ -180,6 +241,18 @@ get_members_from_manager([Manager|T]) ->
             ?error("get_members_from_manager/1", "cause:~p", [Cause]),
             get_members_from_manager(T)
     end.
+
+
+%% @doc
+%% @private
+-spec(get_cluster_state(list(#member{})) ->
+             node_state()).
+get_cluster_state([]) ->
+    ?STATE_STOP;
+get_cluster_state([#member{state = ?STATE_RUNNING}|_]) ->
+    ?STATE_RUNNING;
+get_cluster_state([_|T]) ->
+    get_cluster_state(T).
 
 
 %% @doc Retrieve log-appneder(s)

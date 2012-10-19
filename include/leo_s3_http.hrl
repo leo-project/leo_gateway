@@ -19,7 +19,7 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo S3 HTTP - Mochiweb
+%% Leo S3 HTTP
 %% @doc
 %% @end
 %%======================================================================
@@ -34,22 +34,35 @@
 -define(QUERY_MAX_KEYS,  "max-keys").
 -define(QUERY_ACL,       "acl").
 -define(STR_SLASH,       "/").
+-define(BIN_SLASH,       <<"/">>).
+-define(BIN_EMPTY,       <<>>).
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
+%% @deplicate
 -define(HTTP_HEAD_RANGE,         "Range").
 -define(HTTP_HEAD_MD5,           "Content-MD5").
--define(HTTP_HEAD_CONTENT_TYPE,  "Content-Type").
--define(HTTP_HEAD_DATE,          "Date").
--define(HTTP_HEAD_ETAG,          "ETag").
 -define(HTTP_HEAD_HOST,          "Host").
--define(HTTP_HEAD_LAST_MODIFIED, "Last-Modified").
 -define(HTTP_HEAD_EXPECT,        "Expect").
 -define(HTTP_HEAD_100_CONTINUE,  "100-continue").
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         "x-amz-metadata-directive").
--define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            "x-amz-copy-source").
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    "COPY").
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, "REPLACE").
+
+%% http-header key
+-define(HTTP_HEAD_ACL,                <<"acl">>).
+-define(HTTP_HEAD_AGE,                'Age').
+-define(HTTP_HEAD_CACHE_CTRL,         'Cache-Control').
+-define(HTTP_HEAD_CONTENT_LENGTH,     'Content-Length').
+-define(HTTP_HEAD_CONTENT_TYPE,       'Content-Type').
+-define(HTTP_HEAD_DATE,               'Date').
+-define(HTTP_HEAD_ETAG,               'Etag').
+-define(HTTP_HEAD_LAST_MODIFIED,      'Last-Modified').
+-define(HTTP_HEAD_PREFIX,             <<"prefix">>).
+
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"X-Amz-Metadata-Directive">>).
+-define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
+-define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
+-define(HTTP_HEAD_X_FROM_CACHE,                 <<"X-From-Cache">>).
+
 
 %% s3 response xmls
 -define(XML_BUCKET_LIST,
@@ -79,6 +92,22 @@
         ++ "</CopyObjectResult>").
 
 
+-record(http_options, {
+          port = 0                   :: integer(),
+          ssl_port = 0               :: integer(),
+          ssl_certfile = []          :: string(),
+          ssl_keyfile = []           :: string(),
+          num_of_acceptors = 0       :: integer(),
+          s3_api = true              :: boolean(),
+          cache_plugin = []          :: string(),
+          cache_expire = 0           :: integer(),
+          cache_max_content_len = 0  :: integer(),
+          cachable_content_type = [] :: list(),
+          cachable_path_pattern = [] :: list(),
+          chunked_obj_size = 0       :: integer(),
+          threshold_obj_size = 0     :: integer()
+         }).
+
 -record(req_params, {
           access_key_id     :: string(),
           token_length      :: integer(),
@@ -88,7 +117,9 @@
           qs_prefix         :: string(),
           has_inner_cache   :: boolean(),
           range_header      :: string(),
-          is_cached         :: boolean()
+          is_cached         :: boolean(),
+          chunked_obj_size   :: integer(),
+          threshold_obj_size :: integer()
          }).
 
 -record(cache, {
