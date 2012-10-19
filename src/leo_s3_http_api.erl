@@ -36,7 +36,7 @@
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--type(http_server() :: mochiweb | cowboy).
+-type(http_server() :: cowboy).
 
 -define(env_s3_http(AppName),
         case application:get_env(AppName, s3_http) of
@@ -54,20 +54,11 @@
              tuple()).
 start(Sup, AppName) ->
     S3_HTTP_Config = ?env_s3_http(AppName),
-    HTTPServer = leo_misc:get_value('http_server', S3_HTTP_Config, 'mochiweb'),
+    HTTPServer = leo_misc:get_value('http_server', S3_HTTP_Config, 'cowboy'),
     start(Sup, HTTPServer, S3_HTTP_Config).
 
 -spec(start(pid(), http_server(), list()) ->
              tuple()).
-start(Sup, mochiweb = HTTPServer, S3_HTTP_Config) ->
-    {ok, HTTPOptions} = get_options(HTTPServer, S3_HTTP_Config),
-
-    ChildSpec = {leo_s3_http_mochi,
-                 {leo_s3_http_mochi, start, [HTTPOptions]},
-                 permanent, ?SHUTDOWN_WAITING_TIME, worker, dynamic},
-    {ok, _} = supervisor:start_child(Sup, ChildSpec),
-    ok;
-
 start(Sup, cowboy = HTTPServer, S3_HTTP_Config) ->
     {ok, HTTPOptions} = get_options(HTTPServer, S3_HTTP_Config),
 
@@ -82,7 +73,7 @@ start(Sup, cowboy = HTTPServer, S3_HTTP_Config) ->
 
 %% @doc Retrieve options
 %% @private
--spec(get_options(mochiweb | cowboy, list()) ->
+-spec(get_options(cowboy, list()) ->
              {ok, #http_options{}}).
 get_options(HTTPServer, Options) ->
     UseS3API             = leo_misc:get_value('s3_api',                Options, true),
