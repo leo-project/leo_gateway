@@ -830,9 +830,9 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             {Headers,        _} = cowboy_http_req:headers(Req),
 
             SignParams = #sign_params{http_verb    = atom_to_binary(HTTPMethod, latin1),
-                                      content_md5  = get_header(Req, 'Content-MD5'),
-                                      content_type = get_header(Req, 'Content-Type'),
-                                      date         = get_header(Req, 'Date'),
+                                      content_md5  = get_header(Req, ?HTTP_HEAD_CONTENT_MD5),
+                                      content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
+                                      date         = get_header(Req, ?HTTP_HEAD_DATE),
                                       bucket       = Bucket,
                                       uri          = BinRawUri,
                                       query_str    = BinQueryString,
