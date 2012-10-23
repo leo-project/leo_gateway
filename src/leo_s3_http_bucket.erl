@@ -66,6 +66,7 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, BucketStr),
 
+    %% @TODO
     Key =  lists:append([BucketStr,PrefixStr]),
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
@@ -87,8 +88,7 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
 -spec(put_bucket(string(), string()|none) ->
              ok|{error, any()}).
 put_bucket(AccessKeyId, Bucket) ->
-    BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:put(AccessKeyId, BucketStr).
+    leo_s3_bucket:put(AccessKeyId, Bucket).
 
 
 %% @doc delete bucket
@@ -96,8 +96,7 @@ put_bucket(AccessKeyId, Bucket) ->
 -spec(delete_bucket(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket(AccessKeyId, Bucket) ->
-    BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:delete(AccessKeyId, BucketStr).
+    leo_s3_bucket:delete(AccessKeyId, Bucket).
 
 
 %% @doc head bucket
@@ -105,8 +104,7 @@ delete_bucket(AccessKeyId, Bucket) ->
 -spec(head_bucket(string(), string()|none) ->
              ok|{error, any()}).
 head_bucket(AccessKeyId, Bucket) ->
-    BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:head(AccessKeyId, BucketStr).
+    leo_s3_bucket:head(AccessKeyId, Bucket).
 
 
 %% @doc Generate XML from matadata-list
@@ -152,14 +150,15 @@ generate_xml(Key, Prefix, MetadataList) ->
 
 generate_xml(MetadataList) ->
     Fun = fun(#bucket{name = Name,
-                      created_at = TS} , Acc) ->
-                  case string:equal(?STR_SLASH, Name) of
+                      created_at = CreatedAt} , Acc) ->
+                  BucketStr = binary_to_list(Name),
+                  case string:equal(?STR_SLASH, BucketStr) of
                       true ->
                           Acc;
                       false ->
                           lists:append([Acc,
-                                        "<Bucket><Name>", Name, "</Name>",
-                                        "<CreationDate>", leo_http:web_date(TS), "</CreationDate></Bucket>"])
+                                        "<Bucket><Name>", BucketStr, "</Name>",
+                                        "<CreationDate>", leo_http:web_date(CreatedAt), "</CreationDate></Bucket>"])
                   end
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).
