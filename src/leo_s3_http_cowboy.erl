@@ -58,23 +58,24 @@
 %%
 -spec(start(#http_options{}) ->
              ok).
-start(#http_options{port                  = Port,
-                    ssl_port              = SSLPort,
-                    ssl_certfile          = SSLCertFile,
-                    ssl_keyfile           = SSLKeyFile,
-                    num_of_acceptors      = NumOfAcceptors,
-                    s3_api                = UseS3API,
-                    cache_plugin          = CachePlugIn,
-                    cache_expire          = CacheExpire,
-                    cache_max_content_len = CacheMaxContentLen,
-                    cachable_content_type = CachableContentTypes,
-                    cachable_path_pattern = CachablePathPatterns,
-                    chunked_obj_size      = ChunkedObjSize,
-                    threshold_obj_size    = ThresholdObjSize}) ->
+start(#http_options{port                   = Port,
+                    ssl_port               = SSLPort,
+                    ssl_certfile           = SSLCertFile,
+                    ssl_keyfile            = SSLKeyFile,
+                    num_of_acceptors       = NumOfAcceptors,
+                    s3_api                 = UseS3API,
+                    cache_plugin           = CachePlugIn,
+                    cache_expire           = CacheExpire,
+                    cache_max_content_len  = CacheMaxContentLen,
+                    cachable_content_type  = CachableContentTypes,
+                    cachable_path_pattern  = CachablePathPatterns,
+                    acceptable_max_obj_len = AcceptableMaxObjLen,
+                    chunked_obj_len        = ChunkedObjLen,
+                    threshold_obj_len      = ThresholdObjLen}) ->
     InternalCache = (CachePlugIn == []),
     Dispatch      = [{'_', [{'_', ?MODULE,
                              [?env_layer_of_dirs(), InternalCache, UseS3API,
-                              ChunkedObjSize, ThresholdObjSize]}]}],
+                              AcceptableMaxObjLen, ChunkedObjLen, ThresholdObjLen]}]}],
 
     Config = case InternalCache of
                  %% Using inner-cache
@@ -129,7 +130,7 @@ handle(Req, State) ->
     handle(Req, State, Key).
 
 handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
-             ChunkedObjSize, ThresholdObjSize] = State, Path) ->
+             AcceptableObjLen, ChunkedObjLen, ThresholdObjLen] = State, Path) ->
     HTTPMethod = case cowboy_http_req:method(Req) of
                      {?HTTP_POST, _} -> ?HTTP_PUT;
                      {Other, _}      -> Other
@@ -157,20 +158,21 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                     {ok, Req3} = cowboy_http_req:reply(403, [?SERVER_HEADER], Req2),
                     {ok, Req3, State};
                 {ok, AccessKeyId} ->
-                    {RangeHeader, _} = cowboy_http_req:header('Range', Req2),
+                    {RangeHeader, _} = cowboy_http_req:header(?HTTP_HEAD_RANGE, Req2),
 
                     case catch exec1(HTTPMethod, Req2, Path2,
-                                     #req_params{token_length       = TokenLen,
-                                                 access_key_id      = AccessKeyId,
-                                                 min_layers         = NumOfMinLayers,
-                                                 max_layers         = NumOfMaxLayers,
-                                                 has_inner_cache    = HasInnerCache,
-                                                 range_header       = RangeHeader,
-                                                 is_dir             = IsDir,
-                                                 is_cached          = true,
-                                                 qs_prefix          = Prefix,
-                                                 chunked_obj_size   = ChunkedObjSize,
-                                                 threshold_obj_size = ThresholdObjSize}) of
+                                     #req_params{token_length           = TokenLen,
+                                                 access_key_id          = AccessKeyId,
+                                                 min_layers             = NumOfMinLayers,
+                                                 max_layers             = NumOfMaxLayers,
+                                                 has_inner_cache        = HasInnerCache,
+                                                 range_header           = RangeHeader,
+                                                 is_dir                 = IsDir,
+                                                 is_cached              = true,
+                                                 qs_prefix              = Prefix,
+                                                 acceptable_max_obj_len = AcceptableObjLen,
+                                                 chunked_obj_len        = ChunkedObjLen,
+                                                 threshold_obj_len      = ThresholdObjLen}) of
                         {'EXIT', Reason} ->
                             ?error("handle/3", "path:~p, cause:~p", [Path2, Reason]),
                             {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
@@ -460,7 +462,7 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% @doc GET operation on Object with Range Header.
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
-                                       range_header = RangeHeader}) when RangeHeader =/= undefined ->
+                                       range_header = RangeHeader}) when RangeHeader /= undefined ->
     %% TODO - Will support this function with v0.12.1
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
@@ -648,7 +650,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 put1(?BIN_EMPTY, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
-    case (Size0 >= Params#req_params.threshold_obj_size) of
+    case (Size0 >= Params#req_params.threshold_obj_len) of
+        true when Size0 >= Params#req_params.acceptable_max_obj_len ->
+            cowboy_http_req:reply(400, [?SERVER_HEADER], Req);
         true ->
             put_large_object(Req, Key, Size0, Params);
         false ->
@@ -743,10 +747,10 @@ put_large_object(Req0, Key, Size0, Params)->
     %% PUT children's data (Chunked objects)
     %%
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
-    ChunkedSize = Params#req_params.chunked_obj_size,
+    ChunkedSize = Params#req_params.chunked_obj_len,
 
     Ret = case cowboy_http_req:body(
-                 Req0, Params#req_params.chunked_obj_size,
+                 Req0, Params#req_params.chunked_obj_len,
                  fun(_Index, _Size, _Bin) ->
                          catch leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
                  end) of

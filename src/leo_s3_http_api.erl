@@ -76,19 +76,20 @@ start(Sup, cowboy = HTTPServer, S3_HTTP_Config) ->
 -spec(get_options(cowboy, list()) ->
              {ok, #http_options{}}).
 get_options(HTTPServer, Options) ->
-    UseS3API             = leo_misc:get_value('s3_api',                Options, true),
-    Port                 = leo_misc:get_value('port',                  Options, 8080),
-    SSLPort              = leo_misc:get_value('ssl_port',              Options, 8443),
-    SSLCertFile          = leo_misc:get_value('ssl_certfile',          Options, "./server_cert.pem"),
-    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',           Options, "./server_key.pem"),
-    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',      Options,   32),
-    CachePlugIn          = leo_misc:get_value('cache_plugin',          Options, []),
-    CacheExpire          = leo_misc:get_value('cache_expire',          Options, 300),
-    CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', Options, 1000000),
-    CachableContentTypes = leo_misc:get_value('cachable_content_type', Options, []),
-    CachablePathPatterns = leo_misc:get_value('cachable_path_pattern', Options, []),
-    ChunkedObjSize       = leo_misc:get_value('chunked_obj_size',      Options, [4194304]), %% 4MB
-    ThresholdObjSize     = leo_misc:get_value('threshold_obj_size',    Options, [5242880]), %% 5MB
+    UseS3API             = leo_misc:get_value('s3_api',                 Options, true),
+    Port                 = leo_misc:get_value('port',                   Options, 8080),
+    SSLPort              = leo_misc:get_value('ssl_port',               Options, 8443),
+    SSLCertFile          = leo_misc:get_value('ssl_certfile',           Options, "./server_cert.pem"),
+    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',            Options, "./server_key.pem"),
+    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',       Options,   32),
+    CachePlugIn          = leo_misc:get_value('cache_plugin',           Options, []),
+    CacheExpire          = leo_misc:get_value('cache_expire',           Options, 300),
+    CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len',  Options, 1000000),
+    CachableContentTypes = leo_misc:get_value('cachable_content_type',  Options, []),
+    CachablePathPatterns = leo_misc:get_value('cachable_path_pattern',  Options, []),
+    AcceptableObjLen     = leo_misc:get_value('acceptable_max_obj_len', Options, [2147483648]), %% 2GB
+    ChunkedObjLen        = leo_misc:get_value('chunked_obj_len',        Options, [4194304]),    %% 4MB
+    ThresholdObjLen      = leo_misc:get_value('threshold_obj_len',      Options, [5242880]),    %% 5MB
 
     ?info("start/3", "s3-api: ~p",                  [UseS3API]),
     ?info("start/3", "http-server: ~p",             [HTTPServer]),
@@ -102,20 +103,22 @@ get_options(HTTPServer, Options) ->
     ?info("start/3", "cache_max_content_len: ~p",   [CacheMaxContentLen]),
     ?info("start/3", "cacheable_content_types: ~p", [CachableContentTypes]),
     ?info("start/3", "cacheable_path_patterns: ~p", [CachablePathPatterns]),
-    ?info("start/3", "chunked_obj_size: ~p",        [ChunkedObjSize]),
-    ?info("start/3", "threshold_obj_size: ~p",      [ThresholdObjSize]),
+    ?info("start/3", "acceptable_max_obj_len: ~p",  [AcceptableObjLen]),
+    ?info("start/3", "chunked_obj_len: ~p",         [ChunkedObjLen]),
+    ?info("start/3", "threshold_obj_len: ~p",       [ThresholdObjLen]),
 
-    {ok, #http_options{s3_api                = UseS3API,
-                       port                  = Port,
-                       ssl_port              = SSLPort,
-                       ssl_certfile          = SSLCertFile,
-                       ssl_keyfile           = SSLKeyFile,
-                       num_of_acceptors      = NumOfAcceptors,
-                       cache_plugin          = CachePlugIn,
-                       cache_expire          = CacheExpire,
-                       cache_max_content_len = CacheMaxContentLen,
-                       cachable_content_type = CachableContentTypes,
-                       cachable_path_pattern = CachablePathPatterns,
-                       chunked_obj_size      = ChunkedObjSize,
-                       threshold_obj_size    = ThresholdObjSize
+    {ok, #http_options{s3_api                 = UseS3API,
+                       port                   = Port,
+                       ssl_port               = SSLPort,
+                       ssl_certfile           = SSLCertFile,
+                       ssl_keyfile            = SSLKeyFile,
+                       num_of_acceptors       = NumOfAcceptors,
+                       cache_plugin           = CachePlugIn,
+                       cache_expire           = CacheExpire,
+                       cache_max_content_len  = CacheMaxContentLen,
+                       cachable_content_type  = CachableContentTypes,
+                       cachable_path_pattern  = CachablePathPatterns,
+                       acceptable_max_obj_len = AcceptableObjLen,
+                       chunked_obj_len        = ChunkedObjLen,
+                       threshold_obj_len      = ThresholdObjLen
                       }}.

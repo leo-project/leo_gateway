@@ -23,11 +23,18 @@
 %% @doc
 %% @end
 %%======================================================================
+%%
+%% HTTP METHODS
+%%
 -define(HTTP_GET,        'GET').
 -define(HTTP_POST,       'POST').
 -define(HTTP_PUT,        'PUT').
 -define(HTTP_DELETE,     'DELETE').
 -define(HTTP_HEAD,       'HEAD').
+
+%%
+%% HTTP-RELATED
+%%
 -define(SERVER_HEADER,   {"Server","LeoFS"}).
 -define(QUERY_PREFIX,    "prefix").
 -define(QUERY_DELIMITER, "delimiter").
@@ -39,7 +46,7 @@
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
-%% http-header key
+%% HTTP HEADER
 -define(HTTP_HEAD_AGE,                'Age').
 -define(HTTP_HEAD_CACHE_CTRL,         'Cache-Control').
 -define(HTTP_HEAD_CONTENT_LENGTH,     'Content-Length').
@@ -48,6 +55,7 @@
 -define(HTTP_HEAD_DATE,               'Date').
 -define(HTTP_HEAD_ETAG,               'Etag').
 -define(HTTP_HEAD_LAST_MODIFIED,      'Last-Modified').
+-define(HTTP_HEAD_RANGE,              'Range').
 
 -define(HTTP_HEAD_ACL,                          <<"acl">>).
 -define(HTTP_HEAD_PREFIX,                       <<"prefix">>).
@@ -58,7 +66,9 @@
 -define(HTTP_HEAD_X_FROM_CACHE,                 <<"X-From-Cache">>).
 
 
-%% s3 response xmls
+%%
+%% S3 RESPONSE XML
+%%
 -define(XML_BUCKET_LIST, lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                                        "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">",
                                        "<Owner><ID>LeoFS</ID><DisplayName>webfile</DisplayName></Owner><Buckets>",
@@ -95,22 +105,24 @@
           cache_max_content_len = 0  :: integer(),
           cachable_content_type = [] :: list(),
           cachable_path_pattern = [] :: list(),
-          chunked_obj_size = 0       :: integer(),
-          threshold_obj_size = 0     :: integer()
+          acceptable_max_obj_len = 0 :: integer(),
+          chunked_obj_len = 0        :: integer(),
+          threshold_obj_len = 0      :: integer()
          }).
 
 -record(req_params, {
-          access_key_id     :: string(),
-          token_length      :: integer(),
-          min_layers        :: integer(),
-          max_layers        :: integer(),
-          is_dir = false    :: boolean(),
-          qs_prefix         :: string(),
-          has_inner_cache   :: boolean(),
-          range_header      :: string(),
-          is_cached         :: boolean(),
-          chunked_obj_size   :: integer(),
-          threshold_obj_size :: integer()
+          access_key_id = []         :: string(),
+          token_length = 0           :: integer(),
+          min_layers = 0             :: integer(),
+          max_layers = 0             :: integer(),
+          is_dir = false             :: boolean(),
+          qs_prefix = []             :: string(),
+          has_inner_cache = false    :: boolean(),
+          range_header               :: string(),
+          is_cached = false          :: boolean(),
+          acceptable_max_obj_len = 0 :: integer(),
+          chunked_obj_len        = 0 :: integer(),
+          threshold_obj_len      = 0 :: integer()
          }).
 
 -record(cache, {
@@ -119,3 +131,70 @@
           content_type = []   :: string(),  %% from a Content-Type header
           body         = <<>> :: binary()
          }).
+
+
+%%
+%% S3 RESPONSE ERRORS
+%%
+-define(S3_ERR_IMCOPLETE_BODY,      'imcomplete_body').
+-define(S3_ERR_INTERNAL_ERROR,      'internal_error').
+-define(S3_ERR_INVALID_ARG,         'invalid_argument').
+-define(S3_ERR_INVALID_URL,         'invalid_uri').
+-define(S3_ERR_KEY_TOO_LONG,        'key_too_long').
+-define(S3_ERR_MISSING_CONTENT_LEN, 'missing_content_length').
+-define(S3_ERR_MISSING_REQ_BODY,    'missing_request_body_error').
+-define(S3_ERR_SLOW_DOWN,           'slow_down').
+
+-type(s3_errors() :: ?S3_ERR_IMCOPLETE_BODY |
+                     ?S3_ERR_INTERNAL_ERROR |
+                     ?S3_ERR_INVALID_ARG    |
+                     ?S3_ERR_INVALID_URL    |
+                     ?S3_ERR_KEY_TOO_LONG   |
+                     ?S3_ERR_MISSING_CONTENT_LEN |
+                     ?S3_ERR_MISSING_REQ_BODY    |
+                     ?S3_ERR_SLOW_DOWN).
+
+-define(error_resp(Type),
+        case Type of
+            imcomplete_body ->
+                #error_code{code = 'ImcompleteBody',
+                            description = "You did not provide the number of bytes specified by the Content-Length HTTP header",
+                            http_status_code = 400};
+            internal_error ->
+                #error_code{code = 'InnternalError',
+                            description = "We encountered an internal error. Please try again.",
+                            http_status_code = 500};
+            invalid_argument ->
+                #error_code{code = 'InvalidArgument',
+                            description = "Invalid Argument.",
+                            http_status_code = 400};
+            invalid_uri ->
+                #error_code{code = 'InvalidURI',
+                            description = "Couldn't pare the specified URI.",
+                            http_status_code = 400};
+            key_too_long ->
+                #error_code{code = 'KeyTooLong',
+                            description = "Your key is long",
+                            http_status_code = 400};
+
+            missing_content_length ->
+                #error_code{code = 'MissingContentLength',
+                            description = "You must provide the Content-Length HTTP header.",
+                            http_status_code = 411};
+
+            missing_request_body_error ->
+                #error_code{code = 'MissingRequestBodyError',
+                            description = "This happens when the user sends an empty data as a request. Request body is empty.",
+                            http_status_code = 400};
+
+            request_timeout ->
+                #error_code{code = 'RequestTimeout',
+                            description = "Your socket connection to the server was not read from or written to within the timeout period.",
+                            http_status_code = 400};
+
+            slow_down ->
+                #error_code{code = 'SlowDown',
+                            description = "Please reduce your request rate.",
+                            http_status_code = 503}
+        end).
+
