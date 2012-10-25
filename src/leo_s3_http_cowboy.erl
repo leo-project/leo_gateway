@@ -244,7 +244,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
                      {?HTTP_HEAD_DATE,          Date},
                      {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                     {?HTTP_HEAD_ETAG,          integer_to_list(Checksum, 16)},
+                     {?HTTP_HEAD_ETAG4AWS,      integer_to_list(Checksum, 16)},
                      {?HTTP_HEAD_CACHE_CTRL,    "max-age=" ++ integer_to_list(Expire)}],
 
             IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
@@ -532,7 +532,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      erlang:integer_to_list(Meta#metadata.checksum, 16)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
 
@@ -568,7 +568,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
                          {?HTTP_HEAD_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_ETAG,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                         {?HTTP_HEAD_ETAG4AWS,       erlang:integer_to_list(Meta#metadata.checksum, 16)},
                          {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
                          {?HTTP_HEAD_LAST_MODIFIED,  TimeStamp}],
             cowboy_http_req:reply(200, Headers, Req);
@@ -616,7 +616,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
-                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Cached#cache.etag, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      erlang:integer_to_list(Cached#cache.etag, 16)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
                                    {?HTTP_HEAD_X_FROM_CACHE, <<"True">>}],
                                   Req2);
@@ -633,7 +633,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      erlang:integer_to_list(Meta#metadata.checksum, 16)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
@@ -668,7 +668,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                                {?HTTP_HEAD_ETAG, integer_to_list(ETag, 16)}], Req1);
+                                                {?HTTP_HEAD_ETAG4AWS, integer_to_list(ETag, 16)}], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
                 {error, timeout} ->

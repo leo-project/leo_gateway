@@ -58,6 +58,7 @@
 -define(HTTP_HEAD_RANGE,              'Range').
 
 -define(HTTP_HEAD_ACL,                          <<"acl">>).
+-define(HTTP_HEAD_ETAG4AWS,                     <<"ETag">>).
 -define(HTTP_HEAD_PREFIX,                       <<"prefix">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"X-Amz-Metadata-Directive">>).
 -define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
