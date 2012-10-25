@@ -244,7 +244,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
                      {?HTTP_HEAD_DATE,          Date},
                      {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                     {?HTTP_HEAD_ETAG4AWS,      integer_to_list(Checksum, 16)},
+                     {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Checksum, 32)},
                      {?HTTP_HEAD_CACHE_CTRL,    "max-age=" ++ integer_to_list(Expire)}],
 
             IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
@@ -532,7 +532,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG4AWS,      erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Meta#metadata.checksum, 32)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
 
@@ -568,7 +568,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
                          {?HTTP_HEAD_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_ETAG4AWS,       erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                         {?HTTP_HEAD_ETAG4AWS,       integer_to_hex(Meta#metadata.checksum, 32)},
                          {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
                          {?HTTP_HEAD_LAST_MODIFIED,  TimeStamp}],
             cowboy_http_req:reply(200, Headers, Req);
@@ -616,7 +616,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
-                                   {?HTTP_HEAD_ETAG4AWS,      erlang:integer_to_list(Cached#cache.etag, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Cached#cache.etag, 32)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
                                    {?HTTP_HEAD_X_FROM_CACHE, <<"True">>}],
                                   Req2);
@@ -633,7 +633,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG4AWS,      erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Meta#metadata.checksum, 32)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
@@ -668,7 +668,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                                {?HTTP_HEAD_ETAG4AWS, integer_to_list(ETag, 16)}], Req1);
+                                                {?HTTP_HEAD_ETAG4AWS, integer_to_hex(ETag, 32)}], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
                 {error, timeout} ->
@@ -801,7 +801,7 @@ get_header(Req, Key) ->
 resp_copyobj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
                         [leo_http:web_date(Meta#metadata.timestamp),
-                         erlang:integer_to_list(Meta#metadata.checksum, 16)]),
+                         integer_to_hex(Meta#metadata.checksum, 32)]),
     {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
     cowboy_http_req:reply(200, [?SERVER_HEADER,
                                 {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
@@ -847,6 +847,14 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
 auth(_,_,_,_,_) ->
     {ok, []}.
 
+%% @TODO replace this with leo_hex:integer_to_hex in leo_commons
+integer_to_hex(I, Len) ->
+    Hex = erlang:integer_to_list(I, 16),
+    LenDiff = Len - length(Hex),
+    case LenDiff > 0 of
+        true  -> string:chars($0, LenDiff) ++ Hex;
+        false -> Hex
+    end.
 
 %% %% @doc
 %% %% @private
