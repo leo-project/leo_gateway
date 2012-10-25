@@ -58,23 +58,24 @@
 %%
 -spec(start(#http_options{}) ->
              ok).
-start(#http_options{port                  = Port,
-                    ssl_port              = SSLPort,
-                    ssl_certfile          = SSLCertFile,
-                    ssl_keyfile           = SSLKeyFile,
-                    num_of_acceptors      = NumOfAcceptors,
-                    s3_api                = UseS3API,
-                    cache_plugin          = CachePlugIn,
-                    cache_expire          = CacheExpire,
-                    cache_max_content_len = CacheMaxContentLen,
-                    cachable_content_type = CachableContentTypes,
-                    cachable_path_pattern = CachablePathPatterns,
-                    chunked_obj_size      = ChunkedObjSize,
-                    threshold_obj_size    = ThresholdObjSize}) ->
+start(#http_options{port                   = Port,
+                    ssl_port               = SSLPort,
+                    ssl_certfile           = SSLCertFile,
+                    ssl_keyfile            = SSLKeyFile,
+                    num_of_acceptors       = NumOfAcceptors,
+                    s3_api                 = UseS3API,
+                    cache_plugin           = CachePlugIn,
+                    cache_expire           = CacheExpire,
+                    cache_max_content_len  = CacheMaxContentLen,
+                    cachable_content_type  = CachableContentTypes,
+                    cachable_path_pattern  = CachablePathPatterns,
+                    acceptable_max_obj_len = AcceptableMaxObjLen,
+                    chunked_obj_len        = ChunkedObjLen,
+                    threshold_obj_len      = ThresholdObjLen}) ->
     InternalCache = (CachePlugIn == []),
     Dispatch      = [{'_', [{'_', ?MODULE,
                              [?env_layer_of_dirs(), InternalCache, UseS3API,
-                              ChunkedObjSize, ThresholdObjSize]}]}],
+                              AcceptableMaxObjLen, ChunkedObjLen, ThresholdObjLen]}]}],
 
     Config = case InternalCache of
                  %% Using inner-cache
@@ -129,7 +130,7 @@ handle(Req, State) ->
     handle(Req, State, Key).
 
 handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
-             ChunkedObjSize, ThresholdObjSize] = State, Path) ->
+             AcceptableObjLen, ChunkedObjLen, ThresholdObjLen] = State, Path) ->
     HTTPMethod = case cowboy_http_req:method(Req) of
                      {?HTTP_POST, _} -> ?HTTP_PUT;
                      {Other, _}      -> Other
@@ -157,20 +158,21 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                     {ok, Req3} = cowboy_http_req:reply(403, [?SERVER_HEADER], Req2),
                     {ok, Req3, State};
                 {ok, AccessKeyId} ->
-                    {RangeHeader, _} = cowboy_http_req:header('Range', Req2),
+                    {RangeHeader, _} = cowboy_http_req:header(?HTTP_HEAD_RANGE, Req2),
 
                     case catch exec1(HTTPMethod, Req2, Path2,
-                                     #req_params{token_length       = TokenLen,
-                                                 access_key_id      = AccessKeyId,
-                                                 min_layers         = NumOfMinLayers,
-                                                 max_layers         = NumOfMaxLayers,
-                                                 has_inner_cache    = HasInnerCache,
-                                                 range_header       = RangeHeader,
-                                                 is_dir             = IsDir,
-                                                 is_cached          = true,
-                                                 qs_prefix          = Prefix,
-                                                 chunked_obj_size   = ChunkedObjSize,
-                                                 threshold_obj_size = ThresholdObjSize}) of
+                                     #req_params{token_length           = TokenLen,
+                                                 access_key_id          = AccessKeyId,
+                                                 min_layers             = NumOfMinLayers,
+                                                 max_layers             = NumOfMaxLayers,
+                                                 has_inner_cache        = HasInnerCache,
+                                                 range_header           = RangeHeader,
+                                                 is_dir                 = IsDir,
+                                                 is_cached              = true,
+                                                 qs_prefix              = Prefix,
+                                                 acceptable_max_obj_len = AcceptableObjLen,
+                                                 chunked_obj_len        = ChunkedObjLen,
+                                                 threshold_obj_len      = ThresholdObjLen}) of
                         {'EXIT', Reason} ->
                             ?error("handle/3", "path:~p, cause:~p", [Path2, Reason]),
                             {ok, Req3} = cowboy_http_req:reply(500, [?SERVER_HEADER], Req2),
@@ -242,7 +244,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
                      {?HTTP_HEAD_DATE,          Date},
                      {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                     {?HTTP_HEAD_ETAG,          integer_to_list(Checksum, 16)},
+                     {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Checksum, 32)},
                      {?HTTP_HEAD_CACHE_CTRL,    "max-age=" ++ integer_to_list(Expire)}],
 
             IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
@@ -460,7 +462,7 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% @doc GET operation on Object with Range Header.
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
-                                       range_header = RangeHeader}) when RangeHeader =/= undefined ->
+                                       range_header = RangeHeader}) when RangeHeader /= undefined ->
     %% TODO - Will support this function with v0.12.1
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
@@ -530,7 +532,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Meta#metadata.checksum, 32)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
 
@@ -566,7 +568,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
                          {?HTTP_HEAD_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_ETAG,           erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                         {?HTTP_HEAD_ETAG4AWS,       integer_to_hex(Meta#metadata.checksum, 32)},
                          {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
                          {?HTTP_HEAD_LAST_MODIFIED,  TimeStamp}],
             cowboy_http_req:reply(200, Headers, Req);
@@ -614,7 +616,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
-                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Cached#cache.etag, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Cached#cache.etag, 32)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
                                    {?HTTP_HEAD_X_FROM_CACHE, <<"True">>}],
                                   Req2);
@@ -631,7 +633,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG,          erlang:integer_to_list(Meta#metadata.checksum, 16)},
+                                   {?HTTP_HEAD_ETAG4AWS,      integer_to_hex(Meta#metadata.checksum, 32)},
                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
@@ -648,7 +650,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 put1(?BIN_EMPTY, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
-    case (Size0 >= Params#req_params.threshold_obj_size) of
+    case (Size0 >= Params#req_params.threshold_obj_len) of
+        true when Size0 >= Params#req_params.acceptable_max_obj_len ->
+            cowboy_http_req:reply(400, [?SERVER_HEADER], Req);
         true ->
             put_large_object(Req, Key, Size0, Params);
         false ->
@@ -664,7 +668,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                                {?HTTP_HEAD_ETAG, integer_to_list(ETag, 16)}], Req1);
+                                                {?HTTP_HEAD_ETAG4AWS, integer_to_hex(ETag, 32)}], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
                 {error, timeout} ->
@@ -743,10 +747,10 @@ put_large_object(Req0, Key, Size0, Params)->
     %% PUT children's data (Chunked objects)
     %%
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
-    ChunkedSize = Params#req_params.chunked_obj_size,
+    ChunkedSize = Params#req_params.chunked_obj_len,
 
     Ret = case cowboy_http_req:body(
-                 Req0, Params#req_params.chunked_obj_size,
+                 Req0, Params#req_params.chunked_obj_len,
                  fun(_Index, _Size, _Bin) ->
                          catch leo_gateway_large_object_handler:put(Pid, Key, _Index, _Size, _Bin)
                  end) of
@@ -797,7 +801,7 @@ get_header(Req, Key) ->
 resp_copyobj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
                         [leo_http:web_date(Meta#metadata.timestamp),
-                         erlang:integer_to_list(Meta#metadata.checksum, 16)]),
+                         integer_to_hex(Meta#metadata.checksum, 32)]),
     {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
     cowboy_http_req:reply(200, [?SERVER_HEADER,
                                 {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
@@ -830,9 +834,9 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             {Headers,        _} = cowboy_http_req:headers(Req),
 
             SignParams = #sign_params{http_verb    = atom_to_binary(HTTPMethod, latin1),
-                                      content_md5  = get_header(Req, 'Content-MD5'),
-                                      content_type = get_header(Req, 'Content-Type'),
-                                      date         = get_header(Req, 'Date'),
+                                      content_md5  = get_header(Req, ?HTTP_HEAD_CONTENT_MD5),
+                                      content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
+                                      date         = get_header(Req, ?HTTP_HEAD_DATE),
                                       bucket       = Bucket,
                                       uri          = BinRawUri,
                                       query_str    = BinQueryString,
@@ -843,6 +847,14 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
 auth(_,_,_,_,_) ->
     {ok, []}.
 
+%% @TODO replace this with leo_hex:integer_to_hex in leo_commons
+integer_to_hex(I, Len) ->
+    Hex = erlang:integer_to_list(I, 16),
+    LenDiff = Len - length(Hex),
+    case LenDiff > 0 of
+        true  -> string:chars($0, LenDiff) ++ Hex;
+        false -> Hex
+    end.
 
 %% %% @doc
 %% %% @private

@@ -51,8 +51,7 @@ get_bucket_list(AccessKeyId, Bucket) ->
 -spec(get_bucket_list(string(), none, char()|none, string()|none, integer(), string()|none) ->
              {ok, list(), string()}|{error, any()}).
 get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
-    AccessKeyIdStr = binary_to_list(AccessKeyId),
-    case leo_s3_bucket:find_buckets_by_id(AccessKeyIdStr) of
+    case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
         {ok, Meta} when is_list(Meta) =:= true ->
             {ok, Meta, generate_xml(Meta)};
         not_found ->
@@ -67,6 +66,7 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, BucketStr),
 
+    %% @TODO
     Key =  lists:append([BucketStr,PrefixStr]),
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
@@ -88,9 +88,7 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
 -spec(put_bucket(string(), string()|none) ->
              ok|{error, any()}).
 put_bucket(AccessKeyId, Bucket) ->
-    AccessKeyIdStr = binary_to_list(AccessKeyId),
-    BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:put(AccessKeyIdStr, BucketStr).
+    leo_s3_bucket:put(AccessKeyId, Bucket).
 
 
 %% @doc delete bucket
@@ -98,9 +96,7 @@ put_bucket(AccessKeyId, Bucket) ->
 -spec(delete_bucket(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket(AccessKeyId, Bucket) ->
-    AccessKeyIdStr = binary_to_list(AccessKeyId),
-    BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:delete(AccessKeyIdStr, BucketStr).
+    leo_s3_bucket:delete(AccessKeyId, Bucket).
 
 
 %% @doc head bucket
@@ -108,9 +104,7 @@ delete_bucket(AccessKeyId, Bucket) ->
 -spec(head_bucket(string(), string()|none) ->
              ok|{error, any()}).
 head_bucket(AccessKeyId, Bucket) ->
-    AccessKeyIdStr = binary_to_list(AccessKeyId),
-    BucketStr = binary_to_list(Bucket),
-    leo_s3_bucket:head(AccessKeyIdStr, BucketStr).
+    leo_s3_bucket:head(AccessKeyId, Bucket).
 
 
 %% @doc Generate XML from matadata-list
@@ -131,35 +125,40 @@ generate_xml(Key, Prefix, MetadataList) ->
                           case Length of
                               -1 ->
                                   %% directory.
-                                  Acc ++ "<CommonPrefixes><Prefix>"
-                                      ++ PrefixStr ++ Entry ++ "</Prefix></CommonPrefixes>";
+                                  lists:append([Acc,
+                                                "<CommonPrefixes><Prefix>",
+                                                PrefixStr,
+                                                Entry,
+                                                "</Prefix></CommonPrefixes>"]);
                               _ ->
                                   %% file.
-                                  Acc ++ "<Contents>"
-                                      ++   "<Key>" ++ PrefixStr ++ Entry ++ "</Key>"
-                                      ++   "<LastModified>" ++ leo_http:web_date(TS) ++ "</LastModified>"
-                                      ++   "<ETag>" ++ leo_hex:integer_to_hex(CS) ++ "</ETag>"
-                                      ++   "<Size>" ++ integer_to_list(Length) ++ "</Size>"
-                                      ++   "<StorageClass>STANDARD</StorageClass>"
-                                      ++   "<Owner>"
-                                      ++     "<ID>leofs</ID>"
-                                      ++     "<DisplayName>leofs</DisplayName>"
-                                      ++   "</Owner>"
-                                      ++ "</Contents>"
+                                  lists:append([Acc,
+                                                "<Contents>",
+                                                "<Key>", PrefixStr, Entry, "</Key>",
+                                                "<LastModified>", leo_http:web_date(TS), "</LastModified>",
+                                                "<ETag>", leo_hex:integer_to_hex(CS), "</ETag>",
+                                                "<Size>", integer_to_list(Length), "</Size>",
+                                                "<StorageClass>STANDARD</StorageClass>",
+                                                "<Owner>",
+                                                "<ID>leofs</ID>",
+                                                "<DisplayName>leofs</DisplayName>",
+                                                "</Owner>","</Contents>"])
                           end
                   end
           end,
     io_lib:format(?XML_OBJ_LIST, [PrefixStr, lists:foldl(Fun, [], MetadataList)]).
 
 generate_xml(MetadataList) ->
-    Fun = fun(#bucket{name=Name, created_at=TS} , Acc) ->
-                  case string:equal(?STR_SLASH, Name) of
+    Fun = fun(#bucket{name = Name,
+                      created_at = CreatedAt} , Acc) ->
+                  BucketStr = binary_to_list(Name),
+                  case string:equal(?STR_SLASH, BucketStr) of
                       true ->
                           Acc;
                       false ->
-                          %%TrimmedName = string:sub_string(Name, 2),
-                          Acc ++ "<Bucket><Name>" ++ Name ++ "</Name><CreationDate>" ++
-                              leo_http:web_date(TS) ++ "</CreationDate></Bucket>"
+                          lists:append([Acc,
+                                        "<Bucket><Name>", BucketStr, "</Name>",
+                                        "<CreationDate>", leo_http:web_date(CreatedAt), "</CreationDate></Bucket>"])
                   end
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).
