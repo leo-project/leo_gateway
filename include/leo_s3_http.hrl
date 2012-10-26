@@ -50,7 +50,7 @@
 -define(HTTP_HEAD_AGE,                'Age').
 -define(HTTP_HEAD_CACHE_CTRL,         'Cache-Control').
 -define(HTTP_HEAD_CONTENT_LENGTH,     'Content-Length').
--define(HTTP_HEAD_CONTENT_MD5,        'Content-MD5').
+-define(HTTP_HEAD_CONTENT_MD5,        'Content-Md5').
 -define(HTTP_HEAD_CONTENT_TYPE,       'Content-Type').
 -define(HTTP_HEAD_DATE,               'Date').
 -define(HTTP_HEAD_ETAG,               'Etag').
