@@ -83,18 +83,10 @@ start(#http_options{port                   = Port,
                      [{dispatch, Dispatch}];
                  %% Using cache-plugin
                  false ->
-                     PathPatterns1 = lists:foldl(
-                                       fun(P, Acc) ->
-                                               case re:compile(P) of
-                                                   {ok, MP} -> [MP|Acc];
-                                                   _        -> Acc
-                                               end
-                                       end, [], CachablePathPatterns),
-
                      CacheCondition = #cache_condition{expire          = CacheExpire,
                                                        max_content_len = CacheMaxContentLen,
                                                        content_types   = CachableContentTypes,
-                                                       path_patterns   = PathPatterns1},
+                                                       path_patterns   = CachablePathPatterns},
                      [{dispatch,   Dispatch},
                       {onrequest,  onrequest(CacheCondition)},
                       {onresponse, onresponse(CacheCondition)}]
@@ -137,7 +129,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                  end,
 
     {Prefix, IsDir, Path2, Req2} =
-        case cowboy_http_req:qs_val(?HTTP_HEAD_PREFIX, Req) of
+        case cowboy_http_req:qs_val(?HTTP_HEAD_BIN_PREFIX, Req) of
             {undefined, Req1} ->
                 HasTermSlash = (?BIN_SLASH ==
                                     binary:part(Path, {byte_size(Path)-1, 1})),
@@ -151,14 +143,14 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
         end,
     TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
 
-    case cowboy_http_req:qs_val(?HTTP_HEAD_ACL, Req2) of
+    case cowboy_http_req:qs_val(?HTTP_HEAD_BIN_ACL, Req2) of
         {undefined, _} ->
             case catch auth(UseS3API, Req2, HTTPMethod, Path2, TokenLen) of
                 {error, _Cause} ->
                     {ok, Req3} = cowboy_http_req:reply(403, [?SERVER_HEADER], Req2),
                     {ok, Req3, State};
                 {ok, AccessKeyId} ->
-                    {RangeHeader, _} = cowboy_http_req:header(?HTTP_HEAD_RANGE, Req2),
+                    {RangeHeader, _} = cowboy_http_req:header(?HTTP_HEAD_ATOM_RANGE, Req2),
 
                     case catch exec1(HTTPMethod, Req2, Path2,
                                      #req_params{token_length           = TokenLen,
@@ -221,7 +213,7 @@ onrequest_fun1(_, Req, _) ->
 
 %% @doc Handle request
 %% @private
-onrequest_fun2(Req, _, _, not_found) ->
+onrequest_fun2(Req,_Expire,_Key, not_found) ->
     Req;
 onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
     #cache{mtime        = MTime,
@@ -240,12 +232,12 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
             LastModified = leo_http:rfc1123_date(MTime),
             Date  = leo_http:rfc1123_date(Now),
             Heads = [?SERVER_HEADER,
-                     {?HTTP_HEAD_LAST_MODIFIED, LastModified},
-                     {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
-                     {?HTTP_HEAD_DATE,          Date},
-                     {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                     {?HTTP_HEAD_ETAG4AWS,      leo_hex:integer_to_hex(Checksum, 32)},
-                     {?HTTP_HEAD_CACHE_CTRL,    "max-age=" ++ integer_to_list(Expire)}],
+                     {?HTTP_HEAD_ATOM_LAST_MODIFIED, LastModified},
+                     {?HTTP_HEAD_ATOM_CONTENT_TYPE,  ContentType},
+                     {?HTTP_HEAD_ATOM_DATE,          Date},
+                     {?HTTP_HEAD_ATOM_AGE,           integer_to_list(Diff)},
+                     {?HTTP_HEAD_BIN_ETAG4AWS,       leo_hex:integer_to_hex(Checksum, 32)},
+                     {?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append("max-age=",integer_to_list(Expire))}],
 
             IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
                          {undefined, _} ->
@@ -268,37 +260,41 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
 %% @doc Handle response
 %% @private
 onresponse(#cache_condition{expire = Expire} = Config) ->
-
-    FilterFuns = [fun is_cachable_req1/5,
-                  fun is_cachable_req2/5,
-                  fun is_cachable_req3/5],
     fun(Status, Headers, Req) ->
             Key = gen_key(Req),
-            case lists:all(fun(Fun) -> Fun(Key, Config, Status, Headers, Req) end, FilterFuns) of
+
+            case lists:foldl(fun(Fun, true) ->
+                                     Fun(Key, Config, Status, Headers, Req);
+                                 (_, false) ->
+                                     false
+                             end, true, [fun is_cachable_req1/5,
+                                         fun is_cachable_req2/5,
+                                         fun is_cachable_req3/5]) of
                 true ->
-                    DateSec = leo_date:now(),
-                    ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
+                    Now = leo_date:now(),
+                    ContentType = case lists:keyfind(?HTTP_HEAD_BIN_CONTENT_TYPE, 1, Headers) of
                                       false ->
                                           "application/octet-stream";
                                       {_, Val} ->
                                           Val
                                   end,
                     {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
+
                     Bin = term_to_binary(
-                            #cache{mtime        = DateSec,
+                            #cache{mtime        = Now,
                                    etag         = leo_hex:binary_to_integer(erlang:md5(Body)),
                                    content_type = ContentType,
                                    body         = Body}),
+                    _Res = ecache_api:put(Key, Bin),
 
-                    _ = ecache_api:put(Key, Bin),
-
-                    Headers2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Headers),
-                    Headers3 = [{?HTTP_HEAD_CACHE_CTRL,    "max-age=" ++ integer_to_list(Expire)},
-                                {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(DateSec)}
+                    Headers2 = lists:keydelete(?HTTP_HEAD_ATOM_LAST_MODIFIED, 1, Headers),
+                    Headers3 = [{?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])},
+                                {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
                                 |Headers2],
                     {ok, Req2} = cowboy_http_req:reply(200, Headers3, Req),
                     Req2;
-                false -> Req
+                false ->
+                    Req
             end
     end.
 
@@ -306,58 +302,56 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
 %%--------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------
-%% @doc Judge cachable path
-%% @private
-is_cachable_path(Path) ->
-    fun(MP) ->
-            case re:run(Path, MP) of
-                {match, _Cap} ->
-                    true;
-                _Else ->
-                    false
-            end
-    end.
-
-
 %% @doc Judge cachable request
 %% @private
 is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Status, Headers, Req) ->
-    {Method, _} = cowboy_http_req:method(Req),
+    {Method,   _} = cowboy_http_req:method(Req),
     {ok, Body, _} = cowboy_http_req:get_resp_body(Req),
-    HasNOTCacheControl =
-        case lists:keyfind(?HTTP_HEAD_CACHE_CTRL, 1, Headers) of
-            false -> true;
-            _     -> false
-        end,
-    HasNOTCacheControl andalso
-        Status =:= 200 andalso
+
+    HasNOTCacheControl = (false == lists:keyfind(?HTTP_HEAD_BIN_CACHE_CTRL, 1, Headers)),
+    HasNOTCacheControl       andalso
+        Status =:= 200       andalso
         Method =:= ?HTTP_GET andalso
-        is_binary(Body) andalso
-        size(Body) > 0  andalso
+        is_binary(Body)      andalso
+        size(Body) > 0       andalso
         size(Body) < MaxLen.
 
 %% @doc Judge cachable request
 %% @private
-is_cachable_req2(Key, #cache_condition{path_patterns = PPs}, _Status, _Headers, _Req)
-  when is_list(PPs) andalso length(PPs) > 0 ->
-    lists:any(is_cachable_path(Key), PPs);
-is_cachable_req2(_, _, _Status, _Headers, _Req) ->
-    true.
+is_cachable_req2(_Key, #cache_condition{path_patterns = []},
+                 _Status, _Headers, _Req) ->
+    true;
+is_cachable_req2(_Key, #cache_condition{path_patterns = undefined},
+                 _Status, _Headers, _Req) ->
+    true;
+is_cachable_req2( Key, #cache_condition{path_patterns = PathPatterns},
+                  _Status, _Headers, _Req) ->
+    Res = lists:any(fun(Path) ->
+                            nomatch /= re:run(Key, Path)
+                    end, PathPatterns),
+    Res.
 
 
 %% @doc Judge cachable request
 %% @private
-is_cachable_req3(_Key, #cache_condition{content_types = CTs}, _Status, Headers, _Req)
-  when is_list(CTs) andalso length(CTs) > 0 ->
-    case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
+is_cachable_req3(_, #cache_condition{content_types = []},
+                 _Status, _Headers, _Req) ->
+    true;
+is_cachable_req3(_, #cache_condition{content_types = undefined},
+                 _Status, _Headers, _Req) ->
+    true;
+is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList},
+                 _Status,  Headers, _Req) ->
+    case lists:keyfind(?HTTP_HEAD_BIN_CONTENT_TYPE, 1, Headers) of
         false ->
             false;
         {_, ContentType} ->
-            lists:member(ContentType, CTs)
-    end;
-is_cachable_req3(_, _, _Status, _Headers, _Req) ->
-    true.
+            lists:member(ContentType, ContentTypeList)
+    end.
 
+
+%% Compile Options:
+%%
 -compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2, get_header/2,auth/5]}).
 
 %% @doc Create a key
@@ -395,8 +389,8 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
         {ok, Meta, XML} when is_list(Meta) == true ->
             {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
             cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                        {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
-                                        {?HTTP_HEAD_DATE, leo_http:rfc1123_date(leo_date:now())}
+                                        {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
+                                        {?HTTP_HEAD_ATOM_DATE, leo_http:rfc1123_date(leo_date:now())}
                                        ], Req2);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -486,7 +480,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                     {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
                     cowboy_http_req:reply(206,
                                           [?SERVER_HEADER,
-                                           {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
+                                           {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Mime}],
                                           Req2);
                 {error, not_found} ->
                     cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -531,9 +525,9 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
             {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG4AWS,      leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
-                                   {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                                   {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Mime},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                                   {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
 
         %% For a chunked object.
@@ -567,10 +561,10 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
         {ok, #metadata{del = 0} = Meta} ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {?HTTP_HEAD_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_ETAG4AWS,       leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
-                         {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
-                         {?HTTP_HEAD_LAST_MODIFIED,  TimeStamp}],
+                         {?HTTP_HEAD_ATOM_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
+                         {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                         {?HTTP_HEAD_ATOM_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
+                         {?HTTP_HEAD_ATOM_LAST_MODIFIED,  TimeStamp}],
             cowboy_http_req:reply(200, Headers, Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -599,7 +593,7 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 %% @doc POST/PUT operation on Objects.
 %% @private
 exec1(?HTTP_PUT, Req, Key, Params) ->
-    put1(get_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params);
+    put1(get_header(Req, ?HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE), Req, Key, Params);
 
 %% @doc invalid request.
 %% @private
@@ -615,10 +609,10 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             {ok, Req2} = cowboy_http_req:set_resp_body(Cached#cache.body, Req),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
-                                   {?HTTP_HEAD_ETAG4AWS,      leo_hex:integer_to_hex(Cached#cache.etag, 32)},
-                                   {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
-                                   {?HTTP_HEAD_X_FROM_CACHE, <<"True">>}],
+                                   {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Cached#cache.content_type},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Cached#cache.etag, 32)},
+                                   {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
+                                   {?HTTP_HEAD_ATOM_X_FROM_CACHE,  <<"True">>}],
                                   Req2);
         {ok, Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
@@ -632,9 +626,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             {ok, Req2} = cowboy_http_req:set_resp_body(RespObject, Req),
             cowboy_http_req:reply(200,
                                   [?SERVER_HEADER,
-                                   {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_ETAG4AWS,      leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
-                                   {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                                   {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Mime},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                                   {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
             cowboy_http_req:reply(404, [?SERVER_HEADER], Req);
@@ -668,7 +662,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                                {?HTTP_HEAD_ETAG4AWS, leo_hex:integer_to_hex(ETag, 32)}], Req1);
+                                                {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(ETag, 32)}], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(500, [?SERVER_HEADER], Req1);
                 {error, timeout} ->
@@ -680,7 +674,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
 put1(Directive, Req, Key, _Params) ->
-    CS = get_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+    CS = get_header(Req, ?HTTP_HEAD_BIN_X_AMZ_COPY_SOURCE),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
     CS2 = case binary:part(CS, {0, 1}) of
@@ -707,9 +701,9 @@ put2(Directive, Req, Key, Meta, Bin) ->
     Size = size(Bin),
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
-        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
+        {ok, _ETag} when Directive == ?HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_COPY ->
             resp_copyobj_xml(Req, Meta);
-        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
+        {ok, _ETag} when Directive == ?HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE ->
             put3(Req, Key, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             cowboy_http_req:reply(500, [?SERVER_HEADER], Req);
@@ -804,8 +798,8 @@ resp_copyobj_xml(Req, Meta) ->
                          leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
     {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
     cowboy_http_req:reply(200, [?SERVER_HEADER,
-                                {?HTTP_HEAD_CONTENT_TYPE, "application/xml"},
-                                {?HTTP_HEAD_DATE,         leo_http:rfc1123_date(leo_date:now())}
+                                {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
+                                {?HTTP_HEAD_ATOM_DATE,         leo_http:rfc1123_date(leo_date:now())}
                                ], Req2).
 
 
@@ -834,9 +828,9 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             {Headers,        _} = cowboy_http_req:headers(Req),
 
             SignParams = #sign_params{http_verb    = atom_to_binary(HTTPMethod, latin1),
-                                      content_md5  = get_header(Req, ?HTTP_HEAD_CONTENT_MD5),
-                                      content_type = get_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
-                                      date         = get_header(Req, ?HTTP_HEAD_DATE),
+                                      content_md5  = get_header(Req, ?HTTP_HEAD_ATOM_CONTENT_MD5),
+                                      content_type = get_header(Req, ?HTTP_HEAD_ATOM_CONTENT_TYPE),
+                                      date         = get_header(Req, ?HTTP_HEAD_ATOM_DATE),
                                       bucket       = Bucket,
                                       uri          = BinRawUri,
                                       query_str    = BinQueryString,

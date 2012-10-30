@@ -47,24 +47,26 @@
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
 %% HTTP HEADER
--define(HTTP_HEAD_AGE,                'Age').
--define(HTTP_HEAD_CACHE_CTRL,         'Cache-Control').
--define(HTTP_HEAD_CONTENT_LENGTH,     'Content-Length').
--define(HTTP_HEAD_CONTENT_MD5,        'Content-Md5').
--define(HTTP_HEAD_CONTENT_TYPE,       'Content-Type').
--define(HTTP_HEAD_DATE,               'Date').
--define(HTTP_HEAD_ETAG,               'Etag').
--define(HTTP_HEAD_LAST_MODIFIED,      'Last-Modified').
--define(HTTP_HEAD_RANGE,              'Range').
+-define(HTTP_HEAD_ATOM_AGE,                'Age').
+-define(HTTP_HEAD_ATOM_CACHE_CTRL,         'Cache-Control').
+-define(HTTP_HEAD_ATOM_CONTENT_LENGTH,     'Content-Length').
+-define(HTTP_HEAD_ATOM_CONTENT_MD5,        'Content-Md5').
+-define(HTTP_HEAD_ATOM_CONTENT_TYPE,       'Content-Type').
+-define(HTTP_HEAD_ATOM_DATE,               'Date').
+-define(HTTP_HEAD_ATOM_ETAG,               'Etag').
+-define(HTTP_HEAD_ATOM_LAST_MODIFIED,      'Last-Modified').
+-define(HTTP_HEAD_ATOM_RANGE,              'Range').
+-define(HTTP_HEAD_ATOM_X_FROM_CACHE,       'X-From-Cache').
 
--define(HTTP_HEAD_ACL,                          <<"acl">>).
--define(HTTP_HEAD_ETAG4AWS,                     <<"ETag">>).
--define(HTTP_HEAD_PREFIX,                       <<"prefix">>).
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"X-Amz-Metadata-Directive">>).
--define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
--define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
--define(HTTP_HEAD_X_FROM_CACHE,                 <<"X-From-Cache">>).
+-define(HTTP_HEAD_BIN_ACL,                          <<"acl">>).
+-define(HTTP_HEAD_BIN_CACHE_CTRL,                   <<"Cache-Control">>).
+-define(HTTP_HEAD_BIN_CONTENT_TYPE,                 <<"Content-Type">>).
+-define(HTTP_HEAD_BIN_ETAG4AWS,                     <<"ETag">>).
+-define(HTTP_HEAD_BIN_PREFIX,                       <<"prefix">>).
+-define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE,         <<"X-Amz-Metadata-Directive">>).
+-define(HTTP_HEAD_BIN_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
+-define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
+-define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 
 
 %%
