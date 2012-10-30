@@ -34,6 +34,7 @@
 -include("leo_gateway.hrl").
 -include("leo_s3_http.hrl").
 
+-include_lib("cowboy/include/http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
@@ -260,12 +261,20 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
 %% @doc Handle response
 %% @private
 onresponse(#cache_condition{expire = Expire} = Config) ->
-    fun(Status, Headers, Req) ->
+    fun(_, _, Req) when Req#http_req.method == ?HTTP_POST ->
+            Req#http_req{resp_body = <<>>};
+       (_, _, Req) when Req#http_req.method == ?HTTP_PUT ->
+            Req#http_req{resp_body = <<>>};
+       (_, _, Req) when Req#http_req.method == ?HTTP_DELETE ->
+            Req#http_req{resp_body = <<>>};
+       (_, _, Req) when Req#http_req.method == ?HTTP_HEAD ->
+            Req#http_req{resp_body = <<>>};
+       (Status, Headers, Req) when Req#http_req.method == ?HTTP_GET ->
             Key = gen_key(Req),
 
             case lists:foldl(fun(Fun, true) ->
                                      Fun(Key, Config, Status, Headers, Req);
-                                 (_, false) ->
+                                (_, false) ->
                                      false
                              end, true, [fun is_cachable_req1/5,
                                          fun is_cachable_req2/5,
@@ -294,7 +303,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                     {ok, Req2} = cowboy_http_req:reply(200, Headers3, Req),
                     Req2;
                 false ->
-                    Req
+                    Req#http_req{resp_body = <<>>}
             end
     end.
 
