@@ -619,7 +619,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
                                    {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Cached#cache.content_type},
                                    {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Cached#cache.etag, 32)},
                                    {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
-                                   {?HTTP_HEAD_ATOM_X_FROM_CACHE,  <<"True">>}],
+                                   {?HTTP_HEAD_BIN_X_FROM_CACHE,  <<"True">>}],
                                   Req2);
         {ok, Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),

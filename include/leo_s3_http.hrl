@@ -56,7 +56,6 @@
 -define(HTTP_HEAD_ATOM_ETAG,               'Etag').
 -define(HTTP_HEAD_ATOM_LAST_MODIFIED,      'Last-Modified').
 -define(HTTP_HEAD_ATOM_RANGE,              'Range').
--define(HTTP_HEAD_ATOM_X_FROM_CACHE,       'X-From-Cache').
 
 -define(HTTP_HEAD_BIN_ACL,                          <<"acl">>).
 -define(HTTP_HEAD_BIN_CACHE_CTRL,                   <<"Cache-Control">>).
@@ -67,6 +66,7 @@
 -define(HTTP_HEAD_BIN_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
+-define(HTTP_HEAD_BIN_X_FROM_CACHE,                 <<"X-From-Cache">>).
 
 
 %%
