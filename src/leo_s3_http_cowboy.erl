@@ -261,15 +261,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
 %% @doc Handle response
 %% @private
 onresponse(#cache_condition{expire = Expire} = Config) ->
-    fun(_, _, Req) when Req#http_req.method == ?HTTP_POST ->
-            Req#http_req{resp_body = <<>>};
-       (_, _, Req) when Req#http_req.method == ?HTTP_PUT ->
-            Req#http_req{resp_body = <<>>};
-       (_, _, Req) when Req#http_req.method == ?HTTP_DELETE ->
-            Req#http_req{resp_body = <<>>};
-       (_, _, Req) when Req#http_req.method == ?HTTP_HEAD ->
-            Req#http_req{resp_body = <<>>};
-       (Status, Headers, Req) when Req#http_req.method == ?HTTP_GET ->
+    fun(Status, Headers, Req) when Req#http_req.method == ?HTTP_GET ->
             Key = gen_key(Req),
 
             case lists:all(fun(Fun) ->
@@ -302,7 +294,9 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                     Req2;
                 false ->
                     Req#http_req{resp_body = <<>>}
-            end
+            end;
+       (_, _, Req) ->
+            Req#http_req{resp_body = <<>>}
     end.
 
 
