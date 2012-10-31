@@ -272,13 +272,11 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
        (Status, Headers, Req) when Req#http_req.method == ?HTTP_GET ->
             Key = gen_key(Req),
 
-            case lists:foldl(fun(Fun, true) ->
-                                     Fun(Key, Config, Status, Headers, Req);
-                                (_, false) ->
-                                     false
-                             end, true, [fun is_cachable_req1/5,
-                                         fun is_cachable_req2/5,
-                                         fun is_cachable_req3/5]) of
+            case lists:all(fun(Fun) ->
+                                   Fun(Key, Config, Status, Headers, Req)
+                           end, [fun is_cachable_req1/5,
+                                 fun is_cachable_req2/5,
+                                 fun is_cachable_req3/5]) of
                 true ->
                     Now = leo_date:now(),
                     ContentType = case lists:keyfind(?HTTP_HEAD_BIN_CONTENT_TYPE, 1, Headers) of
@@ -297,7 +295,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                     _Res = ecache_api:put(Key, Bin),
 
                     Headers2 = lists:keydelete(?HTTP_HEAD_ATOM_LAST_MODIFIED, 1, Headers),
-                    Headers3 = [{?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])},
+                    Headers3 = [{?HTTP_HEAD_ATOM_CACHE_CTRL, lists:append(["max-age=",integer_to_list(Expire)])},
                                 {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
                                 |Headers2],
                     {ok, Req2} = cowboy_http_req:reply(200, Headers3, Req),
