@@ -292,7 +292,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                                    etag         = leo_hex:binary_to_integer(erlang:md5(Body)),
                                    content_type = ContentType,
                                    body         = Body}),
-                    _Res = ecache_api:put(Key, Bin),
+                    _ = ecache_api:put(Key, Bin),
 
                     Headers2 = lists:keydelete(?HTTP_HEAD_ATOM_LAST_MODIFIED, 1, Headers),
                     Headers3 = [{?HTTP_HEAD_ATOM_CACHE_CTRL, lists:append(["max-age=",integer_to_list(Expire)])},
@@ -724,7 +724,7 @@ put2(Directive, Req, Key, Meta, Bin) ->
 put3(Req, Key, Meta) ->
     KeyList = binary_to_list(Key),
     case KeyList == Meta#metadata.key of
-        true -> resp_copyobj_xml(Req, Meta);
+        true  -> resp_copyobj_xml(Req, Meta);
         false -> put4(Req, Meta)
     end.
 
