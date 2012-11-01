@@ -1,7 +1,7 @@
 {application, leo_gateway,
   [
    {description, "LeoFS Gateway Server"},
-   {vsn, "0.12.1"},
+   {vsn, "0.12.2"},
    {id, "leo_gateway"},
    {registered, []},
    {applications, [kernel, stdlib]},

@@ -71,8 +71,8 @@ init() ->
              ok).
 handle_call({sync, ?STAT_INTERVAL_1M}) ->
     Stats = case catch ecache_api:stats() of
-                {'EXIT', _Cause} -> #stats{};
-                Value            -> Value
+                {ok, Value} -> Value;
+                {_, _Cause} -> #stats{}
             end,
 
     #stats{gets        = NumOfRead,

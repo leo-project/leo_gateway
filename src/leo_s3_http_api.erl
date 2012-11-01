@@ -107,6 +107,19 @@ get_options(HTTPServer, Options) ->
     ?info("start/3", "chunked_obj_len: ~p",         [ChunkedObjLen]),
     ?info("start/3", "threshold_obj_len: ~p",       [ThresholdObjLen]),
 
+    CachableContentTypes1 = cast_type_list_to_binary(CachableContentTypes),
+    CachablePathPatterns1 = case cast_type_list_to_binary(CachablePathPatterns) of
+                                [] -> [];
+                                List ->
+                                    lists:foldl(
+                                      fun(P, Acc) ->
+                                              case re:compile(P) of
+                                                  {ok, MP} -> [MP|Acc];
+                                                  _        -> Acc
+                                              end
+                                      end, [], List)
+                            end,
+
     {ok, #http_options{s3_api                 = UseS3API,
                        port                   = Port,
                        ssl_port               = SSLPort,
@@ -116,9 +129,22 @@ get_options(HTTPServer, Options) ->
                        cache_plugin           = CachePlugIn,
                        cache_expire           = CacheExpire,
                        cache_max_content_len  = CacheMaxContentLen,
-                       cachable_content_type  = CachableContentTypes,
-                       cachable_path_pattern  = CachablePathPatterns,
+                       cachable_content_type  = CachableContentTypes1,
+                       cachable_path_pattern  = CachablePathPatterns1,
                        acceptable_max_obj_len = AcceptableObjLen,
                        chunked_obj_len        = ChunkedObjLen,
                        threshold_obj_len      = ThresholdObjLen
                       }}.
+
+%% @doc
+%% @private
+cast_type_list_to_binary([]) ->
+    [];
+cast_type_list_to_binary(List) ->
+    lists:map(fun(I) ->
+                      case catch list_to_binary(I) of
+                          {'EXIT', _} -> I;
+                          Bin         -> Bin
+                      end
+              end, List).
+

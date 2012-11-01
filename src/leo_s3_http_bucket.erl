@@ -66,7 +66,7 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, BucketStr),
 
-    %% @TODO
+    %% @TODO: replace dat-type from string to binary
     Key =  lists:append([BucketStr,PrefixStr]),
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
@@ -95,8 +95,30 @@ put_bucket(AccessKeyId, Bucket) ->
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketDELETE.html
 -spec(delete_bucket(string(), string()|none) ->
              ok|{error, any()}).
-delete_bucket(AccessKeyId, Bucket) ->
-    leo_s3_bucket:delete(AccessKeyId, Bucket).
+delete_bucket(AccessKeyId, Bucket0) ->
+    Bucket1 = case (binary:last(Bucket0) == $/) of
+                  true  -> binary:part(Bucket0, {0, byte_size(Bucket0) - 1});
+                  false -> Bucket0
+              end,
+
+    case leo_redundant_manager_api:get_members() of
+        {ok, Members} ->
+            Fun = fun(#member{node  = Node,
+                              state = ?STATE_RUNNING}, Acc) ->
+                          [Node|Acc];
+                     (_, Acc) ->
+                          Acc
+                  end,
+            Nodes = lists:foldl(Fun, [], Members),
+            spawn(fun() ->
+                          _ = rpc:multicall(Nodes, leo_storage_handler_directory, delete_objects_in_parent_dir,
+                                              [binary_to_list(Bucket1)], ?DEF_REQ_TIMEOUT),
+                          ok
+                  end),
+            leo_s3_bucket:delete(AccessKeyId, Bucket1);
+        {error, Cause} ->
+            {error, Cause}
+    end.
 
 
 %% @doc head bucket
