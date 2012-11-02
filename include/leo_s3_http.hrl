@@ -69,11 +69,12 @@
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_BIN_X_FROM_CACHE,                 <<"X-From-Cache">>).
 
--define(HTTP_ST_OK,          200).
--define(HTTP_ST_NO_CONTENT,  204).
--define(HTTP_ST_BAD_REQ,     400).
--define(HTTP_ST_FORBIDDEN,   403).
--define(HTTP_ST_NOT_FOUND,   404).
+-define(HTTP_ST_OK,           200).
+-define(HTTP_ST_NO_CONTENT,   204).
+-define(HTTP_ST_NOT_MODIFIED, 304).
+-define(HTTP_ST_BAD_REQ,      400).
+-define(HTTP_ST_FORBIDDEN,    403).
+-define(HTTP_ST_NOT_FOUND,    404).
 -define(HTTP_ST_INTERNAL_ERROR,      500).
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).

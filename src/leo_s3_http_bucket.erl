@@ -50,7 +50,10 @@ get_bucket_list(AccessKeyId, Bucket) ->
 
 -spec(get_bucket_list(string(), none, char()|none, string()|none, integer(), string()|none) ->
              {ok, list(), string()}|{error, any()}).
-get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
+get_bucket_list(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
+    get_bucket_list(AccessKeyId, <<"/">>, Delimiter, Marker, MaxKeys, none);
+
+get_bucket_list(AccessKeyId, <<"/">>, _Delimiter, _Marker, _MaxKeys, none) ->
     case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
         {ok, Meta} when is_list(Meta) =:= true ->
             {ok, Meta, generate_xml(Meta)};
@@ -59,9 +62,14 @@ get_bucket_list(AccessKeyId, _Bucket, _Delimiter, _Marker, _MaxKeys, none) ->
         Error ->
             Error
     end;
-get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
+
+get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix0) ->
+    Prefix1 = case Prefix0 of
+                  none -> <<>>;
+                  _    -> Prefix0
+              end,
     BucketStr = binary_to_list(Bucket),
-    PrefixStr = binary_to_list(Prefix),
+    PrefixStr = binary_to_list(Prefix1),
 
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, BucketStr),
@@ -75,7 +83,7 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
                                         [Key, Delimiter, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, generate_xml(Key, Prefix, Meta)};
+            {ok, Meta, generate_xml(Key, Prefix1, Meta)};
         {ok, _} ->
             {error, invalid_format};
         Error ->
