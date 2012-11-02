@@ -231,7 +231,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
-            Date  = leo_http:rfc1123_date(Now),
+            Date  = cowboy_clock:rfc1123(),
             Heads = [?SERVER_HEADER,
                      {?HTTP_HEAD_ATOM_LAST_MODIFIED, LastModified},
                      {?HTTP_HEAD_ATOM_CONTENT_TYPE,  ContentType},
@@ -248,7 +248,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      end,
             case IMSSec of
                 MTime ->
-                    {ok, Req2} = cowboy_http_req:reply(304, Heads, Req),
+                    {ok, Req2} = cowboy_http_req:reply(?HTTP_ST_NOT_MODIFIED, Heads, Req),
                     Req2;
                 _ ->
                     {ok, Req2} = cowboy_http_req:set_resp_body(Body, Req),
@@ -382,7 +382,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
             {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
             cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
                                                 {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
-                                                {?HTTP_HEAD_ATOM_DATE, leo_http:rfc1123_date(leo_date:now())}
+                                                {?HTTP_HEAD_ATOM_DATE, cowboy_clock:rfc1123()}
                                                ], Req2);
         {error, not_found} ->
             cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
@@ -791,7 +791,7 @@ resp_copyobj_xml(Req, Meta) ->
     {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
     cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
                                         {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
-                                        {?HTTP_HEAD_ATOM_DATE,         leo_http:rfc1123_date(leo_date:now())}
+                                        {?HTTP_HEAD_ATOM_DATE,         cowboy_clock:rfc1123()}
                                        ], Req2).
 
 
