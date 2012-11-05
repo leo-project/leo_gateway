@@ -60,7 +60,8 @@ gen_tests(Arg) ->
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
                fun put_object_normal1_/1,
-               fun proper_/1]
+               fun proper_/1
+              ]
              ).
 
 -define(SSL_CERT_DATA,

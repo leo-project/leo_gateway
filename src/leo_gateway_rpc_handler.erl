@@ -62,13 +62,11 @@
 -spec(head(binary()) ->
              {ok, #metadata{}}|{error, any()}).
 head(Key) ->
-    %% @TODO reduce converting costs by binary_to_list
-    KeyList = binary_to_list(Key),
-    ReqParams = get_request_parameters(head, KeyList),
+    ReqParams = get_request_parameters(head, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            head,
-           [ReqParams#req_params.addr_id, KeyList],
+           [ReqParams#req_params.addr_id, Key],
            []).
 
 %% @doc Retrieve an object from the storage-cluster
@@ -76,40 +74,34 @@ head(Key) ->
 -spec(get(binary()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key) ->
-    %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
-    ReqParams = get_request_parameters(get, KeyList),
+    ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, KeyList, ReqParams#req_params.req_id],
+           [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id],
            []).
 -spec(get(binary(), integer()) ->
              {ok, match}|{ok, #metadata{}, binary()}|{error, any()}).
 get(Key, ETag) ->
-    %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
-    ReqParams = get_request_parameters(get, KeyList),
+    ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, KeyList, ETag, ReqParams#req_params.req_id],
+           [ReqParams#req_params.addr_id, Key, ETag, ReqParams#req_params.req_id],
            []).
 
 -spec(get(binary(), integer(), integer()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key, StartPos, EndPos) ->
-    %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
-    ReqParams = get_request_parameters(get, KeyList),
+    ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            get,
            [ReqParams#req_params.addr_id,
-            KeyList, StartPos, EndPos,
+            Key, StartPos, EndPos,
             ReqParams#req_params.req_id],
            []).
 
@@ -119,15 +111,13 @@ get(Key, StartPos, EndPos) ->
 -spec(delete(binary()) ->
              ok|{error, any()}).
 delete(Key) ->
-    %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key),
     _ = leo_statistics_req_counter:increment(?STAT_REQ_DEL),
-    ReqParams = get_request_parameters(delete, KeyList),
+    ReqParams = get_request_parameters(delete, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            delete,
            [#object{addr_id   = ReqParams#req_params.addr_id,
-                    key       = KeyList,
+                    key       = Key,
                     timestamp = ReqParams#req_params.timestamp},
             ReqParams#req_params.req_id],
            []).
@@ -159,16 +149,13 @@ put(Key, Body, Size, ChunkedSize, TotalOfChunks, Digest) ->
 -spec(put(binary(), binary(), integer(), integer(), integer(), integer(), integer()) ->
              ok|{error, any()}).
 put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
-    %% @TODO reduce converting cost by binary_to_list
-    KeyList = binary_to_list(Key),
-
     _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
-    ReqParams = get_request_parameters(put, KeyList),
+    ReqParams = get_request_parameters(put, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            put,
            [#object{addr_id   = ReqParams#req_params.addr_id,
-                    key       = KeyList,
+                    key       = Key,
                     data      = Body,
                     dsize     = Size,
                     timestamp = ReqParams#req_params.timestamp,
