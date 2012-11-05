@@ -48,12 +48,14 @@
 
 %% HTTP HEADER
 -define(HTTP_HEAD_ATOM_AGE,                'Age').
+-define(HTTP_HEAD_ATOM_AUTHORIZATION,      'Authorization').
 -define(HTTP_HEAD_ATOM_CACHE_CTRL,         'Cache-Control').
 -define(HTTP_HEAD_ATOM_CONTENT_LENGTH,     'Content-Length').
 -define(HTTP_HEAD_ATOM_CONTENT_MD5,        'Content-Md5').
 -define(HTTP_HEAD_ATOM_CONTENT_TYPE,       'Content-Type').
 -define(HTTP_HEAD_ATOM_DATE,               'Date').
 -define(HTTP_HEAD_ATOM_ETAG,               'Etag').
+-define(HTTP_HEAD_ATOM_IF_MODIFIED_SINCE,  'If-Modified-Since').
 -define(HTTP_HEAD_ATOM_LAST_MODIFIED,      'Last-Modified').
 -define(HTTP_HEAD_ATOM_RANGE,              'Range').
 
@@ -68,6 +70,10 @@
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_BIN_X_FROM_CACHE,                 <<"X-From-Cache">>).
+
+-define(HTTP_CTYPE_OCTET_STREAM, <<"application/octet-stream">>).
+-define(HTTP_CTYPE_XML,          <<"application/xml">>).
+
 
 -define(HTTP_ST_OK,           200).
 -define(HTTP_ST_NO_CONTENT,   204).

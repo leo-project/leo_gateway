@@ -240,7 +240,7 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      {?HTTP_HEAD_BIN_ETAG4AWS,       leo_hex:integer_to_hex(Checksum, 32)},
                      {?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append("max-age=",integer_to_list(Expire))}],
 
-            IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
+            IMSSec = case cowboy_http_req:parse_header(?HTTP_HEAD_ATOM_IF_MODIFIED_SINCE, Req) of
                          {undefined, _} ->
                              0;
                          {IMSDateTime, _} ->
@@ -273,7 +273,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                     Now = leo_date:now(),
                     ContentType = case lists:keyfind(?HTTP_HEAD_BIN_CONTENT_TYPE, 1, Headers) of
                                       false ->
-                                          <<"application/octet-stream">>;
+                                          ?HTTP_CTYPE_OCTET_STREAM;
                                       {_, Val} ->
                                           Val
                                   end,
@@ -381,7 +381,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
         {ok, Meta, XML} when is_list(Meta) == true ->
             {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
             cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                                {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
+                                                {?HTTP_HEAD_ATOM_CONTENT_TYPE, ?HTTP_CTYPE_XML},
                                                 {?HTTP_HEAD_ATOM_DATE, cowboy_clock:rfc1123()}
                                                ], Req2);
         {error, not_found} ->
@@ -790,7 +790,7 @@ resp_copyobj_xml(Req, Meta) ->
                          leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
     {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
     cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                        {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
+                                        {?HTTP_HEAD_ATOM_CONTENT_TYPE, ?HTTP_CTYPE_XML},
                                         {?HTTP_HEAD_ATOM_DATE,         cowboy_clock:rfc1123()}
                                        ], Req2).
 
@@ -805,7 +805,7 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
                                                                    HTTPMethod == ?HTTP_DELETE)) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
-    case cowboy_http_req:header('Authorization', Req) of
+    case cowboy_http_req:header(?HTTP_HEAD_ATOM_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
         {BinAuthorization, _} ->
