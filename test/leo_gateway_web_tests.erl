@@ -217,7 +217,7 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
                                                 4, {ok,
-                                                    [{metadata, "localhost/a/b/pre/test.png",
+                                                    [{metadata, <<"localhost/a/b/pre/test.png">>,
                                                       0, 8, 0, 0,
                                                       0, 0, 0,
                                                       0, 0, 63511805822, 19740926, 0, 0}]}]),
@@ -284,7 +284,7 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head, 2,
-                                                {ok, {metadata, "a/b.png",
+                                                {ok, {metadata, <<"a/b.png">>,
                                                       0, 4, 16384, 0,
                                                       0, 0, 0,
                                                       0, 1, 63505750315, 19740926, 0, 0}}]),
