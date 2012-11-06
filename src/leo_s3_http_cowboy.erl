@@ -810,7 +810,7 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             {error, undefined};
         {BinAuthorization, _} ->
             Bucket = case (TokenLen >= 1) of
-                         true  -> hd(binary:split(Path, [?BIN_SLASH], [global]));
+                         true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
                          false -> ?BIN_EMPTY
                      end,
 
