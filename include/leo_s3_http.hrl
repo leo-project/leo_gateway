@@ -32,6 +32,7 @@
 -define(HTTP_DELETE,     'DELETE').
 -define(HTTP_HEAD,       'HEAD').
 
+
 %%
 %% HTTP-RELATED
 %%
@@ -59,7 +60,8 @@
 -define(HTTP_HEAD_ATOM_LAST_MODIFIED,      'Last-Modified').
 -define(HTTP_HEAD_ATOM_RANGE,              'Range').
 
--define(HTTP_HEAD_BIN_ACL,                          <<"acl">>).
+
+
 -define(HTTP_HEAD_BIN_CACHE_CTRL,                   <<"Cache-Control">>).
 -define(HTTP_HEAD_BIN_CONTENT_TYPE,                 <<"Content-Type">>).
 -define(HTTP_HEAD_BIN_ETAG4AWS,                     <<"ETag">>).
@@ -67,12 +69,17 @@
 -define(HTTP_HEAD_BIN_PREFIX,                       <<"prefix">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE,         <<"X-Amz-Metadata-Directive">>).
 -define(HTTP_HEAD_BIN_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
+-define(HTTP_HEAD_BIN_X_AMZ_ID_2,                   <<"X-Amz-Id-2">>).
+-define(HTTP_HEAD_BIN_X_AMZ_REQ_ID,                 <<"X-Amz-Request-Id">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_BIN_X_FROM_CACHE,                 <<"X-From-Cache">>).
 
 -define(HTTP_CTYPE_OCTET_STREAM, <<"application/octet-stream">>).
 -define(HTTP_CTYPE_XML,          <<"application/xml">>).
+
+-define(HTTP_QS_BIN_ACL,         <<"acl">>).
+-define(HTTP_QS_BIN_UPLOADS,     <<"uploads">>).
 
 
 -define(HTTP_ST_OK,           200).
@@ -88,28 +95,43 @@
 %%
 %% S3 RESPONSE XML
 %%
--define(XML_BUCKET_LIST, lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-                                       "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">",
-                                       "<Owner><ID>LeoFS</ID><DisplayName>webfile</DisplayName></Owner><Buckets>",
-                                       "~s",
-                                       "</Buckets></ListAllMyBucketsResult>"])).
+-define(XML_BUCKET_LIST,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">",
+                      "<Owner>",
+                      "  <ID>LeoFS</ID>",
+                      "  <DisplayName>webfile</DisplayName>",
+                      "</Owner>",
+                      "<Buckets>",
+                      "~s",
+                      "</Buckets></ListAllMyBucketsResult>"])).
 
--define(XML_OBJ_LIST, lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-                                    "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
-                                    "<Name>standalone</Name>",
-                                    "<Prefix>~s</Prefix>",
-                                    "<Marker></Marker>",
-                                    "<MaxKeys>1000</MaxKeys>",
-                                    "<Delimiter>/</Delimiter>",
-                                    "<IsTruncated>false</IsTruncated>",
-                                    "~s",
-                                    "</ListBucketResult>"])).
+-define(XML_OBJ_LIST,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "  <Name>standalone</Name>",
+                      "  <Prefix>~s</Prefix>",
+                      "  <Marker></Marker>",
+                      "  <MaxKeys>1000</MaxKeys>",
+                      "  <Delimiter>/</Delimiter>",
+                      "  <IsTruncated>false</IsTruncated>",
+                      "~s",
+                      "</ListBucketResult>"])).
 
--define(XML_COPY_OBJ_RESULT, lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-                                           "<CopyObjectResult>",
-                                           "<LastModified>~s</LastModified>",
-                                           "<ETag>\"~s\"</ETag>",
-                                           "</CopyObjectResult>"])).
+-define(XML_COPY_OBJ_RESULT,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<CopyObjectResult>",
+                      "  <LastModified>~s</LastModified>",
+                      "  <ETag>\"~s\"</ETag>",
+                      "</CopyObjectResult>"])).
+
+-define(XML_UPLOAD_INITIATION,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<InitiateMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+                      "  <Bucket>example-bucket</Bucket>"
+                      "  <Key>~s</Key>"
+                      "  <UploadId>~s</UploadId>"
+                      "</InitiateMultipartUploadResult>"])).
 
 
 -record(http_options, {

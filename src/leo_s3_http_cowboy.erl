@@ -117,18 +117,14 @@ init({_Any, http}, Req, Opts) ->
     {ok, Req, Opts}.
 
 
-%% @doc
+%% @doc Handle a request
+%% @callback
 handle(Req, State) ->
     Key = gen_key(Req),
     handle(Req, State, Key).
 
 handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
              AcceptableObjLen, ChunkedObjLen, ThresholdObjLen] = State, Path) ->
-    HTTPMethod = case cowboy_http_req:method(Req) of
-                     {?HTTP_POST, _} -> ?HTTP_PUT;
-                     {Other, _}      -> Other
-                 end,
-
     {Prefix, IsDir, Path2, Req2} =
         case cowboy_http_req:qs_val(?HTTP_HEAD_BIN_PREFIX, Req) of
             {undefined, Req1} ->
@@ -142,18 +138,38 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                           end,
                 {BinParam, true, NewPath, Req1}
         end,
-    TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
 
-    case cowboy_http_req:qs_val(?HTTP_HEAD_BIN_ACL, Req2) of
+    TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
+    {HTTPMethod0, _} = cowboy_http_req:method(Req),
+
+    case cowboy_http_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
-            case catch auth(UseS3API, Req2, HTTPMethod, Path2, TokenLen) of
+            IsUpload = case cowboy_http_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req2) of
+                           {undefined, _} ->
+                               false;
+                           _ ->
+                               true
+                       end,
+
+            case auth1(UseS3API, Req2, HTTPMethod0, Path2, TokenLen) of
                 {error, _Cause} ->
                     {ok, Req3} = cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req2),
                     {ok, Req3, State};
+                {ok,_AccessKeyId} when IsUpload == true ->
+                    %% @TODO
+                    XML = gen_upload_initiate_xml("12345", "12345"),
+                    {ok, Req3} = cowboy_http_req:set_resp_body(XML, Req2),
+                    {ok, Req4} = cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req3),
+                    {ok, Req4, State};
                 {ok, AccessKeyId} ->
                     {RangeHeader, _} = cowboy_http_req:header(?HTTP_HEAD_ATOM_RANGE, Req2),
 
-                    case catch exec1(HTTPMethod, Req2, Path2,
+                    HTTPMethod1 = case HTTPMethod0 of
+                                      ?HTTP_POST -> ?HTTP_PUT;
+                                      Other      -> Other
+                                  end,
+
+                    case catch exec1(HTTPMethod1, Req2, Path2,
                                      #req_params{token_length           = TokenLen,
                                                  access_key_id          = AccessKeyId,
                                                  min_layers             = NumOfMinLayers,
@@ -344,7 +360,8 @@ is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Header
 
 %% Compile Options:
 %%
--compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2, get_header/2,auth/5]}).
+-compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2,
+                   get_header/2, auth1/5, auth2/4, http_verb/1]}).
 
 %% @doc Create a key
 %% @private
@@ -797,12 +814,20 @@ resp_copyobj_xml(Req, Meta) ->
 
 %% @doc Authentication
 %% @private
-auth(false,_Req,_HTTPMethod,_Path,_TokenLen) ->
+auth1(false,_Req,_HTTPMethod,_Path,_TokenLen) ->
     {ok, []};
-auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
-                                                  (TokenLen > 1 andalso
-                                                                  (HTTPMethod == ?HTTP_PUT orelse
-                                                                   HTTPMethod == ?HTTP_DELETE)) ->
+auth1(true,  Req, HTTPMethod, Path, TokenLen) when TokenLen =< 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(true,  Req, ?HTTP_POST = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(true,  Req, ?HTTP_PUT = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(true,  Req, ?HTTP_DELETE = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(_,_,_,_,_) ->
+    {ok, []}.
+
+auth2(Req, HTTPMethod, Path, TokenLen) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case cowboy_http_req:header(?HTTP_HEAD_ATOM_AUTHORIZATION, Req) of
@@ -819,17 +844,38 @@ auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
             {BinQueryString, _} = cowboy_http_req:raw_qs(Req),
             {Headers,        _} = cowboy_http_req:headers(Req),
 
-            SignParams = #sign_params{http_verb    = atom_to_binary(HTTPMethod, latin1),
+            URI = case (byte_size(BinQueryString) > 0) of
+                      true when BinQueryString == ?HTTP_QS_BIN_UPLOADS  ->
+                          << BinRawUri/binary, "?", BinQueryString/binary >>;
+                      _->
+                          BinRawUri
+                  end,
+
+            SignParams = #sign_params{http_verb    = http_verb(HTTPMethod),
                                       content_md5  = get_header(Req, ?HTTP_HEAD_ATOM_CONTENT_MD5),
                                       content_type = get_header(Req, ?HTTP_HEAD_ATOM_CONTENT_TYPE),
                                       date         = get_header(Req, ?HTTP_HEAD_ATOM_DATE),
                                       bucket       = Bucket,
-                                      uri          = BinRawUri,
+                                      uri          = URI,
                                       query_str    = BinQueryString,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(BinAuthorization, SignParams, IsCreateBucketOp)
-    end;
+    end.
 
-auth(_,_,_,_,_) ->
-    {ok, []}.
+
+%% @doc Replace data-type from atom() to binary()
+%% @private
+-spec(http_verb(atom()) ->
+             binary()).
+http_verb(?HTTP_GET)    -> <<"GET">>;
+http_verb(?HTTP_POST)   -> <<"POST">>;
+http_verb(?HTTP_PUT)    -> <<"PUT">>;
+http_verb(?HTTP_DELETE) -> <<"DELETE">>;
+http_verb(?HTTP_HEAD)   -> <<"HEAD">>.
+
+
+%% @doc Generate an update-initiate xml
+%% @private
+gen_upload_initiate_xml(AmzId, AmzRequestId) ->
+    io_lib:format(?XML_UPLOAD_INITIATION, [AmzId, AmzRequestId]).
 
