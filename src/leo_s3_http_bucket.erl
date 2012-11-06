@@ -68,14 +68,9 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix0) ->
                   none -> <<>>;
                   _    -> Prefix0
               end,
-    %% BucketStr = binary_to_list(Bucket),
-    %% PrefixStr = binary_to_list(Prefix1),
 
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
-
-    %% %% @TODO: replace dat-type from string to binary
-    %% Key =  lists:append([BucketStr,PrefixStr]),
     Key = << Bucket/binary, Prefix1/binary >>,
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
