@@ -122,7 +122,7 @@
 -define(XML_UPLOAD_INITIATION,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<InitiateMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
-                      "  <Bucket>example-bucket</Bucket>"
+                      "  <Bucket>~s</Bucket>"
                       "  <Key>~s</Key>"
                       "  <UploadId>~s</UploadId>"
                       "</InitiateMultipartUploadResult>"])).
@@ -146,6 +146,7 @@
          }).
 
 -record(req_params, {
+          path = <<>>                :: binary(),  %% path (uri)
           access_key_id = []         :: string(),  %% s3's access-key-id
           token_length = 0           :: integer(), %% length of tokened path
           min_layers = 0             :: integer(), %% acceptable # of min layers

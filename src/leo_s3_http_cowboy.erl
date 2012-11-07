@@ -145,7 +145,8 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
     case cowboy_http_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
             ReqParams = request_params(
-                          Req2, #req_params{token_length           = TokenLen,
+                          Req2, #req_params{path                   = Path2,
+                                            token_length           = TokenLen,
                                             min_layers             = NumOfMinLayers,
                                             max_layers             = NumOfMaxLayers,
                                             qs_prefix              = Prefix,
@@ -169,14 +170,17 @@ handle1({error, _Cause}, Req0,_,_,_,State) ->
     {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0),
     {ok, Req1, State};
 
-handle1({ok,_AccessKeyId}, Req0,_,_, #req_params{is_upload = true}, State) ->
+handle1({ok,_AccessKeyId}, Req0,_,_, #req_params{path = Path0,
+                                                 is_upload = true}, State) ->
     %% Insert a metadata into the storage-cluster
     %% @TODO
 
     %% Response xml to a client
-    AmzId = [],
-    AmzRequestId = [],
-    XML = gen_upload_initiate_xml(AmzId, AmzRequestId),
+    Now = leo_date:now(),
+    [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+    AmzRequestId = erlang:md5(<< Path0/binary, Now:64 >>),
+    XML = gen_upload_initiate_xml(Bucket, Path1, AmzRequestId),
+
     {ok, Req1} = cowboy_http_req:set_resp_body(XML, Req0),
     {ok, Req2} = cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1),
     {ok, Req2, State};
@@ -250,9 +254,9 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      {?HTTP_HEAD_ATOM_CONTENT_TYPE,  ContentType},
                      {?HTTP_HEAD_ATOM_DATE,          Date},
                      {?HTTP_HEAD_ATOM_AGE,           integer_to_list(Diff)},
-                     {?HTTP_HEAD_BIN_ETAG4AWS,       leo_hex:integer_to_hex(Checksum, 32)},
-                     {?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append("max-age=",integer_to_list(Expire))}],
-
+                     {?HTTP_HEAD_BIN_ETAG4AWS,       lists:append(["\"",leo_hex:integer_to_hex(Checksum, 32),"\""])},
+                     {?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])}
+                    ],
             IMSSec = case cowboy_http_req:parse_header(?HTTP_HEAD_ATOM_IF_MODIFIED_SINCE, Req) of
                          {undefined, _} ->
                              0;
@@ -545,7 +549,9 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
             cowboy_http_req:reply(?HTTP_ST_OK,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                                           "\""])},
                                    {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
 
@@ -581,7 +587,10 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
             TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
                          {?HTTP_HEAD_ATOM_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                         {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                 leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                                 "\""
+                                                                ])},
                          {?HTTP_HEAD_ATOM_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
                          {?HTTP_HEAD_ATOM_LAST_MODIFIED,  TimeStamp}],
             cowboy_http_req:reply(?HTTP_ST_OK, Headers, Req);
@@ -629,7 +638,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(?HTTP_ST_OK,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Cached#cache.content_type},
-                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Cached#cache.etag, 32)},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                           leo_hex:integer_to_hex(Cached#cache.etag, 32),
+                                                                           "\""])},
                                    {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
                                    {?HTTP_HEAD_BIN_X_FROM_CACHE,  <<"True">>}],
                                   Req2);
@@ -646,7 +657,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(?HTTP_ST_OK,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                                           "\""])},
                                    {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
@@ -681,7 +694,11 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                                        {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(ETag, 32)}], Req1);
+                                                        {?HTTP_HEAD_BIN_ETAG4AWS,
+                                                         lists:append(["\"",
+                                                                       leo_hex:integer_to_hex(ETag, 32),
+                                                                       "\""])}
+                                                       ], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1);
                 {error, timeout} ->
@@ -885,6 +902,12 @@ http_verb(?HTTP_HEAD)   -> <<"HEAD">>.
 
 %% @doc Generate an update-initiate xml
 %% @private
-gen_upload_initiate_xml(AmzId, AmzRequestId) ->
-    io_lib:format(?XML_UPLOAD_INITIATION, [AmzId, AmzRequestId]).
+-spec(gen_upload_initiate_xml(binary(), list(binary()), binary()) ->
+             list()).
+gen_upload_initiate_xml(Bucket, Path, UploadId) ->
+    BucketStr = binary_to_list(Bucket),
+    KeyStr    = lists:foldl(fun(I, [])  -> binary_to_list(I);
+                               (I, Acc) -> Acc ++ "/" ++ binary_to_list(I)
+                            end, [], Path),
+    io_lib:format(?XML_UPLOAD_INITIATION, [BucketStr, KeyStr, UploadId]).
 
