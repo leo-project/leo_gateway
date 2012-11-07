@@ -32,15 +32,10 @@
 -define(HTTP_DELETE,     'DELETE').
 -define(HTTP_HEAD,       'HEAD').
 
-
 %%
 %% HTTP-RELATED
 %%
 -define(SERVER_HEADER,   {"Server","LeoFS"}).
--define(QUERY_PREFIX,    "prefix").
--define(QUERY_DELIMITER, "delimiter").
--define(QUERY_MAX_KEYS,  "max-keys").
--define(QUERY_ACL,       "acl").
 -define(STR_SLASH,       "/").
 -define(BIN_SLASH,       <<"/">>).
 -define(BIN_EMPTY,       <<>>).
@@ -59,8 +54,6 @@
 -define(HTTP_HEAD_ATOM_IF_MODIFIED_SINCE,  'If-Modified-Since').
 -define(HTTP_HEAD_ATOM_LAST_MODIFIED,      'Last-Modified').
 -define(HTTP_HEAD_ATOM_RANGE,              'Range').
-
-
 
 -define(HTTP_HEAD_BIN_CACHE_CTRL,                   <<"Cache-Control">>).
 -define(HTTP_HEAD_BIN_CONTENT_TYPE,                 <<"Content-Type">>).
@@ -81,13 +74,12 @@
 -define(HTTP_QS_BIN_ACL,         <<"acl">>).
 -define(HTTP_QS_BIN_UPLOADS,     <<"uploads">>).
 
-
--define(HTTP_ST_OK,           200).
--define(HTTP_ST_NO_CONTENT,   204).
--define(HTTP_ST_NOT_MODIFIED, 304).
--define(HTTP_ST_BAD_REQ,      400).
--define(HTTP_ST_FORBIDDEN,    403).
--define(HTTP_ST_NOT_FOUND,    404).
+-define(HTTP_ST_OK,                  200).
+-define(HTTP_ST_NO_CONTENT,          204).
+-define(HTTP_ST_NOT_MODIFIED,        304).
+-define(HTTP_ST_BAD_REQ,             400).
+-define(HTTP_ST_FORBIDDEN,           403).
+-define(HTTP_ST_NOT_FOUND,           404).
 -define(HTTP_ST_INTERNAL_ERROR,      500).
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).
