@@ -127,6 +127,15 @@
                       "  <UploadId>~s</UploadId>"
                       "</InitiateMultipartUploadResult>"])).
 
+-define(XML_UPLOAD_COMPLETION,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<CompleteMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "  <Location>http://Example-Bucket.s3.amazonaws.com/Example-Object</Location>",
+                      "  <Bucket>~s</Bucket>",
+                      "  <Key>~s</Key>",
+                      "  <ETag>\"~s\"</ETag>",
+                      "</CompleteMultipartUploadResult>"])).
+
 
 -record(http_options, {
           port = 0                   :: integer(), %% http port number
@@ -156,8 +165,8 @@
           has_inner_cache = false    :: boolean(), %% has inner-cache?
           is_dir = false             :: boolean(), %% is directory?
           is_upload = false          :: boolean(), %% is upload operation? (for multipart upload)
-          upload_id = 0              :: integer(), %% upload id for multipart upload
-          upload_part_num = 0        :: integer(), %% upload part number for multipart upload
+          upload_id = <<>>           :: binary(),  %% upload id for multipart upload
+          upload_part_num = <<>>     :: binary(),  %% upload part number for multipart upload
           acceptable_max_obj_len = 0 :: integer(), %% acceptable max object length for large-object (byte)
           chunked_obj_len        = 0 :: integer(), %% chunked object length for large-object (byte)
           threshold_obj_len      = 0 :: integer()  %% threshold object length for large-object (byte)

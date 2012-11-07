@@ -164,27 +164,70 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
     end.
 
 
-%% @doc Handle a request
+%% @doc Handle a request (sub)
 %% @private
 handle1({error, _Cause}, Req0,_,_,_,State) ->
     {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0),
     {ok, Req1, State};
 
+%% For Multipart Upload - Initiation
+%%
 handle1({ok,_AccessKeyId}, Req0,_,_, #req_params{path = Path0,
                                                  is_upload = true}, State) ->
     %% Insert a metadata into the storage-cluster
-    %% @TODO
+    NowBin = list_to_binary(integer_to_list(leo_date:now())),
+    UploadId    = leo_hex:binary_to_hex(erlang:md5(<< Path0/binary, NowBin/binary >>)),
+    UploadIdBin = list_to_binary(UploadId),
 
-    %% Response xml to a client
-    Now = leo_date:now(),
-    [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
-    AmzRequestId = erlang:md5(<< Path0/binary, Now:64 >>),
-    XML = gen_upload_initiate_xml(Bucket, Path1, AmzRequestId),
+    case leo_gateway_rpc_handler:put(<<Path0/binary, "\n", UploadIdBin/binary>> , <<>>, 0) of
+        {ok, _ETag} ->
+            %% Response xml to a client
+            [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+            XML = gen_upload_initiate_xml(Bucket, Path1, UploadId),
 
-    {ok, Req1} = cowboy_http_req:set_resp_body(XML, Req0),
-    {ok, Req2} = cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1),
-    {ok, Req2, State};
+            {ok, Req1} = cowboy_http_req:set_resp_body(XML, Req0),
+            {ok, Req2} = cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1),
+            {ok, Req2, State};
+        {error, Cause} ->
+            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+            {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
+            {ok, Req1, State}
+    end;
 
+%% For Multipart Upload - Upload a part of an object
+%%
+handle1({ok,_AccessKeyId}, Req0,_,_,
+        #req_params{path = Path0,
+                    is_upload = false,
+                    upload_id = UploadId,
+                    upload_part_num = PartNum},_State) when UploadId /= <<>>,
+                                                            PartNum  /= <<>> ->
+    case leo_gateway_rpc_handler:head(<<Path0/binary, "\n", UploadId/binary>>) of
+        {ok, Metadata} ->
+            %% @TODO Check upload-id and PUT an object
+            %%
+            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req0);
+        {error, not_found} ->
+            cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req0);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0);
+        {error, timeout} ->
+            cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0)
+    end;
+
+%% For Multipart Upload - Completion
+%%
+handle1({ok,_AccessKeyId}, Req0,_,_,
+        #req_params{path = _Path0,
+                    is_upload = false,
+                    upload_id = UploadId,
+                    upload_part_num = PartNum},_State) when UploadId /= <<>>,
+                                                            PartNum  == <<>> ->
+    %% @TODO Check ETag and /Return XML
+    cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req0);
+
+%% For Regular cases
+%%
 handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
     HTTPMethod1 = case HTTPMethod0 of
                       ?HTTP_POST -> ?HTTP_PUT;
@@ -193,7 +236,7 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
 
     case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Reason} ->
-            ?error("handle1/6", "path:~p, cause:~p", [Path, Reason]),
+            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Reason]),
             {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
             {ok, Req1, State};
         {ok, Req1} ->
@@ -324,13 +367,24 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
 %%      Set request params
 %% @private
 request_params(Req, Params) ->
-    IsUpload  = case cowboy_http_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req) of
-                    {undefined, _} -> false;
-                    _ -> true
-                end,
-    {Range,_} = cowboy_http_req:header(?HTTP_HEAD_ATOM_RANGE, Req),
-    Params#req_params{is_upload    = IsUpload,
-                      range_header = Range}.
+    IsUpload = case cowboy_http_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req) of
+                   {undefined, _} -> false;
+                   _ -> true
+               end,
+    UploadId = case cowboy_http_req:qs_val(?HTTP_QS_BIN_UPLOAD_ID, Req) of
+                   {undefined, _} -> <<>>;
+                   {Val0,      _} -> Val0
+               end,
+    PartNum  = case cowboy_http_req:qs_val(?HTTP_QS_BIN_PART_NUMBER, Req) of
+                   {undefined, _} -> <<>>;
+                   {Val1,      _} -> Val1
+               end,
+    Range    = element(1, cowboy_http_req:header(?HTTP_HEAD_ATOM_RANGE, Req)),
+
+    Params#req_params{is_upload       = IsUpload,
+                      upload_id       = UploadId,
+                      upload_part_num = PartNum,
+                      range_header    = Range}.
 
 
 %% @doc Judge cachable request
@@ -567,7 +621,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                 {ok, Req3} ->
                     {ok, Req3};
                 {error, Cause} ->
-                    ?error("exec1/4", "path:~p, cause:~p", [binary_to_list(Key), Cause]),
+                    ?error("exec1/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
                     cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
             end;
         {error, not_found} ->
@@ -584,15 +638,15 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
 exec1(?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
-            TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
+            Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {?HTTP_HEAD_ATOM_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
+                         {?HTTP_HEAD_ATOM_CONTENT_TYPE, leo_mime:guess_mime(Key)},
                          {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
                                                                  leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
                                                                  "\""
                                                                 ])},
                          {?HTTP_HEAD_ATOM_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
-                         {?HTTP_HEAD_ATOM_LAST_MODIFIED,  TimeStamp}],
+                         {?HTTP_HEAD_ATOM_LAST_MODIFIED,  Timestamp}],
             cowboy_http_req:reply(?HTTP_ST_OK, Headers, Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
@@ -871,10 +925,16 @@ auth2(Req, HTTPMethod, Path, TokenLen) ->
             {QueryString, _} = cowboy_http_req:raw_qs(Req),
             {Headers,     _} = cowboy_http_req:headers(Req),
 
-            URI = case (byte_size(QueryString) > 0 andalso
-                        QueryString == ?HTTP_QS_BIN_UPLOADS) of
-                      true  -> << RawUri/binary, "?", QueryString/binary >>;
-                      false -> RawUri
+            URI = case (byte_size(QueryString) > 0) of
+                      true when  QueryString == ?HTTP_QS_BIN_UPLOADS ->
+                          << RawUri/binary, "?", QueryString/binary >>;
+                      true ->
+                          case (nomatch /= binary:match(QueryString, ?HTTP_QS_BIN_UPLOAD_ID)) of
+                              true  -> << RawUri/binary, "?", QueryString/binary >>;
+                              false -> RawUri
+                          end;
+                      _ ->
+                          RawUri
                   end,
 
             SignParams = #sign_params{http_verb    = http_verb(HTTPMethod),
@@ -902,12 +962,12 @@ http_verb(?HTTP_HEAD)   -> <<"HEAD">>.
 
 %% @doc Generate an update-initiate xml
 %% @private
--spec(gen_upload_initiate_xml(binary(), list(binary()), binary()) ->
+-spec(gen_upload_initiate_xml(binary(), list(binary()), string()) ->
              list()).
-gen_upload_initiate_xml(Bucket, Path, UploadId) ->
-    BucketStr = binary_to_list(Bucket),
-    KeyStr    = lists:foldl(fun(I, [])  -> binary_to_list(I);
-                               (I, Acc) -> Acc ++ "/" ++ binary_to_list(I)
-                            end, [], Path),
-    io_lib:format(?XML_UPLOAD_INITIATION, [BucketStr, KeyStr, UploadId]).
+gen_upload_initiate_xml(Bucket0, Path, UploadId) ->
+    Bucket1 = binary_to_list(Bucket0),
+    Key = lists:foldl(fun(I, [])  -> binary_to_list(I);
+                         (I, Acc) -> Acc ++ "/" ++ binary_to_list(I)
+                      end, [], Path),
+    io_lib:format(?XML_UPLOAD_INITIATION, [Bucket1, Key, UploadId]).
 
