@@ -163,6 +163,7 @@
           qs_prefix = []             :: string(),  %% query string
           range_header               :: string(),  %% range header
           has_inner_cache = false    :: boolean(), %% has inner-cache?
+          is_cached = false          :: boolean(), %% is cached?
           is_dir = false             :: boolean(), %% is directory?
           is_upload = false          :: boolean(), %% is upload operation? (for multipart upload)
           upload_id = <<>>           :: binary(),  %% upload id for multipart upload

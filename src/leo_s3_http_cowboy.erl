@@ -38,6 +38,7 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -151,6 +152,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                                             max_layers             = NumOfMaxLayers,
                                             qs_prefix              = Prefix,
                                             has_inner_cache        = HasInnerCache,
+                                            is_cached              = true,
                                             is_dir                 = IsDir,
                                             acceptable_max_obj_len = AcceptableObjLen,
                                             chunked_obj_len        = ChunkedObjLen,
@@ -172,8 +174,8 @@ handle1({error, _Cause}, Req0,_,_,_,State) ->
 
 %% For Multipart Upload - Initiation
 %%
-handle1({ok,_AccessKeyId}, Req0,_,_, #req_params{path = Path0,
-                                                 is_upload = true}, State) ->
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
+                                                            is_upload = true}, State) ->
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
     UploadId    = leo_hex:binary_to_hex(erlang:md5(<< Path0/binary, NowBin/binary >>)),
@@ -188,6 +190,8 @@ handle1({ok,_AccessKeyId}, Req0,_,_, #req_params{path = Path0,
             {ok, Req1} = cowboy_http_req:set_resp_body(XML, Req0),
             {ok, Req2} = cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1),
             {ok, Req2, State};
+        {error, timeout} ->
+            cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
         {error, Cause} ->
             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
             {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
@@ -196,17 +200,18 @@ handle1({ok,_AccessKeyId}, Req0,_,_, #req_params{path = Path0,
 
 %% For Multipart Upload - Upload a part of an object
 %%
-handle1({ok,_AccessKeyId}, Req0,_,_,
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
         #req_params{path = Path0,
                     is_upload = false,
                     upload_id = UploadId,
-                    upload_part_num = PartNum},_State) when UploadId /= <<>>,
-                                                            PartNum  /= <<>> ->
-    case leo_gateway_rpc_handler:head(<<Path0/binary, "\n", UploadId/binary>>) of
-        {ok, Metadata} ->
-            %% @TODO Check upload-id and PUT an object
-            %%
-            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req0);
+                    upload_part_num = PartNum} = Params, _State) when UploadId /= <<>>,
+                                                                      PartNum  /= <<>> ->
+    Key0 = << Path0/binary, "\n", UploadId/binary >>, %% for confirmation
+    Key1 = << Path0/binary, "\n", PartNum/binary  >>, %% for put a part of an object
+
+    case leo_gateway_rpc_handler:head(Key0) of
+        {ok, _Metadata} ->
+            put1(?BIN_EMPTY, Req0, Key1, Params);
         {error, not_found} ->
             cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req0);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -217,14 +222,64 @@ handle1({ok,_AccessKeyId}, Req0,_,_,
 
 %% For Multipart Upload - Completion
 %%
-handle1({ok,_AccessKeyId}, Req0,_,_,
-        #req_params{path = _Path0,
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
+        #req_params{path = Path0,
                     is_upload = false,
                     upload_id = UploadId,
                     upload_part_num = PartNum},_State) when UploadId /= <<>>,
                                                             PartNum  == <<>> ->
-    %% @TODO Check ETag and /Return XML
-    cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req0);
+    case leo_redundant_manager_api:get_members() of
+        {ok, Members} ->
+            Fun = fun(#member{node  = Node,
+                              state = ?STATE_RUNNING}, Acc) ->
+                          [Node|Acc];
+                     (_, Acc) ->
+                          Acc
+                  end,
+            Nodes = lists:foldl(Fun, [], Members),
+
+            case rpc:multicall(Nodes, leo_storage_handler_object, find_uploaded_objects_by_key,
+                               [Path0], ?DEF_REQ_TIMEOUT) of
+                {ResL, _} ->
+                    Metadatas = lists:foldl(
+                                  fun({ok, List}, Acc0) ->
+                                          lists:foldl(fun(#metadata{cindex = 0}, Acc1) ->
+                                                              Acc1;
+                                                         (#metadata{cindex   = CIndex,
+                                                                    dsize    = DSize,
+                                                                    checksum = Checksum}, Acc1) ->
+                                                              case lists:keyfind(CIndex, 1, Acc1) of
+                                                                  false ->
+                                                                      [{CIndex, {DSize, Checksum}} | Acc1];
+                                                                  _ ->
+                                                                      Acc1
+                                                              end
+                                                      end, Acc0, List)
+                                  end, [], ResL),
+
+                    {Len, ETag0} = lists:foldl(fun({_, {DSize, Checksum}}, {Sum, ETagBin0}) ->
+                                                       ETagBin1 = list_to_binary(leo_hex:integer_to_hex(Checksum)),
+                                                       {Sum + DSize, <<ETagBin0/binary, ETagBin1/binary>>}
+                                               end, {0, <<>>}, lists:sort(Metadatas)),
+                    ETag1 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(erlang:md5(ETag0))),
+
+                    case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, length(Metadatas), ETag1) of
+                        {ok, _ETag} ->
+                            cowboy_http_req:reply(
+                              ?HTTP_ST_OK, [?SERVER_HEADER,
+                                            {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",leo_hex:integer_to_hex(ETag1, 32),"\""])}
+                                           ], Req0);
+                        {error, Cause} ->
+                            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+                    end;
+                _ ->
+                    cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+            end;
+        {error, Cause} ->
+            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+    end;
 
 %% For Regular cases
 %%
@@ -233,10 +288,9 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
                       ?HTTP_POST -> ?HTTP_PUT;
                       Other      -> Other
                   end,
-
     case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
-        {'EXIT', Reason} ->
-            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Reason]),
+        {'EXIT', Cause} ->
+            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
             {ok, Req1, State};
         {ok, Req1} ->
@@ -534,7 +588,7 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                                        range_header = RangeHeader}) when RangeHeader /= undefined ->
-    %% TODO - Will support this function with v0.12.1
+    %% TODO - Will support this function with v0.12.4
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
@@ -571,10 +625,11 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
 %% @doc GET operation on Object if inner cache is enabled.
 %% @private
 exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
+                                                    is_cached = true,
                                                     has_inner_cache = true} = Params) ->
     case ecache_api:get(Key) of
         not_found ->
-            exec1(HTTPMethod, Req, Key, Params);
+            exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj} ->
             Cached = binary_to_term(CachedObj),
             exec2(HTTPMethod, Req, Key, Params, Cached)
@@ -733,7 +788,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
     case (Size0 >= Params#req_params.threshold_obj_len) of
         true when Size0 >= Params#req_params.acceptable_max_obj_len ->
             cowboy_http_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req);
-        true ->
+        true when Params#req_params.is_upload == false ->
             put_large_object(Req, Key, Size0, Params);
         false ->
             {Size1, Bin1, Req1} =
@@ -745,7 +800,13 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
                         {0, ?BIN_EMPTY, Req}
                 end,
 
-            case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
+            CIndex = case Params#req_params.upload_part_num of
+                         <<>> -> 0;
+                         PartNum ->
+                             list_to_integer(binary_to_list(PartNum))
+                     end,
+
+            case leo_gateway_rpc_handler:put(Key, Bin1, Size1, CIndex) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
                                                         {?HTTP_HEAD_BIN_ETAG4AWS,
