@@ -36,10 +36,7 @@
 %% HTTP-RELATED
 %%
 -define(SERVER_HEADER,   {"Server","LeoFS"}).
--define(QUERY_PREFIX,    "prefix").
--define(QUERY_DELIMITER, "delimiter").
--define(QUERY_MAX_KEYS,  "max-keys").
--define(QUERY_ACL,       "acl").
+-define(STR_NEWLINE,     "\n").
 -define(STR_SLASH,       "/").
 -define(BIN_SLASH,       <<"/">>).
 -define(BIN_EMPTY,       <<>>).
@@ -48,16 +45,17 @@
 
 %% HTTP HEADER
 -define(HTTP_HEAD_ATOM_AGE,                'Age').
+-define(HTTP_HEAD_ATOM_AUTHORIZATION,      'Authorization').
 -define(HTTP_HEAD_ATOM_CACHE_CTRL,         'Cache-Control').
 -define(HTTP_HEAD_ATOM_CONTENT_LENGTH,     'Content-Length').
 -define(HTTP_HEAD_ATOM_CONTENT_MD5,        'Content-Md5').
 -define(HTTP_HEAD_ATOM_CONTENT_TYPE,       'Content-Type').
 -define(HTTP_HEAD_ATOM_DATE,               'Date').
 -define(HTTP_HEAD_ATOM_ETAG,               'Etag').
+-define(HTTP_HEAD_ATOM_IF_MODIFIED_SINCE,  'If-Modified-Since').
 -define(HTTP_HEAD_ATOM_LAST_MODIFIED,      'Last-Modified').
 -define(HTTP_HEAD_ATOM_RANGE,              'Range').
 
--define(HTTP_HEAD_BIN_ACL,                          <<"acl">>).
 -define(HTTP_HEAD_BIN_CACHE_CTRL,                   <<"Cache-Control">>).
 -define(HTTP_HEAD_BIN_CONTENT_TYPE,                 <<"Content-Type">>).
 -define(HTTP_HEAD_BIN_ETAG4AWS,                     <<"ETag">>).
@@ -65,16 +63,26 @@
 -define(HTTP_HEAD_BIN_PREFIX,                       <<"prefix">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE,         <<"X-Amz-Metadata-Directive">>).
 -define(HTTP_HEAD_BIN_X_AMZ_COPY_SOURCE,            <<"X-Amz-Copy-Source">>).
+-define(HTTP_HEAD_BIN_X_AMZ_ID_2,                   <<"X-Amz-Id-2">>).
+-define(HTTP_HEAD_BIN_X_AMZ_REQ_ID,                 <<"X-Amz-Request-Id">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_BIN_X_FROM_CACHE,                 <<"X-From-Cache">>).
 
--define(HTTP_ST_OK,           200).
--define(HTTP_ST_NO_CONTENT,   204).
--define(HTTP_ST_NOT_MODIFIED, 304).
--define(HTTP_ST_BAD_REQ,      400).
--define(HTTP_ST_FORBIDDEN,    403).
--define(HTTP_ST_NOT_FOUND,    404).
+-define(HTTP_CTYPE_OCTET_STREAM, <<"application/octet-stream">>).
+-define(HTTP_CTYPE_XML,          <<"application/xml">>).
+
+-define(HTTP_QS_BIN_ACL,         <<"acl">>).
+-define(HTTP_QS_BIN_UPLOADS,     <<"uploads">>).
+-define(HTTP_QS_BIN_UPLOAD_ID,   <<"uploadId">>).
+-define(HTTP_QS_BIN_PART_NUMBER, <<"partNumber">>).
+
+-define(HTTP_ST_OK,                  200).
+-define(HTTP_ST_NO_CONTENT,          204).
+-define(HTTP_ST_NOT_MODIFIED,        304).
+-define(HTTP_ST_BAD_REQ,             400).
+-define(HTTP_ST_FORBIDDEN,           403).
+-define(HTTP_ST_NOT_FOUND,           404).
 -define(HTTP_ST_INTERNAL_ERROR,      500).
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).
@@ -82,67 +90,95 @@
 %%
 %% S3 RESPONSE XML
 %%
--define(XML_BUCKET_LIST, lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-                                       "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">",
-                                       "<Owner><ID>LeoFS</ID><DisplayName>webfile</DisplayName></Owner><Buckets>",
-                                       "~s",
-                                       "</Buckets></ListAllMyBucketsResult>"])).
+-define(XML_BUCKET_LIST,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">",
+                      "<Owner>",
+                      "  <ID>LeoFS</ID>",
+                      "  <DisplayName>webfile</DisplayName>",
+                      "</Owner>",
+                      "<Buckets>",
+                      "~s",
+                      "</Buckets></ListAllMyBucketsResult>"])).
 
--define(XML_OBJ_LIST, lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-                                    "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
-                                    "<Name>standalone</Name>",
-                                    "<Prefix>~s</Prefix>",
-                                    "<Marker></Marker>",
-                                    "<MaxKeys>1000</MaxKeys>",
-                                    "<Delimiter>/</Delimiter>",
-                                    "<IsTruncated>false</IsTruncated>",
-                                    "~s",
-                                    "</ListBucketResult>"])).
+-define(XML_OBJ_LIST,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "  <Name>standalone</Name>",
+                      "  <Prefix>~s</Prefix>",
+                      "  <Marker></Marker>",
+                      "  <MaxKeys>1000</MaxKeys>",
+                      "  <Delimiter>/</Delimiter>",
+                      "  <IsTruncated>false</IsTruncated>",
+                      "~s",
+                      "</ListBucketResult>"])).
 
--define(XML_COPY_OBJ_RESULT, lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-                                           "<CopyObjectResult>",
-                                           "<LastModified>~s</LastModified>",
-                                           "<ETag>\"~s\"</ETag>",
-                                           "</CopyObjectResult>"])).
+-define(XML_COPY_OBJ_RESULT,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<CopyObjectResult>",
+                      "  <LastModified>~s</LastModified>",
+                      "  <ETag>\"~s\"</ETag>",
+                      "</CopyObjectResult>"])).
+
+-define(XML_UPLOAD_INITIATION,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<InitiateMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+                      "  <Bucket>~s</Bucket>"
+                      "  <Key>~s</Key>"
+                      "  <UploadId>~s</UploadId>"
+                      "</InitiateMultipartUploadResult>"])).
+
+-define(XML_UPLOAD_COMPLETION,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<CompleteMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "  <Location>http://Example-Bucket.s3.amazonaws.com/Example-Object</Location>",
+                      "  <Bucket>~s</Bucket>",
+                      "  <Key>~s</Key>",
+                      "  <ETag>\"~s\"</ETag>",
+                      "</CompleteMultipartUploadResult>"])).
 
 
 -record(http_options, {
-          port = 0                   :: integer(),
-          ssl_port = 0               :: integer(),
-          ssl_certfile = []          :: string(),
-          ssl_keyfile = []           :: string(),
-          num_of_acceptors = 0       :: integer(),
-          s3_api = true              :: boolean(),
-          cache_plugin = []          :: string(),
-          cache_expire = 0           :: integer(),
-          cache_max_content_len = 0  :: integer(),
-          cachable_content_type = [] :: list(),
-          cachable_path_pattern = [] :: list(),
-          acceptable_max_obj_len = 0 :: integer(),
-          chunked_obj_len = 0        :: integer(),
-          threshold_obj_len = 0      :: integer()
+          port = 0                   :: integer(), %% http port number
+          ssl_port = 0               :: integer(), %% ssl port number
+          ssl_certfile = []          :: string(),  %% ssl cert file name
+          ssl_keyfile = []           :: string(),  %% ssk key file name
+          num_of_acceptors = 0       :: integer(), %% # of acceptors (http server's workers)
+          s3_api = true              :: boolean(), %% use s3-api?
+          cache_plugin = []          :: string(),  %% use name of cache plugin
+          cache_expire = 0           :: integer(), %% cache expire time (sec)
+          cache_max_content_len = 0  :: integer(), %% cache max content length (byte)
+          cachable_content_type = [] :: list(),    %% cachable content types
+          cachable_path_pattern = [] :: list(),    %% cachable path patterns
+          acceptable_max_obj_len = 0 :: integer(), %% acceptable max object length (byte)
+          chunked_obj_len = 0        :: integer(), %% chunked object length for large object (byte)
+          threshold_obj_len = 0      :: integer()  %% threshold object length for large object (byte)
          }).
 
 -record(req_params, {
-          access_key_id = []         :: string(),
-          token_length = 0           :: integer(),
-          min_layers = 0             :: integer(),
-          max_layers = 0             :: integer(),
-          is_dir = false             :: boolean(),
-          qs_prefix = []             :: string(),
-          has_inner_cache = false    :: boolean(),
-          range_header               :: string(),
-          is_cached = false          :: boolean(),
-          acceptable_max_obj_len = 0 :: integer(),
-          chunked_obj_len        = 0 :: integer(),
-          threshold_obj_len      = 0 :: integer()
+          path = <<>>                :: binary(),  %% path (uri)
+          access_key_id = []         :: string(),  %% s3's access-key-id
+          token_length = 0           :: integer(), %% length of tokened path
+          min_layers = 0             :: integer(), %% acceptable # of min layers
+          max_layers = 0             :: integer(), %% acceptable # of max layers
+          qs_prefix = []             :: string(),  %% query string
+          range_header               :: string(),  %% range header
+          has_inner_cache = false    :: boolean(), %% has inner-cache?
+          is_cached = false          :: boolean(), %% is cached?
+          is_dir = false             :: boolean(), %% is directory?
+          is_upload = false          :: boolean(), %% is upload operation? (for multipart upload)
+          upload_id = <<>>           :: binary(),  %% upload id for multipart upload
+          upload_part_num = <<>>     :: binary(),  %% upload part number for multipart upload
+          acceptable_max_obj_len = 0 :: integer(), %% acceptable max object length for large-object (byte)
+          chunked_obj_len        = 0 :: integer(), %% chunked object length for large-object (byte)
+          threshold_obj_len      = 0 :: integer()  %% threshold object length for large-object (byte)
          }).
 
 -record(cache, {
           etag         = 0    :: integer(), %% actual value is checksum
           mtime        = 0    :: integer(), %% gregorian_seconds
           content_type = []   :: string(),  %% from a Content-Type header
-          body         = <<>> :: binary()
+          body         = <<>> :: binary()   %% body (value)
          }).
 
 

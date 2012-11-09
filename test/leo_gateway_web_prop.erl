@@ -30,10 +30,11 @@
 -export([test/0, test/1]).
 -export([prop_http_req/0]).
 
--include_lib("leo_object_storage/include/leo_object_storage.hrl").
--include_lib("proper/include/proper.hrl").
 -include("leo_gateway.hrl").
 -include("leo_s3_http.hrl").
+-include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("proper/include/proper.hrl").
+
 
 -define(TARGET_HOST, "localhost").
 -define(TARGET_PORT, "8080").
@@ -44,7 +45,7 @@ method() -> union(['head', 'get', 'put', 'delete']).
 result() -> union(['ok', 'not_found', 'timeout', 'error']).
 digit_char() -> integer(16#30, 16#39).
 alpha_char() -> integer(16#61, 16#7a).
-uri_char() -> union([digit_char(), alpha_char()]). 
+uri_char() -> union([digit_char(), alpha_char()]).
 bucket() -> list(uri_char()).
 path()   -> list(uri_char()).
 
@@ -54,7 +55,7 @@ test(N) ->
     proper:quickcheck(?MODULE:prop_http_req(), N).
 
 prop_http_req() ->
-    ?FORALL({Method, Bucket, Path, Body, Result}, 
+    ?FORALL({Method, Bucket, Path, Body, Result},
             {method(), bucket(), path(), binary(), result()},
             begin
                 Url = url_gen(Bucket, Path),
@@ -63,7 +64,9 @@ prop_http_req() ->
                 meck_begin(Method, Bucket, Path, RawResp),
                 io:format(user, "method:~p url:~s resp:~p~n", [Method, Url, RawResp]),
                 try
-                    collect(Method, http_req(Method, Url, Headers, Body, RawResp))
+                    Res = collect(Method, http_req(Method, Url, Headers, Body, RawResp)),
+                    io:format("~p~n", [Res]),
+                    Res
                 catch
                     throw:Reason ->
                         io:format(user, "error:~p~n",[Reason]),
@@ -71,7 +74,7 @@ prop_http_req() ->
                 after
                     meck_end(Bucket, Path)
                 end
-            end). 
+            end).
 
 meck_begin(Method, Bucket, Path, RawResp) ->
     meck:new(leo_s3_auth),
@@ -81,7 +84,8 @@ meck_begin_1(Method, Bucket, Path, RawResp) when length(Bucket) > 0 andalso leng
     meck:new(leo_gateway_rpc_handler),
     meck:expect(leo_gateway_rpc_handler, Method, 1, RawResp),
     meck:expect(leo_gateway_rpc_handler, Method, 2, RawResp),
-    meck:expect(leo_gateway_rpc_handler, Method, 3, RawResp);
+    meck:expect(leo_gateway_rpc_handler, Method, 3, RawResp),
+    meck:expect(leo_gateway_rpc_handler, Method, 4, RawResp);
 meck_begin_1('put', _Bucket, _Path, RawResp) ->
     meck:new(leo_s3_http_bucket),
     meck:expect(leo_s3_http_bucket, put_bucket, 2, RawResp);
@@ -153,18 +157,18 @@ http_check_resp(SC, RespHeaders, RespBody, Method, _) ->
 %% @doc inner functions
 url_gen(Bucket, Path) when length(Bucket) > 0 andalso length(Path) > 0 ->
     lists:append(["http://",
-                  ?TARGET_HOST,":", 
+                  ?TARGET_HOST,":",
                   ?TARGET_PORT,"/",
                   Bucket,"/",
                   Path]);
 url_gen(Bucket, _Path) when length(Bucket) > 0 ->
     lists:append(["http://",
-                  ?TARGET_HOST,":", 
+                  ?TARGET_HOST,":",
                   ?TARGET_PORT,"/",
                   Bucket,"/"]);
 url_gen(_Bucket, _Path) ->
     lists:append(["http://",
-                  ?TARGET_HOST,":", 
+                  ?TARGET_HOST,":",
                   ?TARGET_PORT,"/default/"]).
 
 headers_gen() ->

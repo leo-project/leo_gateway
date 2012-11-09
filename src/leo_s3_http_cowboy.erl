@@ -38,8 +38,10 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -undef(SERVER_HEADER).
 -define(SERVER_HEADER, {'Server',<<"LeoFS">>}).
@@ -117,18 +119,14 @@ init({_Any, http}, Req, Opts) ->
     {ok, Req, Opts}.
 
 
-%% @doc
+%% @doc Handle a request
+%% @callback
 handle(Req, State) ->
     Key = gen_key(Req),
     handle(Req, State, Key).
 
 handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
              AcceptableObjLen, ChunkedObjLen, ThresholdObjLen] = State, Path) ->
-    HTTPMethod = case cowboy_http_req:method(Req) of
-                     {?HTTP_POST, _} -> ?HTTP_PUT;
-                     {Other, _}      -> Other
-                 end,
-
     {Prefix, IsDir, Path2, Req2} =
         case cowboy_http_req:qs_val(?HTTP_HEAD_BIN_PREFIX, Req) of
             {undefined, Req1} ->
@@ -142,46 +140,171 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
                           end,
                 {BinParam, true, NewPath, Req1}
         end,
+
     TokenLen = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
+    {HTTPMethod0, _} = cowboy_http_req:method(Req),
 
-    case cowboy_http_req:qs_val(?HTTP_HEAD_BIN_ACL, Req2) of
+    case cowboy_http_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
-            case catch auth(UseS3API, Req2, HTTPMethod, Path2, TokenLen) of
-                {error, _Cause} ->
-                    {ok, Req3} = cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req2),
-                    {ok, Req3, State};
-                {ok, AccessKeyId} ->
-                    {RangeHeader, _} = cowboy_http_req:header(?HTTP_HEAD_ATOM_RANGE, Req2),
+            ReqParams = request_params(
+                          Req2, #req_params{path                   = Path2,
+                                            token_length           = TokenLen,
+                                            min_layers             = NumOfMinLayers,
+                                            max_layers             = NumOfMaxLayers,
+                                            qs_prefix              = Prefix,
+                                            has_inner_cache        = HasInnerCache,
+                                            is_cached              = true,
+                                            is_dir                 = IsDir,
+                                            acceptable_max_obj_len = AcceptableObjLen,
+                                            chunked_obj_len        = ChunkedObjLen,
+                                            threshold_obj_len      = ThresholdObjLen}),
 
-                    case catch exec1(HTTPMethod, Req2, Path2,
-                                     #req_params{token_length           = TokenLen,
-                                                 access_key_id          = AccessKeyId,
-                                                 min_layers             = NumOfMinLayers,
-                                                 max_layers             = NumOfMaxLayers,
-                                                 has_inner_cache        = HasInnerCache,
-                                                 range_header           = RangeHeader,
-                                                 is_dir                 = IsDir,
-                                                 is_cached              = true,
-                                                 qs_prefix              = Prefix,
-                                                 acceptable_max_obj_len = AcceptableObjLen,
-                                                 chunked_obj_len        = ChunkedObjLen,
-                                                 threshold_obj_len      = ThresholdObjLen}) of
-                        {'EXIT', Reason} ->
-                            ?error("handle/3", "path:~p, cause:~p", [Path2, Reason]),
-                            {ok, Req3} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req2),
-                            {ok, Req3, State};
-                        {ok, Req3} ->
-                            Req4 = cowboy_http_req:compact(Req3),
-                            {ok, Req4, State}
-                    end;
-                {'EXIT', Reason} ->
-                    ?error("handle/3", "path:~p, cause:~p", [Path2, Reason]),
-                    {ok, Req3} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req2),
-                    {ok, Req3, State}
-            end;
+            AuthRet = auth1(UseS3API, Req2, HTTPMethod0, Path2, TokenLen),
+            handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
             {ok, Req3} = cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req2),
             {ok, Req3, State}
+    end.
+
+
+%% @doc Handle a request (sub)
+%% @private
+handle1({error, _Cause}, Req0,_,_,_,State) ->
+    {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0),
+    {ok, Req1, State};
+
+%% For Multipart Upload - Initiation
+%%
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
+                                                            is_upload = true},_State) ->
+    %% Insert a metadata into the storage-cluster
+    NowBin = list_to_binary(integer_to_list(leo_date:now())),
+    UploadId    = leo_hex:binary_to_hex(erlang:md5(<< Path0/binary, NowBin/binary >>)),
+    UploadIdBin = list_to_binary(UploadId),
+
+    case leo_gateway_rpc_handler:put(<<Path0/binary, ?STR_NEWLINE, UploadIdBin/binary>> , <<>>, 0) of
+        {ok, _ETag} ->
+            %% Response xml to a client
+            [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+            XML = gen_upload_initiate_xml(Bucket, Path1, UploadId),
+
+            {ok, Req1} = cowboy_http_req:set_resp_body(XML, Req0),
+            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1);
+        {error, timeout} ->
+            cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
+        {error, Cause} ->
+            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+    end;
+
+%% For Multipart Upload - Upload a part of an object
+%%
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
+        #req_params{path = Path0,
+                    is_upload = false,
+                    upload_id = UploadId,
+                    upload_part_num = PartNum} = Params, _State) when UploadId /= <<>>,
+                                                                      PartNum  /= <<>> ->
+    Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>, %% for confirmation
+    Key1 = << Path0/binary, ?STR_NEWLINE, PartNum/binary  >>, %% for put a part of an object
+
+    case leo_gateway_rpc_handler:head(Key0) of
+        {ok, _Metadata} ->
+            put1(?BIN_EMPTY, Req0, Key1, Params);
+        {error, not_found} ->
+            cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req0);
+        {error, timeout} ->
+            cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+    end;
+
+%% For Multipart Upload - Completion
+%%
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
+        #req_params{path = Path0,
+                    is_upload = false,
+                    upload_id = UploadId,
+                    upload_part_num = PartNum},_State) when UploadId /= <<>>,
+                                                            PartNum  == <<>> ->
+    case cowboy_http_req:has_body(Req0) of
+        {true, _} ->
+            Path4Conf = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,
+
+            case leo_gateway_rpc_handler:head(Path4Conf) of
+                {ok, _} ->
+                    _ = leo_gateway_rpc_handler:delete(Path4Conf),
+
+                    {ok, XMLBin, Req1} = cowboy_http_req:body(Req0),
+                    {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
+                    TotalUploadedObjs = length(Content),
+
+                    case handle2(TotalUploadedObjs, Path0, []) of
+                        {ok, {Len, ETag}} ->
+                            case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
+                                {ok, _} ->
+                                    [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+                                    ETagStr = leo_hex:integer_to_hex(ETag,32),
+                                    XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
+                                    {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req1),
+
+                                    cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
+                                {error, Cause} ->
+                                    ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                                    cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                            end;
+                        {error, Cause} ->
+                            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                    end;
+                _ ->
+                    cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
+            end;
+        {false, _} ->
+            cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
+    end;
+
+%% For Regular cases
+%%
+handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
+    HTTPMethod1 = case HTTPMethod0 of
+                      ?HTTP_POST -> ?HTTP_PUT;
+                      Other      -> Other
+                  end,
+    case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
+        {'EXIT', Cause} ->
+            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0);
+        {ok, Req1} ->
+            Req2 = cowboy_http_req:compact(Req1),
+            {ok, Req2, State}
+    end.
+
+
+%% @doc Retrieve Metadatas for uploaded objects (Multipart)
+%% @private
+-spec(handle2(integer(), binary(), list(tuple())) ->
+             {ok, tuple()} | {error, any()}).
+handle2(0, _, Acc) ->
+    Metas = lists:reverse(Acc),
+    {Len, ETag0} = lists:foldl(
+                     fun({_, {DSize, Checksum}}, {Sum, ETagBin0}) ->
+                             ETagBin1 = list_to_binary(leo_hex:integer_to_hex(Checksum, 32)),
+                             {Sum + DSize, <<ETagBin0/binary, ETagBin1/binary>>}
+                     end, {0, <<>>}, lists:sort(Metas)),
+    ETag1 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(erlang:md5(ETag0))),
+    {ok, {Len, ETag1}};
+
+handle2(PartNum, Path, Acc) ->
+    PartNumBin = list_to_binary(integer_to_list(PartNum)),
+    Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary  >>,
+
+    case leo_gateway_rpc_handler:head(Key) of
+        {ok, #metadata{dsize = Len,
+                       checksum = Checksum}} ->
+            handle2(PartNum - 1, Path, [{PartNum, {Len, Checksum}} | Acc]);
+        Error ->
+            Error
     end.
 
 
@@ -237,10 +360,10 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      {?HTTP_HEAD_ATOM_CONTENT_TYPE,  ContentType},
                      {?HTTP_HEAD_ATOM_DATE,          Date},
                      {?HTTP_HEAD_ATOM_AGE,           integer_to_list(Diff)},
-                     {?HTTP_HEAD_BIN_ETAG4AWS,       leo_hex:integer_to_hex(Checksum, 32)},
-                     {?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append("max-age=",integer_to_list(Expire))}],
-
-            IMSSec = case cowboy_http_req:parse_header('If-Modified-Since', Req) of
+                     {?HTTP_HEAD_BIN_ETAG4AWS,       lists:append(["\"",leo_hex:integer_to_hex(Checksum, 32),"\""])},
+                     {?HTTP_HEAD_ATOM_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])}
+                    ],
+            IMSSec = case cowboy_http_req:parse_header(?HTTP_HEAD_ATOM_IF_MODIFIED_SINCE, Req) of
                          {undefined, _} ->
                              0;
                          {IMSDateTime, _} ->
@@ -273,7 +396,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                     Now = leo_date:now(),
                     ContentType = case lists:keyfind(?HTTP_HEAD_BIN_CONTENT_TYPE, 1, Headers) of
                                       false ->
-                                          <<"application/octet-stream">>;
+                                          ?HTTP_CTYPE_OCTET_STREAM;
                                       {_, Val} ->
                                           Val
                                   end,
@@ -303,6 +426,30 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
 %%--------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------
+%% @doc Retrieve header values from a request
+%%      Set request params
+%% @private
+request_params(Req, Params) ->
+    IsUpload = case cowboy_http_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req) of
+                   {undefined, _} -> false;
+                   _ -> true
+               end,
+    UploadId = case cowboy_http_req:qs_val(?HTTP_QS_BIN_UPLOAD_ID, Req) of
+                   {undefined, _} -> <<>>;
+                   {Val0,      _} -> Val0
+               end,
+    PartNum  = case cowboy_http_req:qs_val(?HTTP_QS_BIN_PART_NUMBER, Req) of
+                   {undefined, _} -> <<>>;
+                   {Val1,      _} -> Val1
+               end,
+    Range    = element(1, cowboy_http_req:header(?HTTP_HEAD_ATOM_RANGE, Req)),
+
+    Params#req_params{is_upload       = IsUpload,
+                      upload_id       = UploadId,
+                      upload_part_num = PartNum,
+                      range_header    = Range}.
+
+
 %% @doc Judge cachable request
 %% @private
 is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Headers, Req) ->
@@ -344,7 +491,8 @@ is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Header
 
 %% Compile Options:
 %%
--compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2, get_header/2,auth/5]}).
+-compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2,
+                   get_header/2, auth1/5, auth2/4, http_verb/1]}).
 
 %% @doc Create a key
 %% @private
@@ -381,7 +529,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
         {ok, Meta, XML} when is_list(Meta) == true ->
             {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
             cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                                {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
+                                                {?HTTP_HEAD_ATOM_CONTENT_TYPE, ?HTTP_CTYPE_XML},
                                                 {?HTTP_HEAD_ATOM_DATE, cowboy_clock:rfc1123()}
                                                ], Req2);
         {error, not_found} ->
@@ -449,7 +597,7 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% @private
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                                        range_header = RangeHeader}) when RangeHeader /= undefined ->
-    %% TODO - Will support this function with v0.12.1
+    %% TODO - Will support this function with v0.12.4
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
@@ -498,7 +646,8 @@ exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
 
 %% @doc GET operation on Object.
 %% @private
-exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInnerCache}) ->
+exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
+                                       has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
@@ -518,7 +667,9 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
             cowboy_http_req:reply(?HTTP_ST_OK,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                                           "\""])},
                                    {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
 
@@ -534,7 +685,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
                 {ok, Req3} ->
                     {ok, Req3};
                 {error, Cause} ->
-                    ?error("exec1/4", "path:~p, cause:~p", [binary_to_list(Key), Cause]),
+                    ?error("exec1/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
                     cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
             end;
         {error, not_found} ->
@@ -551,12 +702,15 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = HasInne
 exec1(?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
-            TimeStamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
+            Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {?HTTP_HEAD_ATOM_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                         {?HTTP_HEAD_ATOM_CONTENT_TYPE, leo_mime:guess_mime(Key)},
+                         {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                 leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                                 "\""
+                                                                ])},
                          {?HTTP_HEAD_ATOM_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
-                         {?HTTP_HEAD_ATOM_LAST_MODIFIED,  TimeStamp}],
+                         {?HTTP_HEAD_ATOM_LAST_MODIFIED,  Timestamp}],
             cowboy_http_req:reply(?HTTP_ST_OK, Headers, Req);
         {ok, #metadata{del = 1}} ->
             cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
@@ -602,7 +756,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(?HTTP_ST_OK,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Cached#cache.content_type},
-                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Cached#cache.etag, 32)},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                           leo_hex:integer_to_hex(Cached#cache.etag, 32),
+                                                                           "\""])},
                                    {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
                                    {?HTTP_HEAD_BIN_X_FROM_CACHE,  <<"True">>}],
                                   Req2);
@@ -619,7 +775,9 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             cowboy_http_req:reply(?HTTP_ST_OK,
                                   [?SERVER_HEADER,
                                    {?HTTP_HEAD_ATOM_CONTENT_TYPE,  Mime},
-                                   {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(Meta#metadata.checksum, 32)},
+                                   {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",
+                                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                                           "\""])},
                                    {?HTTP_HEAD_ATOM_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
                                   Req2);
         {error, not_found} ->
@@ -639,7 +797,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
     case (Size0 >= Params#req_params.threshold_obj_len) of
         true when Size0 >= Params#req_params.acceptable_max_obj_len ->
             cowboy_http_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req);
-        true ->
+        true when Params#req_params.is_upload == false ->
             put_large_object(Req, Key, Size0, Params);
         false ->
             {Size1, Bin1, Req1} =
@@ -651,10 +809,20 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
                         {0, ?BIN_EMPTY, Req}
                 end,
 
-            case leo_gateway_rpc_handler:put(Key, Bin1, Size1) of
+            CIndex = case Params#req_params.upload_part_num of
+                         <<>> -> 0;
+                         PartNum ->
+                             list_to_integer(binary_to_list(PartNum))
+                     end,
+
+            case leo_gateway_rpc_handler:put(Key, Bin1, Size1, CIndex) of
                 {ok, ETag} ->
                     cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                                        {?HTTP_HEAD_BIN_ETAG4AWS, leo_hex:integer_to_hex(ETag, 32)}], Req1);
+                                                        {?HTTP_HEAD_BIN_ETAG4AWS,
+                                                         lists:append(["\"",
+                                                                       leo_hex:integer_to_hex(ETag, 32),
+                                                                       "\""])}
+                                                       ], Req1);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1);
                 {error, timeout} ->
@@ -694,7 +862,7 @@ put2(Directive, Req, Key, Meta, Bin) ->
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         {ok, _ETag} when Directive == ?HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_COPY ->
-            resp_copyobj_xml(Req, Meta);
+            resp_copy_obj_xml(Req, Meta);
         {ok, _ETag} when Directive == ?HTTP_HEAD_BIN_X_AMZ_META_DIRECTIVE_REPLACE ->
             put3(Req, Key, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -709,7 +877,7 @@ put2(Directive, Req, Key, Meta, Bin) ->
 put3(Req, Key, Meta) ->
     KeyList = binary_to_list(Key),
     case KeyList == Meta#metadata.key of
-        true  -> resp_copyobj_xml(Req, Meta);
+        true  -> resp_copy_obj_xml(Req, Meta);
         false -> put4(Req, Meta)
     end.
 
@@ -717,9 +885,9 @@ put4(Req, Meta) ->
     KeyBin = list_to_binary(Meta#metadata.key),
     case leo_gateway_rpc_handler:delete(KeyBin) of
         ok ->
-            resp_copyobj_xml(Req, Meta);
+            resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
-            resp_copyobj_xml(Req, Meta);
+            resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
         {error, timeout} ->
@@ -784,52 +952,109 @@ get_header(Req, Key) ->
 
 %% @doc
 %% @private
-resp_copyobj_xml(Req, Meta) ->
+resp_copy_obj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
                         [leo_http:web_date(Meta#metadata.timestamp),
                          leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
     {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req),
     cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                        {?HTTP_HEAD_ATOM_CONTENT_TYPE, "application/xml"},
+                                        {?HTTP_HEAD_ATOM_CONTENT_TYPE, ?HTTP_CTYPE_XML},
                                         {?HTTP_HEAD_ATOM_DATE,         cowboy_clock:rfc1123()}
                                        ], Req2).
 
 
 %% @doc Authentication
 %% @private
-auth(false,_Req,_HTTPMethod,_Path,_TokenLen) ->
+auth1(false,_Req,_HTTPMethod,_Path,_TokenLen) ->
     {ok, []};
-auth(true,  Req, HTTPMethod, Path, TokenLen) when (TokenLen =< 1) orelse
-                                                  (TokenLen > 1 andalso
-                                                                  (HTTPMethod == ?HTTP_PUT orelse
-                                                                   HTTPMethod == ?HTTP_DELETE)) ->
+auth1(true,  Req, HTTPMethod, Path, TokenLen) when TokenLen =< 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(true,  Req, ?HTTP_POST = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(true,  Req, ?HTTP_PUT = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(true,  Req, ?HTTP_DELETE = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+    auth2(Req, HTTPMethod, Path, TokenLen);
+auth1(_,_,_,_,_) ->
+    {ok, []}.
+
+auth2(Req, HTTPMethod, Path, TokenLen) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
-    case cowboy_http_req:header('Authorization', Req) of
+    case cowboy_http_req:header(?HTTP_HEAD_ATOM_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
-        {BinAuthorization, _} ->
+        {AuthorizationBin, _} ->
             Bucket = case (TokenLen >= 1) of
-                         true  -> hd(binary:split(Path, [?BIN_SLASH], [global]));
+                         true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
                          false -> ?BIN_EMPTY
                      end,
 
-            IsCreateBucketOp    = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
-            {BinRawUri,      _} = cowboy_http_req:raw_path(Req),
-            {BinQueryString, _} = cowboy_http_req:raw_qs(Req),
-            {Headers,        _} = cowboy_http_req:headers(Req),
+            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
+            {RawUri,      _} = cowboy_http_req:raw_path(Req),
+            {QueryString, _} = cowboy_http_req:raw_qs(Req),
+            {Headers,     _} = cowboy_http_req:headers(Req),
 
-            SignParams = #sign_params{http_verb    = atom_to_binary(HTTPMethod, latin1),
+            URI = case (byte_size(QueryString) > 0) of
+                      true when  QueryString == ?HTTP_QS_BIN_UPLOADS ->
+                          << RawUri/binary, "?", QueryString/binary >>;
+                      true ->
+                          case (nomatch /= binary:match(QueryString, ?HTTP_QS_BIN_UPLOAD_ID)) of
+                              true  -> << RawUri/binary, "?", QueryString/binary >>;
+                              false -> RawUri
+                          end;
+                      _ ->
+                          RawUri
+                  end,
+
+            SignParams = #sign_params{http_verb    = http_verb(HTTPMethod),
                                       content_md5  = get_header(Req, ?HTTP_HEAD_ATOM_CONTENT_MD5),
                                       content_type = get_header(Req, ?HTTP_HEAD_ATOM_CONTENT_TYPE),
                                       date         = get_header(Req, ?HTTP_HEAD_ATOM_DATE),
                                       bucket       = Bucket,
-                                      uri          = BinRawUri,
-                                      query_str    = BinQueryString,
+                                      uri          = URI,
+                                      query_str    = QueryString,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
-            leo_s3_auth:authenticate(BinAuthorization, SignParams, IsCreateBucketOp)
-    end;
+            leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
+    end.
 
-auth(_,_,_,_,_) ->
-    {ok, []}.
+
+%% @doc Replace data-type from atom() to binary()
+%% @private
+-spec(http_verb(atom()) ->
+             binary()).
+http_verb(?HTTP_GET)    -> <<"GET">>;
+http_verb(?HTTP_POST)   -> <<"POST">>;
+http_verb(?HTTP_PUT)    -> <<"PUT">>;
+http_verb(?HTTP_DELETE) -> <<"DELETE">>;
+http_verb(?HTTP_HEAD)   -> <<"HEAD">>.
+
+
+%% @doc Generate an update-initiate xml
+%% @private
+-spec(gen_upload_initiate_xml(binary(), list(binary()), string()) ->
+             list()).
+gen_upload_initiate_xml(Bucket0, Path, UploadId) ->
+    Bucket1 = binary_to_list(Bucket0),
+    Key = gen_upload_key(Path),
+    io_lib:format(?XML_UPLOAD_INITIATION, [Bucket1, Key, UploadId]).
+
+
+%% @doc Generate an update-completion xml
+%% @private
+-spec(gen_upload_completion_xml(binary(), list(binary()), string()) ->
+             list()).
+gen_upload_completion_xml(Bucket0, Path, ETag) ->
+    Bucket1 = binary_to_list(Bucket0),
+    Key = gen_upload_key(Path),
+    io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket1, Key, ETag]).
+
+
+%% @doc Generate an upload-key
+%% @private
+gen_upload_key(Path) ->
+    Key = lists:foldl(fun(I, [])  -> binary_to_list(I);
+                         (I, Acc) -> Acc ++ "/" ++ binary_to_list(I)
+                      end, [], Path),
+    Key.
 

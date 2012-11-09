@@ -60,7 +60,8 @@ gen_tests(Arg) ->
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
                fun put_object_normal1_/1,
-               fun proper_/1]
+               fun proper_/1
+              ]
              ).
 
 -define(SSL_CERT_DATA,
@@ -216,7 +217,7 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
                                                 4, {ok,
-                                                    [{metadata, "localhost/a/b/pre/test.png",
+                                                    [{metadata, <<"localhost/a/b/pre/test.png">>,
                                                       0, 8, 0, 0,
                                                       0, 0, 0,
                                                       0, 0, 63511805822, 19740926, 0, 0}]}]),
@@ -283,7 +284,7 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head, 2,
-                                                {ok, {metadata, "a/b.png",
+                                                {ok, {metadata, <<"a/b.png">>,
                                                       0, 4, 16384, 0,
                                                       0, 0, 0,
                                                       0, 1, 63505750315, 19740926, 0, 0}}]),
@@ -296,6 +297,25 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                                                        ":8080/a/b.png"]), [{"connection", "close"}]}, [], []),
                 ?assertEqual(200, SC),
                 ?assertEqual("16384", proplists:get_value("content-length", Headers))
+            catch
+                throw:Reason ->
+                    throw(Reason)
+            after
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
+get_object_error_([_TermFun, _Node0, Node1]) ->
+    fun() ->
+            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get, 3, {error, foobar}]),
+
+            try
+                {ok, {SC, _Body}} = httpc:request(get, {lists:append(["http://",
+                                                                      ?TARGET_HOST,
+                                                                      ":8080/a/b.png"]), []}, [], [{full_result, false}]),
+                ?assertEqual(500, SC)
             catch
                 throw:Reason ->
                     throw(Reason)
@@ -322,25 +342,6 @@ get_object_notfound_([_TermFun, Node0, Node1]) ->
                     throw(Reason)
             after
                 ok = rpc:call(Node0, meck, unload, [leo_storage_handler_object]),
-                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
-            end,
-            ok
-    end.
-
-get_object_error_([_TermFun, _Node0, Node1]) ->
-    fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get, 3, {error, foobar}]),
-
-            try
-                {ok, {SC, _Body}} = httpc:request(get, {lists:append(["http://",
-                                                                      ?TARGET_HOST,
-                                                                      ":8080/a/b.png"]), []}, [], [{full_result, false}]),
-                ?assertEqual(500, SC)
-            catch
-                throw:Reason ->
-                    throw(Reason)
-            after
                 ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
             end,
             ok

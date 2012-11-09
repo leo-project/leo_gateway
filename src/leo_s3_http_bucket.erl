@@ -68,14 +68,10 @@ get_bucket_list(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix0) ->
                   none -> <<>>;
                   _    -> Prefix0
               end,
-    BucketStr = binary_to_list(Bucket),
-    PrefixStr = binary_to_list(Prefix1),
 
     {ok, #redundancies{nodes = Redundancies}} =
-        leo_redundant_manager_api:get_redundancies_by_key(get, BucketStr),
-
-    %% @TODO: replace dat-type from string to binary
-    Key =  lists:append([BucketStr,PrefixStr]),
+        leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
+    Key = << Bucket/binary, Prefix1/binary >>,
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
@@ -109,18 +105,14 @@ delete_bucket(AccessKeyId, Bucket0) ->
                   false -> Bucket0
               end,
 
-    case leo_redundant_manager_api:get_members() of
+    case leo_redundant_manager_api:get_members_by_status(?STATE_RUNNING) of
         {ok, Members} ->
-            Fun = fun(#member{node  = Node,
-                              state = ?STATE_RUNNING}, Acc) ->
-                          [Node|Acc];
-                     (_, Acc) ->
-                          Acc
-                  end,
-            Nodes = lists:foldl(Fun, [], Members),
+            Nodes = lists:map(fun(#member{node = Node}) ->
+                                      Node
+                              end, Members),
             spawn(fun() ->
                           _ = rpc:multicall(Nodes, leo_storage_handler_directory, delete_objects_in_parent_dir,
-                                              [binary_to_list(Bucket1)], ?DEF_REQ_TIMEOUT),
+                                            [Bucket1], ?DEF_REQ_TIMEOUT),
                           ok
                   end),
             leo_s3_bucket:delete(AccessKeyId, Bucket1);
@@ -140,18 +132,23 @@ head_bucket(AccessKeyId, Bucket) ->
 %% @doc Generate XML from matadata-list
 %% @private
 generate_xml(Key, Prefix, MetadataList) ->
-    DirLen = string:len(Key),
+    Len = byte_size(Key),
+    KeyStr    = binary_to_list(Key),
     PrefixStr = binary_to_list(Prefix),
+
     Fun = fun(#metadata{key       = EntryKey,
                         dsize     = Length,
                         timestamp = TS,
                         checksum  = CS,
                         del       = 0} , Acc) ->
-                  case string:equal(Key, EntryKey) of
+                  EntryKeyStr = binary_to_list(EntryKey),
+
+                  case string:equal(KeyStr, EntryKeyStr) of
                       true ->
                           Acc;
                       false ->
-                          Entry = string:sub_string(EntryKey, DirLen + 1),
+                          Entry = string:sub_string(EntryKeyStr, Len + 1),
+
                           case Length of
                               -1 ->
                                   %% directory.
