@@ -105,15 +105,11 @@ delete_bucket(AccessKeyId, Bucket0) ->
                   false -> Bucket0
               end,
 
-    case leo_redundant_manager_api:get_members() of
+    case leo_redundant_manager_api:get_members_by_status(?STATE_RUNNING) of
         {ok, Members} ->
-            Fun = fun(#member{node  = Node,
-                              state = ?STATE_RUNNING}, Acc) ->
-                          [Node|Acc];
-                     (_, Acc) ->
-                          Acc
-                  end,
-            Nodes = lists:foldl(Fun, [], Members),
+            Nodes = lists:map(fun(#member{node = Node}) ->
+                                      Node
+                              end, Members),
             spawn(fun() ->
                           _ = rpc:multicall(Nodes, leo_storage_handler_directory, delete_objects_in_parent_dir,
                                             [Bucket1], ?DEF_REQ_TIMEOUT),
