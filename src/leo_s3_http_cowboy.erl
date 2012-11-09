@@ -229,27 +229,36 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
                                                             PartNum  == <<>> ->
     case cowboy_http_req:has_body(Req0) of
         {true, _} ->
-            {ok, XMLBin, Req1} = cowboy_http_req:body(Req0),
-            {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
-            TotalUploadedObjs = length(Content),
+            Path4Conf = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,
 
-            case handle2(TotalUploadedObjs, Path0, []) of
-                {ok, {Len, ETag}} ->
-                    case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
-                        {ok, _} ->
-                            [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
-                            ETagStr = leo_hex:integer_to_hex(ETag,32),
-                            XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
-                            {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req1),
+            case leo_gateway_rpc_handler:head(Path4Conf) of
+                {ok, _} ->
+                    _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
-                            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
+                    {ok, XMLBin, Req1} = cowboy_http_req:body(Req0),
+                    {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
+                    TotalUploadedObjs = length(Content),
+
+                    case handle2(TotalUploadedObjs, Path0, []) of
+                        {ok, {Len, ETag}} ->
+                            case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
+                                {ok, _} ->
+                                    [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+                                    ETagStr = leo_hex:integer_to_hex(ETag,32),
+                                    XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
+                                    {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req1),
+
+                                    cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
+                                {error, Cause} ->
+                                    ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                                    cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                            end;
                         {error, Cause} ->
                             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
                             cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
                     end;
-                {error, Cause} ->
-                    ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                    cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                _ ->
+                    cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
             end;
         {false, _} ->
             cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
