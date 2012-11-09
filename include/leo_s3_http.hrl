@@ -36,6 +36,7 @@
 %% HTTP-RELATED
 %%
 -define(SERVER_HEADER,   {"Server","LeoFS"}).
+-define(STR_NEWLINE,     "\n").
 -define(STR_SLASH,       "/").
 -define(BIN_SLASH,       <<"/">>).
 -define(BIN_EMPTY,       <<>>).

@@ -41,6 +41,7 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -undef(SERVER_HEADER).
 -define(SERVER_HEADER, {'Server',<<"LeoFS">>}).
@@ -175,27 +176,25 @@ handle1({error, _Cause}, Req0,_,_,_,State) ->
 %% For Multipart Upload - Initiation
 %%
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
-                                                            is_upload = true}, State) ->
+                                                            is_upload = true},_State) ->
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
     UploadId    = leo_hex:binary_to_hex(erlang:md5(<< Path0/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
 
-    case leo_gateway_rpc_handler:put(<<Path0/binary, "\n", UploadIdBin/binary>> , <<>>, 0) of
+    case leo_gateway_rpc_handler:put(<<Path0/binary, ?STR_NEWLINE, UploadIdBin/binary>> , <<>>, 0) of
         {ok, _ETag} ->
             %% Response xml to a client
             [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
             XML = gen_upload_initiate_xml(Bucket, Path1, UploadId),
 
             {ok, Req1} = cowboy_http_req:set_resp_body(XML, Req0),
-            {ok, Req2} = cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1),
-            {ok, Req2, State};
+            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1);
         {error, timeout} ->
             cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
         {error, Cause} ->
             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-            {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
-            {ok, Req1, State}
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
     end;
 
 %% For Multipart Upload - Upload a part of an object
@@ -206,18 +205,18 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
                     upload_id = UploadId,
                     upload_part_num = PartNum} = Params, _State) when UploadId /= <<>>,
                                                                       PartNum  /= <<>> ->
-    Key0 = << Path0/binary, "\n", UploadId/binary >>, %% for confirmation
-    Key1 = << Path0/binary, "\n", PartNum/binary  >>, %% for put a part of an object
+    Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>, %% for confirmation
+    Key1 = << Path0/binary, ?STR_NEWLINE, PartNum/binary  >>, %% for put a part of an object
 
     case leo_gateway_rpc_handler:head(Key0) of
         {ok, _Metadata} ->
             put1(?BIN_EMPTY, Req0, Key1, Params);
         {error, not_found} ->
             cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req0);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0);
         {error, timeout} ->
-            cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0)
+            cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
     end;
 
 %% For Multipart Upload - Completion
@@ -228,57 +227,32 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
                     upload_id = UploadId,
                     upload_part_num = PartNum},_State) when UploadId /= <<>>,
                                                             PartNum  == <<>> ->
-    case leo_redundant_manager_api:get_members() of
-        {ok, Members} ->
-            Fun = fun(#member{node  = Node,
-                              state = ?STATE_RUNNING}, Acc) ->
-                          [Node|Acc];
-                     (_, Acc) ->
-                          Acc
-                  end,
-            Nodes = lists:foldl(Fun, [], Members),
+    case cowboy_http_req:has_body(Req0) of
+        {true, _} ->
+            {ok, XMLBin, Req1} = cowboy_http_req:body(Req0),
+            {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
+            TotalUploadedObjs = length(Content),
 
-            case rpc:multicall(Nodes, leo_storage_handler_object, find_uploaded_objects_by_key,
-                               [Path0], ?DEF_REQ_TIMEOUT) of
-                {ResL, _} ->
-                    Metadatas = lists:foldl(
-                                  fun({ok, List}, Acc0) ->
-                                          lists:foldl(fun(#metadata{cindex = 0}, Acc1) ->
-                                                              Acc1;
-                                                         (#metadata{cindex   = CIndex,
-                                                                    dsize    = DSize,
-                                                                    checksum = Checksum}, Acc1) ->
-                                                              case lists:keyfind(CIndex, 1, Acc1) of
-                                                                  false ->
-                                                                      [{CIndex, {DSize, Checksum}} | Acc1];
-                                                                  _ ->
-                                                                      Acc1
-                                                              end
-                                                      end, Acc0, List)
-                                  end, [], ResL),
+            case handle2(TotalUploadedObjs, Path0, []) of
+                {ok, {Len, ETag}} ->
+                    case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
+                        {ok, _} ->
+                            [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+                            ETagStr = leo_hex:integer_to_hex(ETag,32),
+                            XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
+                            {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req1),
 
-                    {Len, ETag0} = lists:foldl(fun({_, {DSize, Checksum}}, {Sum, ETagBin0}) ->
-                                                       ETagBin1 = list_to_binary(leo_hex:integer_to_hex(Checksum)),
-                                                       {Sum + DSize, <<ETagBin0/binary, ETagBin1/binary>>}
-                                               end, {0, <<>>}, lists:sort(Metadatas)),
-                    ETag1 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(erlang:md5(ETag0))),
-
-                    case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, length(Metadatas), ETag1) of
-                        {ok, _ETag} ->
-                            cowboy_http_req:reply(
-                              ?HTTP_ST_OK, [?SERVER_HEADER,
-                                            {?HTTP_HEAD_BIN_ETAG4AWS, lists:append(["\"",leo_hex:integer_to_hex(ETag1, 32),"\""])}
-                                           ], Req0);
+                            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
                         {error, Cause} ->
                             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+                            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
                     end;
-                _ ->
-                    cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+                {error, Cause} ->
+                    ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                    cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
             end;
-        {error, Cause} ->
-            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+        {false, _} ->
+            cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
     end;
 
 %% For Regular cases
@@ -291,11 +265,37 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
     case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Cause} ->
             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req1} = cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
-            {ok, Req1, State};
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0);
         {ok, Req1} ->
             Req2 = cowboy_http_req:compact(Req1),
             {ok, Req2, State}
+    end.
+
+
+%% @doc Retrieve Metadatas for uploaded objects (Multipart)
+%% @private
+-spec(handle2(integer(), binary(), list(tuple())) ->
+             {ok, tuple()} | {error, any()}).
+handle2(0, _, Acc) ->
+    Metas = lists:reverse(Acc),
+    {Len, ETag0} = lists:foldl(
+                     fun({_, {DSize, Checksum}}, {Sum, ETagBin0}) ->
+                             ETagBin1 = list_to_binary(leo_hex:integer_to_hex(Checksum, 32)),
+                             {Sum + DSize, <<ETagBin0/binary, ETagBin1/binary>>}
+                     end, {0, <<>>}, lists:sort(Metas)),
+    ETag1 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(erlang:md5(ETag0))),
+    {ok, {Len, ETag1}};
+
+handle2(PartNum, Path, Acc) ->
+    PartNumBin = list_to_binary(integer_to_list(PartNum)),
+    Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary  >>,
+
+    case leo_gateway_rpc_handler:head(Key) of
+        {ok, #metadata{dsize = Len,
+                       checksum = Checksum}} ->
+            handle2(PartNum - 1, Path, [{PartNum, {Len, Checksum}} | Acc]);
+        Error ->
+            Error
     end.
 
 
@@ -1027,8 +1027,25 @@ http_verb(?HTTP_HEAD)   -> <<"HEAD">>.
              list()).
 gen_upload_initiate_xml(Bucket0, Path, UploadId) ->
     Bucket1 = binary_to_list(Bucket0),
+    Key = gen_upload_key(Path),
+    io_lib:format(?XML_UPLOAD_INITIATION, [Bucket1, Key, UploadId]).
+
+
+%% @doc Generate an update-completion xml
+%% @private
+-spec(gen_upload_completion_xml(binary(), list(binary()), string()) ->
+             list()).
+gen_upload_completion_xml(Bucket0, Path, ETag) ->
+    Bucket1 = binary_to_list(Bucket0),
+    Key = gen_upload_key(Path),
+    io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket1, Key, ETag]).
+
+
+%% @doc Generate an upload-key
+%% @private
+gen_upload_key(Path) ->
     Key = lists:foldl(fun(I, [])  -> binary_to_list(I);
                          (I, Acc) -> Acc ++ "/" ++ binary_to_list(I)
                       end, [], Path),
-    io_lib:format(?XML_UPLOAD_INITIATION, [Bucket1, Key, UploadId]).
+    Key.
 
