@@ -78,12 +78,13 @@ handle_call({sync, ?STAT_INTERVAL_1M}) ->
     #stats{gets        = NumOfRead,
            hits        = HitCount,
            records     = NumOfObjects,
-           cached_size = TotalOfSize} = Stats,
+           cached_size = TotalOfSize0} = Stats,
+    TotalOfSize1 = erlang:round(TotalOfSize0 / (1024*1024)),
 
     catch snmp_generic:variable_set(?SNMP_CACHE_HIT_COUNT,  HitCount),
     catch snmp_generic:variable_set(?SNMP_CACHE_MISS_COUNT, NumOfRead - HitCount),
     catch snmp_generic:variable_set(?SNMP_CACHE_NUM_OF_OBJ, NumOfObjects),
-    catch snmp_generic:variable_set(?SNMP_CACHE_TOTAL_SIZE, TotalOfSize),
+    catch snmp_generic:variable_set(?SNMP_CACHE_TOTAL_SIZE, TotalOfSize1),
     ok;
 
 handle_call({sync, ?STAT_INTERVAL_5M}) ->
