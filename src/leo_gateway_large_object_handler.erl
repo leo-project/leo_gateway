@@ -42,6 +42,8 @@
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
+-define(DEF_TIMEOUT, 30000).
+
 -record(state, {num_of_chunks  :: integer(),
                 md5_context    :: binary(),
                 errors = []    :: list()
@@ -62,7 +64,7 @@ start_link() ->
 %%
 -spec(stop(pid()) -> ok).
 stop(Pid) ->
-    gen_server:call(Pid, stop).
+    gen_server:call(Pid, stop, ?DEF_TIMEOUT).
 
 
 %% @doc Insert a chunked object into the storage cluster
@@ -70,7 +72,7 @@ stop(Pid) ->
 -spec(put(pid(), binary(), integer(), integer(), binary()) ->
              ok | {error, any()}).
 put(Pid, Key, Index, Size, Bin) ->
-    gen_server:call(Pid, {put, Key, Index, Size, Bin}, infinity).
+    gen_server:call(Pid, {put, Key, Index, Size, Bin}, ?DEF_TIMEOUT).
 
 
 %% @doc Retrieve a chunked object from the storage cluster
@@ -78,7 +80,7 @@ put(Pid, Key, Index, Size, Bin) ->
 -spec(get(pid(), binary(), integer(), pid()) ->
              ok | {error, any()}).
 get(Pid, Key, TotalOfChunkedObjs, Req) ->
-    gen_server:call(Pid, {get, Key, TotalOfChunkedObjs, Req}, infinity).
+    gen_server:call(Pid, {get, Key, TotalOfChunkedObjs, Req}, ?DEF_TIMEOUT).
 
 
 %% @doc Make a rollback before all operations
@@ -86,7 +88,7 @@ get(Pid, Key, TotalOfChunkedObjs, Req) ->
 -spec(rollback(pid(), binary(), integer()) ->
              ok | {error, any()}).
 rollback(Pid, Key, TotalOfChunkedObjs) ->
-    gen_server:call(Pid, {rollback, Key, TotalOfChunkedObjs}).
+    gen_server:call(Pid, {rollback, Key, TotalOfChunkedObjs}, ?DEF_TIMEOUT).
 
 
 %% @doc Retrieve a result
@@ -94,7 +96,7 @@ rollback(Pid, Key, TotalOfChunkedObjs) ->
 -spec(result(pid()) ->
              ok | {error, any()}).
 result(Pid) ->
-    gen_server:call(Pid, result).
+    gen_server:call(Pid, result, ?DEF_TIMEOUT).
 
 
 %%====================================================================
