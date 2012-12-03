@@ -87,6 +87,11 @@
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).
 
+-define(CACHE_HTTP,  'http').
+-define(CACHE_INNER, 'inner').
+-type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
+
+
 %%
 %% S3 RESPONSE XML
 %%
@@ -139,20 +144,20 @@
 
 
 -record(http_options, {
-          port = 0                   :: integer(), %% http port number
-          ssl_port = 0               :: integer(), %% ssl port number
-          ssl_certfile = []          :: string(),  %% ssl cert file name
-          ssl_keyfile = []           :: string(),  %% ssk key file name
-          num_of_acceptors = 0       :: integer(), %% # of acceptors (http server's workers)
-          s3_api = true              :: boolean(), %% use s3-api?
-          cache_method               :: atom(),    %% cahce method: [http | inner]
-          cache_expire = 0           :: integer(), %% cache expire time (sec)
-          cache_max_content_len = 0  :: integer(), %% cache max content length (byte)
-          cachable_content_type = [] :: list(),    %% cachable content types
-          cachable_path_pattern = [] :: list(),    %% cachable path patterns
-          acceptable_max_obj_len = 0 :: integer(), %% acceptable max object length (byte)
-          chunked_obj_len = 0        :: integer(), %% chunked object length for large object (byte)
-          threshold_obj_len = 0      :: integer()  %% threshold object length for large object (byte)
+          port = 0                   :: integer(),      %% http port number
+          ssl_port = 0               :: integer(),      %% ssl port number
+          ssl_certfile = []          :: string(),       %% ssl cert file name
+          ssl_keyfile = []           :: string(),       %% ssk key file name
+          num_of_acceptors = 0       :: integer(),      %% # of acceptors (http server's workers)
+          s3_api = true              :: boolean(),      %% use s3-api?
+          cache_method               :: cache_method(), %% cahce method: [http | inner]
+          cache_expire = 0           :: integer(),      %% cache expire time (sec)
+          cache_max_content_len = 0  :: integer(),      %% cache max content length (byte)
+          cachable_content_type = [] :: list(),         %% cachable content types
+          cachable_path_pattern = [] :: list(),         %% cachable path patterns
+          acceptable_max_obj_len = 0 :: integer(),      %% acceptable max object length (byte)
+          chunked_obj_len = 0        :: integer(),      %% chunked object length for large object (byte)
+          threshold_obj_len = 0      :: integer()       %% threshold object length for large object (byte)
          }).
 
 -record(req_params, {
