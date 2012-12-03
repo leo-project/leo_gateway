@@ -82,7 +82,7 @@ get_options(HTTPServer, Options) ->
     SSLCertFile          = leo_misc:get_value('ssl_certfile',           Options, "./server_cert.pem"),
     SSLKeyFile           = leo_misc:get_value('ssl_keyfile',            Options, "./server_key.pem"),
     NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',       Options,   32),
-    CacheMethod          = leo_misc:get_value('cache_method',           Options, 'http'),
+    CacheMethod          = leo_misc:get_value('cache_method',           Options, ?CACHE_HTTP),
     CacheExpire          = leo_misc:get_value('cache_expire',           Options, 300),
     CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len',  Options, 1000000),
     CachableContentTypes = leo_misc:get_value('cachable_content_type',  Options, []),
