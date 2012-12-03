@@ -145,7 +145,7 @@
           ssl_keyfile = []           :: string(),  %% ssk key file name
           num_of_acceptors = 0       :: integer(), %% # of acceptors (http server's workers)
           s3_api = true              :: boolean(), %% use s3-api?
-          cache_plugin = []          :: string(),  %% use name of cache plugin
+          cache_method               :: atom(),    %% cahce method: [http | inner]
           cache_expire = 0           :: integer(), %% cache expire time (sec)
           cache_max_content_len = 0  :: integer(), %% cache max content length (byte)
           cachable_content_type = [] :: list(),    %% cachable content types

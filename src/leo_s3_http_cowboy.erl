@@ -67,7 +67,7 @@ start(#http_options{port                   = Port,
                     ssl_keyfile            = SSLKeyFile,
                     num_of_acceptors       = NumOfAcceptors,
                     s3_api                 = UseS3API,
-                    cache_plugin           = CachePlugIn,
+                    cache_method           = CacheMethod,
                     cache_expire           = CacheExpire,
                     cache_max_content_len  = CacheMaxContentLen,
                     cachable_content_type  = CachableContentTypes,
@@ -75,7 +75,7 @@ start(#http_options{port                   = Port,
                     acceptable_max_obj_len = AcceptableMaxObjLen,
                     chunked_obj_len        = ChunkedObjLen,
                     threshold_obj_len      = ThresholdObjLen}) ->
-    InternalCache = (CachePlugIn == []),
+    InternalCache = (CacheMethod == 'inner'),
     Dispatch      = [{'_', [{'_', ?MODULE,
                              [?env_layer_of_dirs(), InternalCache, UseS3API,
                               AcceptableMaxObjLen, ChunkedObjLen, ThresholdObjLen]}]}],
@@ -84,7 +84,7 @@ start(#http_options{port                   = Port,
                  %% Using inner-cache
                  true ->
                      [{dispatch, Dispatch}];
-                 %% Using cache-plugin
+                 %% Using http-cache
                  false ->
                      CacheCondition = #cache_condition{expire          = CacheExpire,
                                                        max_content_len = CacheMaxContentLen,
