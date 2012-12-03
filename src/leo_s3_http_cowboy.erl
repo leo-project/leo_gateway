@@ -154,7 +154,6 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
                                             max_len_for_obj       = Props#http_options.max_len_for_obj,
                                             chunked_obj_len       = Props#http_options.chunked_obj_len,
                                             threshold_obj_len     = Props#http_options.threshold_obj_len}),
-
             UseS3API = Props#http_options.s3_api,
             AuthRet = auth1(UseS3API, Req2, HTTPMethod0, Path2, TokenLen),
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
@@ -284,6 +283,7 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
                       ?HTTP_POST -> ?HTTP_PUT;
                       Other      -> Other
                   end,
+
     case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Cause} ->
             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
@@ -825,7 +825,12 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
             CIndex = case Params#req_params.upload_part_num of
                          <<>> -> 0;
                          PartNum ->
-                             list_to_integer(binary_to_list(PartNum))
+                             case is_integer(PartNum) of
+                                 true ->
+                                     PartNum;
+                                 false ->
+                                     list_to_integer(binary_to_list(PartNum))
+                             end
                      end,
 
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1, CIndex) of

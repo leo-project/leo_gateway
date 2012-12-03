@@ -59,8 +59,8 @@ gen_tests(Arg) ->
                fun delete_object_notfound_/1,
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
-               fun put_object_normal1_/1,
-               fun proper_/1
+               fun put_object_normal1_/1
+               %% fun proper_/1
               ]
              ).
 
@@ -485,7 +485,6 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
-                %% @TODO
                 {ok, {SC, _Body}} = httpc:request(put, {lists:append(["http://",
                                                                       ?TARGET_HOST,
                                                                       ":8080/a/b.png"]),
@@ -502,7 +501,7 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
-proper_([_TermFun, _Node0, _Node1]) ->
-    {timeout, 600, ?_assertEqual(true, leo_gateway_web_prop:test())}.
+%% proper_([_TermFun, _Node0, _Node1]) ->
+%%     {timeout, 600, ?_assertEqual(true, leo_gateway_web_prop:test())}.
 
 -endif.
