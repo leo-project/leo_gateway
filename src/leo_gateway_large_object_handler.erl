@@ -26,6 +26,7 @@
 -behaviour(gen_server).
 
 -include_lib("leo_logger/include/leo_logger.hrl").
+-include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 
@@ -196,13 +197,27 @@ handle_loop(Key, Total, Req) ->
              {ok, any()}).
 handle_loop(_Key, Total, Total, Req) ->
     {ok, Req};
-handle_loop( Key, Total, Index, Req) ->
-    IndexBin = list_to_binary(integer_to_list(Index + 1)),
 
-    case leo_gateway_rpc_handler:get(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>) of
-        {ok, _Metadata, Bin} ->
+handle_loop(Key0, Total, Index, Req) ->
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
+    Key1 = << Key0/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+
+    case leo_gateway_rpc_handler:get(Key1) of
+        %% only children
+        {ok, #metadata{cnumber = 0}, Bin} ->
             ok = cowboy_http_req:chunk(Bin, Req),
-            handle_loop(Key, Total, Index + 1, Req);
+            handle_loop(Key0, Total, Index + 1, Req);
+
+        %% both children and grand-children
+        {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
+            %% grand-children
+            case handle_loop(Key1, TotalChunkedObjs, Req) of
+                {ok, Req} ->
+                    %% children
+                    handle_loop(Key0, Total, Index + 1, Req);
+                Error ->
+                    Error
+            end;
         {error, Cause} ->
             {error, Cause}
     end.

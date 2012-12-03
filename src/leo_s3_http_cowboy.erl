@@ -917,8 +917,13 @@ put_large_object(Req0, Key, Size0, Params)->
 
                           case leo_gateway_rpc_handler:put(
                                  Key, ?BIN_EMPTY, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
-                              {ok, _ETag} ->
-                                  cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1);
+                              {ok, ETag} ->
+                                  cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
+                                                                      {?HTTP_HEAD_BIN_ETAG4AWS,
+                                                                       lists:append(["\"",
+                                                                                     leo_hex:integer_to_hex(ETag, 32),
+                                                                                     "\""])}
+                                                                     ], Req1);
                               {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                                   cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1);
                               {error, timeout} ->
