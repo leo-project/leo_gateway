@@ -197,13 +197,21 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
 %% For Multipart Upload - Upload a part of an object
 %%
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
+        #req_params{upload_id = UploadId,
+                    upload_part_num  = PartNum0,
+                    max_chunked_objs = MaxChunkedObjs}, _State) when UploadId /= <<>>,
+                                                                     PartNum0 > MaxChunkedObjs ->
+    cowboy_http_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req0);
+
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
         #req_params{path = Path0,
                     is_upload = false,
                     upload_id = UploadId,
-                    upload_part_num = PartNum} = Params, _State) when UploadId /= <<>>,
-                                                                      PartNum  /= <<>> ->
-    Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>, %% for confirmation
-    Key1 = << Path0/binary, ?STR_NEWLINE, PartNum/binary  >>, %% for put a part of an object
+                    upload_part_num = PartNum0} = Params, _State) when UploadId /= <<>>,
+                                                                       PartNum0 /= 0 ->
+    PartNum1 = list_to_binary(integer_to_list(PartNum0)),
+    Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,  %% for confirmation
+    Key1 = << Path0/binary, ?STR_NEWLINE, PartNum1/binary  >>, %% for put a part of an object
 
     case leo_gateway_rpc_handler:head(Key0) of
         {ok, _Metadata} ->
@@ -216,6 +224,14 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
             cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
     end;
 
+
+handle1({ok,_AccessKeyId}, Req0, ?HTTP_DELETE, _,
+        #req_params{path = Path0,
+                    upload_id = UploadId}, _State) when UploadId /= <<>> ->
+    _ = leo_gateway_rpc_handler:put(Path0, <<>>, 0),
+    _ = leo_gateway_rpc_handler:delete(Path0),
+    cowboy_http_req:reply(?HTTP_ST_NO_CONTENT, [?SERVER_HEADER], Req0);
+
 %% For Multipart Upload - Completion
 %%
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
@@ -223,7 +239,7 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
                     is_upload = false,
                     upload_id = UploadId,
                     upload_part_num = PartNum},_State) when UploadId /= <<>>,
-                                                            PartNum  == <<>> ->
+                                                            PartNum  == 0 ->
     case cowboy_http_req:has_body(Req0) of
         {true, _} ->
             Path4Conf = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,
@@ -436,8 +452,8 @@ request_params(Req, Params) ->
                    {Val0,      _} -> Val0
                end,
     PartNum  = case cowboy_http_req:qs_val(?HTTP_QS_BIN_PART_NUMBER, Req) of
-                   {undefined, _} -> <<>>;
-                   {Val1,      _} -> Val1
+                   {undefined, _} -> 0;
+                   {Val1,      _} -> list_to_integer(binary_to_list(Val1))
                end,
     Range    = element(1, cowboy_http_req:header(?HTTP_HEAD_ATOM_RANGE, Req)),
 
