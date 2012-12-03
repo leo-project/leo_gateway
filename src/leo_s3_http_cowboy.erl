@@ -66,19 +66,14 @@ start(#http_options{port                   = Port,
                     ssl_certfile           = SSLCertFile,
                     ssl_keyfile            = SSLKeyFile,
                     num_of_acceptors       = NumOfAcceptors,
-                    s3_api                 = UseS3API,
                     cache_method           = CacheMethod,
                     cache_expire           = CacheExpire,
                     cache_max_content_len  = CacheMaxContentLen,
                     cachable_content_type  = CachableContentTypes,
-                    cachable_path_pattern  = CachablePathPatterns,
-                    acceptable_max_obj_len = AcceptableMaxObjLen,
-                    chunked_obj_len        = ChunkedObjLen,
-                    threshold_obj_len      = ThresholdObjLen}) ->
+                    cachable_path_pattern  = CachablePathPatterns} = Props) ->
     InternalCache = (CacheMethod == 'inner'),
     Dispatch      = [{'_', [{'_', ?MODULE,
-                             [?env_layer_of_dirs(), InternalCache, UseS3API,
-                              AcceptableMaxObjLen, ChunkedObjLen, ThresholdObjLen]}]}],
+                             [?env_layer_of_dirs(), InternalCache, Props]}]}],
 
     Config = case InternalCache of
                  %% Using inner-cache
@@ -125,8 +120,7 @@ handle(Req, State) ->
     Key = gen_key(Req),
     handle(Req, State, Key).
 
-handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
-             AcceptableObjLen, ChunkedObjLen, ThresholdObjLen] = State, Path) ->
+handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Path) ->
     {Prefix, IsDir, Path2, Req2} =
         case cowboy_http_req:qs_val(?HTTP_HEAD_BIN_PREFIX, Req) of
             {undefined, Req1} ->
@@ -147,18 +141,21 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, UseS3API,
     case cowboy_http_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
             ReqParams = request_params(
-                          Req2, #req_params{path                   = Path2,
-                                            token_length           = TokenLen,
-                                            min_layers             = NumOfMinLayers,
-                                            max_layers             = NumOfMaxLayers,
-                                            qs_prefix              = Prefix,
-                                            has_inner_cache        = HasInnerCache,
-                                            is_cached              = true,
-                                            is_dir                 = IsDir,
-                                            acceptable_max_obj_len = AcceptableObjLen,
-                                            chunked_obj_len        = ChunkedObjLen,
-                                            threshold_obj_len      = ThresholdObjLen}),
+                          Req2, #req_params{path              = Path2,
+                                            token_length      = TokenLen,
+                                            min_layers        = NumOfMinLayers,
+                                            max_layers        = NumOfMaxLayers,
+                                            qs_prefix         = Prefix,
+                                            has_inner_cache   = HasInnerCache,
+                                            is_cached         = true,
+                                            is_dir            = IsDir,
+                                            max_chunked_objs      = Props#http_options.max_chunked_objs,
+                                            max_len_for_multipart = Props#http_options.max_len_for_multipart,
+                                            max_len_for_obj       = Props#http_options.max_len_for_obj,
+                                            chunked_obj_len       = Props#http_options.chunked_obj_len,
+                                            threshold_obj_len     = Props#http_options.threshold_obj_len}),
 
+            UseS3API = Props#http_options.s3_api,
             AuthRet = auth1(UseS3API, Req2, HTTPMethod0, Path2, TokenLen),
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
@@ -795,7 +792,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
     case (Size0 >= Params#req_params.threshold_obj_len) of
-        true when Size0 >= Params#req_params.acceptable_max_obj_len ->
+        true when Size0 >= Params#req_params.max_len_for_obj ->
             cowboy_http_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req);
         true when Params#req_params.is_upload == false ->
             put_large_object(Req, Key, Size0, Params);

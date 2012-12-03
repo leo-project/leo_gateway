@@ -87,9 +87,11 @@ get_options(HTTPServer, Options) ->
     CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len',  Options, 1000000),
     CachableContentTypes = leo_misc:get_value('cachable_content_type',  Options, []),
     CachablePathPatterns = leo_misc:get_value('cachable_path_pattern',  Options, []),
-    AcceptableObjLen     = leo_misc:get_value('acceptable_max_obj_len', Options, [2147483648]), %% 2GB
-    ChunkedObjLen        = leo_misc:get_value('chunked_obj_len',        Options, [4194304]),    %% 4MB
-    ThresholdObjLen      = leo_misc:get_value('threshold_obj_len',      Options, [5242880]),    %% 5MB
+    MaxChunkedObjs       = leo_misc:get_value('max_chunked_objs',       Options, [10000]),        %% 10000
+    MaxMultiPartLen      = leo_misc:get_value('max_len_for_multipart',  Options, [107374182400]), %% 100.0GB
+    MaxObjLen            = leo_misc:get_value('max_len_for_obj',        Options, [5368709120]),   %%   5.0GB
+    ChunkedObjLen        = leo_misc:get_value('chunked_obj_len',        Options, [5242880]),      %%   5.0MB
+    ThresholdObjLen      = leo_misc:get_value('threshold_obj_len',      Options, [5767168]),      %%   5.5MB
 
     ?info("start/3", "s3-api: ~p",                  [UseS3API]),
     ?info("start/3", "http-server: ~p",             [HTTPServer]),
@@ -103,7 +105,9 @@ get_options(HTTPServer, Options) ->
     ?info("start/3", "cache_max_content_len: ~p",   [CacheMaxContentLen]),
     ?info("start/3", "cacheable_content_types: ~p", [CachableContentTypes]),
     ?info("start/3", "cacheable_path_patterns: ~p", [CachablePathPatterns]),
-    ?info("start/3", "acceptable_max_obj_len: ~p",  [AcceptableObjLen]),
+    ?info("start/3", "max_chunked_obj: ~p",         [MaxChunkedObjs]),
+    ?info("start/3", "max_len_for_multipart: ~p",   [MaxMultiPartLen]),
+    ?info("start/3", "max_len_for_obj: ~p",         [MaxObjLen]),
     ?info("start/3", "chunked_obj_len: ~p",         [ChunkedObjLen]),
     ?info("start/3", "threshold_obj_len: ~p",       [ThresholdObjLen]),
 
@@ -131,7 +135,9 @@ get_options(HTTPServer, Options) ->
                        cache_max_content_len  = CacheMaxContentLen,
                        cachable_content_type  = CachableContentTypes1,
                        cachable_path_pattern  = CachablePathPatterns1,
-                       acceptable_max_obj_len = AcceptableObjLen,
+                       max_chunked_objs       = MaxChunkedObjs,
+                       max_len_for_multipart  = MaxMultiPartLen,
+                       max_len_for_obj        = MaxObjLen,
                        chunked_obj_len        = ChunkedObjLen,
                        threshold_obj_len      = ThresholdObjLen
                       }}.
