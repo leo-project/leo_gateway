@@ -151,6 +151,7 @@ put(Key, Body, Size, ChunkedSize, TotalOfChunks, Digest) ->
 put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
     _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
     ReqParams = get_request_parameters(put, Key),
+
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            put,

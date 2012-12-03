@@ -178,7 +178,7 @@
           %% For large-object
           is_upload = false          :: boolean(), %% is upload operation? (for multipart upload)
           upload_id = <<>>           :: binary(),  %% upload id for multipart upload
-          upload_part_num = <<>>     :: binary(),  %% upload part number for multipart upload
+          upload_part_num = 0        :: integer(), %% upload part number for multipart upload
           max_chunked_objs = 0       :: integer(), %% max chunked objects
           max_len_for_multipart = 0  :: integer(), %% max length a multipart object (byte)
           max_len_for_obj = 0        :: integer(), %% max length a object (byte)
