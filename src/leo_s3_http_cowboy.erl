@@ -150,7 +150,6 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
                                             is_cached         = true,
                                             is_dir            = IsDir,
                                             max_chunked_objs      = Props#http_options.max_chunked_objs,
-                                            max_len_for_multipart = Props#http_options.max_len_for_multipart,
                                             max_len_for_obj       = Props#http_options.max_len_for_obj,
                                             chunked_obj_len       = Props#http_options.chunked_obj_len,
                                             threshold_obj_len     = Props#http_options.threshold_obj_len}),

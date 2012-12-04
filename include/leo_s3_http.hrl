@@ -158,7 +158,6 @@
           cachable_path_pattern = [] :: list(),         %% cachable path patterns
           %% for large-object
           max_chunked_objs = 0       :: integer(),      %% max chunked objects
-          max_len_for_multipart = 0  :: integer(),      %% max length a multipart object (byte)
           max_len_for_obj = 0        :: integer(),      %% max length a object (byte)
           chunked_obj_len = 0        :: integer(),      %% chunked object length for large object (byte)
           threshold_obj_len = 0      :: integer()       %% threshold object length for large object (byte)
