@@ -153,8 +153,10 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
                                             max_len_for_obj       = Props#http_options.max_len_for_obj,
                                             chunked_obj_len       = Props#http_options.chunked_obj_len,
                                             threshold_obj_len     = Props#http_options.threshold_obj_len}),
+
             UseS3API = Props#http_options.s3_api,
             AuthRet = auth1(UseS3API, Req2, HTTPMethod0, Path2, TokenLen),
+
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
             {ok, Req3} = cowboy_http_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req2),
@@ -1013,16 +1015,25 @@ auth2(Req, HTTPMethod, Path, TokenLen) ->
                      end,
 
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
-            {RawUri,      _} = cowboy_http_req:raw_path(Req),
-            {QueryString, _} = cowboy_http_req:raw_qs(Req),
-            {Headers,     _} = cowboy_http_req:headers(Req),
+            {RawUri,       _} = cowboy_http_req:raw_path(Req),
+            {QueryString0, _} = cowboy_http_req:raw_qs(Req),
+            {Headers,      _} = cowboy_http_req:headers(Req),
 
-            URI = case (byte_size(QueryString) > 0) of
-                      true when  QueryString == ?HTTP_QS_BIN_UPLOADS ->
-                          << RawUri/binary, "?", QueryString/binary >>;
+            Len = byte_size(QueryString0),
+            QueryString1 =
+                case (Len > 0 andalso binary:last(QueryString0) == $=) of
+                    true ->
+                        binary:part(QueryString0, 0, Len-1);
+                    false ->
+                        QueryString0
+                end,
+
+            URI = case (Len > 0) of
+                      true when  QueryString1 == ?HTTP_QS_BIN_UPLOADS ->
+                          << RawUri/binary, "?", QueryString1/binary >>;
                       true ->
-                          case (nomatch /= binary:match(QueryString, ?HTTP_QS_BIN_UPLOAD_ID)) of
-                              true  -> << RawUri/binary, "?", QueryString/binary >>;
+                          case (nomatch /= binary:match(QueryString1, ?HTTP_QS_BIN_UPLOAD_ID)) of
+                              true  -> << RawUri/binary, "?", QueryString1/binary >>;
                               false -> RawUri
                           end;
                       _ ->
@@ -1035,7 +1046,7 @@ auth2(Req, HTTPMethod, Path, TokenLen) ->
                                       date         = get_header(Req, ?HTTP_HEAD_ATOM_DATE),
                                       bucket       = Bucket,
                                       uri          = URI,
-                                      query_str    = QueryString,
+                                      query_str    = QueryString1,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
     end.
