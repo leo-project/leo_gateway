@@ -178,8 +178,10 @@ invoke([], _Mod, _Method, _Args, Errors) ->
 invoke([{_, false}|T], Mod, Method, Args, Errors) ->
     invoke(T, Mod, Method, Args, [?ERR_TYPE_INTERNAL_ERROR|Errors]);
 invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
-    RPCKey = rpc:async_call(Node, Mod, Method, Args),
-    case rpc:nb_yield(RPCKey, ?DEF_REQ_TIMEOUT) of
+    RPCKey  = rpc:async_call(Node, Mod, Method, Args),
+    Timeout = timeout(Method, Args),
+
+    case rpc:nb_yield(RPCKey, Timeout) of
         %% delete
         {value, ok = Ret} ->
             Ret;
@@ -225,11 +227,11 @@ get_request_parameters(Method, Key) ->
 
 %% @doc Error messeage filtering
 %%
-error_filter([not_found = Error|_T])              -> Error;
-error_filter([H|T])                               -> error_filter(T, H).
-error_filter([],                            Prev) -> Prev;
-error_filter([not_found = Error|_T],       _Prev) -> Error;
-error_filter([_H|T],                        Prev) -> error_filter(T, Prev).
+error_filter([not_found = Error|_T])       -> Error;
+error_filter([H|T])                        -> error_filter(T, H).
+error_filter([],                     Prev) -> Prev;
+error_filter([not_found = Error|_T],_Prev) -> Error;
+error_filter([_H|T],                 Prev) -> error_filter(T, Prev).
 
 
 %% @doc Handle an error response
@@ -249,3 +251,18 @@ handle_error(Node, Mod, Method, _Args, timeout = Error) ->
           [Node, Mod, Method, Error]),
     Error.
 
+
+%% @doc Timeout depends on length of an object
+%%
+timeout(Len) when ?TIMEOUT_L1_LEN > Len -> ?TIMEOUT_L1_SEC;
+timeout(Len) when ?TIMEOUT_L2_LEN > Len -> ?TIMEOUT_L2_SEC;
+timeout(Len) when ?TIMEOUT_L3_LEN > Len -> ?TIMEOUT_L3_SEC;
+timeout(Len) when ?TIMEOUT_L4_LEN > Len -> ?TIMEOUT_L4_SEC;
+timeout(_)                              -> ?TIMEOUT_L5_SEC.
+
+timeout(put, [#object{dsize = DSize}, _]) ->
+    timeout(DSize);
+timeout(get, _) ->
+    ?DEF_REQ_TIMEOUT;
+timeout(_, _) ->
+    ?DEF_REQ_TIMEOUT.

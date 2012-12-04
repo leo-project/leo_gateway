@@ -45,10 +45,10 @@
 -define(DEF_REQ_TIMEOUT, 1000).
 -else.
 -define(DEF_TIMEOUT,      3000). %%  3 sec
--define(DEF_REQ_TIMEOUT, 30000). %% 30 sec
+-define(DEF_REQ_TIMEOUT, 10000). %% 10 sec
 -endif.
 
-%% error.
+%% error
 -define(ERROR_COULD_NOT_CONNECT, "could not connect").
 -define(MSG_INCOMPLETE_BODY,   {400, 'incomplete body'  }).
 -define(MSG_INVALID_ARGUMENT,  {400, 'invalid argument' }).
@@ -58,6 +58,18 @@
 -define(MSG_FILE_NOT_FOUND,    {404, 'file not found'   }).
 -define(MSG_INTERNAL_ERROR,    {500, 'internal_error'   }).
 -define(MSG_SLOW_DOWN,         {503, 'slow down'        }).
+
+%% timeout
+-define(TIMEOUT_L1_LEN,   65535).
+-define(TIMEOUT_L2_LEN,  131071).
+-define(TIMEOUT_L3_LEN,  524287).
+-define(TIMEOUT_L4_LEN, 1048576).
+
+-define(TIMEOUT_L1_SEC,    5000).
+-define(TIMEOUT_L2_SEC,    7000).
+-define(TIMEOUT_L3_SEC,   10000).
+-define(TIMEOUT_L4_SEC,   12000).
+-define(TIMEOUT_L5_SEC,   15000).
 
 
 %% macros.
