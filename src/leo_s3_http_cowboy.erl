@@ -1028,12 +1028,24 @@ auth2(Req, HTTPMethod, Path, TokenLen) ->
                         QueryString0
                 end,
 
+            QueryString2 = case binary:match(QueryString1, <<"&">>) of
+                               nomatch -> QueryString1;
+                               _ ->
+                                   Ret = lists:foldl(
+                                           fun(Q, []) ->
+                                                   Q;
+                                              (Q, Acc) ->
+                                                   lists:append([Acc, "&", Q])
+                                           end, [], lists:sort(string:tokens(binary_to_list(QueryString1), "&"))),
+                                   list_to_binary(Ret)
+                           end,
+
             URI = case (Len > 0) of
-                      true when  QueryString1 == ?HTTP_QS_BIN_UPLOADS ->
-                          << RawUri/binary, "?", QueryString1/binary >>;
+                      true when  QueryString2 == ?HTTP_QS_BIN_UPLOADS ->
+                          << RawUri/binary, "?", QueryString2/binary >>;
                       true ->
-                          case (nomatch /= binary:match(QueryString1, ?HTTP_QS_BIN_UPLOAD_ID)) of
-                              true  -> << RawUri/binary, "?", QueryString1/binary >>;
+                          case (nomatch /= binary:match(QueryString2, ?HTTP_QS_BIN_UPLOAD_ID)) of
+                              true  -> << RawUri/binary, "?", QueryString2/binary >>;
                               false -> RawUri
                           end;
                       _ ->
@@ -1046,7 +1058,7 @@ auth2(Req, HTTPMethod, Path, TokenLen) ->
                                       date         = get_header(Req, ?HTTP_HEAD_ATOM_DATE),
                                       bucket       = Bucket,
                                       uri          = URI,
-                                      query_str    = QueryString1,
+                                      query_str    = QueryString2,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
     end.
