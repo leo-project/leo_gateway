@@ -1,6 +1,8 @@
 leo_gateway
 ============
 
+[![Build Status](https://secure.travis-ci.org/leo-project/leo_gateway.png?branch=master)](http://travis-ci.org/leo-project/leo_gateway)
+
 Overview
 --------
 
@@ -16,4 +18,3 @@ Overview
   * [rebar](https://github.com/basho/rebar)
 * "leo_gateway" requires Erlang R14B04 or later.
 
-[![Build Status](https://secure.travis-ci.org/leo-project/leo_gateway.png?branch=master)](http://travis-ci.org/leo-project/leo_gateway)
