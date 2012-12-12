@@ -44,8 +44,8 @@
 -define(DEF_TIMEOUT,     1000).
 -define(DEF_REQ_TIMEOUT, 1000).
 -else.
--define(DEF_TIMEOUT,      3000). %%  3 sec
--define(DEF_REQ_TIMEOUT, 10000). %% 10 sec
+-define(DEF_TIMEOUT,      5000). %%  5 sec
+-define(DEF_REQ_TIMEOUT, 30000). %% 30 sec
 -endif.
 
 %% error
@@ -68,8 +68,8 @@
 -define(TIMEOUT_L1_SEC,    5000).
 -define(TIMEOUT_L2_SEC,    7000).
 -define(TIMEOUT_L3_SEC,   10000).
--define(TIMEOUT_L4_SEC,   12000).
--define(TIMEOUT_L5_SEC,   15000).
+-define(TIMEOUT_L4_SEC,   20000).
+-define(TIMEOUT_L5_SEC,   30000).
 
 
 %% macros.
@@ -90,6 +90,36 @@
         case application:get_env(leo_gateway, listener) of
             {ok, Listener} -> Listener;
             _ -> ?S3_HTTP
+        end).
+
+-define(env_timeout_level_1(),
+        case application:get_env(leo_gateway, timeout_level_1) of
+            {ok, EnvTimeoutL1} -> EnvTimeoutL1;
+            _ -> ?TIMEOUT_L1_SEC
+        end).
+
+-define(env_timeout_level_2(),
+        case application:get_env(leo_gateway, timeout_level_2) of
+            {ok, EnvTimeoutL2} -> EnvTimeoutL2;
+            _ -> ?TIMEOUT_L2_SEC
+        end).
+
+-define(env_timeout_level_3(),
+        case application:get_env(leo_gateway, timeout_level_3) of
+            {ok, EnvTimeoutL3} -> EnvTimeoutL3;
+            _ -> ?TIMEOUT_L3_SEC
+        end).
+
+-define(env_timeout_level_4(),
+        case application:get_env(leo_gateway, timeout_level_4) of
+            {ok, EnvTimeoutL4} -> EnvTimeoutL4;
+            _ -> ?TIMEOUT_L4_SEC
+        end).
+
+-define(env_timeout_level_5(),
+        case application:get_env(leo_gateway, timeout_level_5) of
+            {ok, EnvTimeoutL5} -> EnvTimeoutL5;
+            _ -> ?TIMEOUT_L5_SEC
         end).
 
 

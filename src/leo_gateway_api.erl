@@ -33,7 +33,7 @@
 
 -export([get_node_status/0,
          register_in_monitor/1,
-         purge/1
+         purge/1, set_endpoint/1
         ]).
 
 %% @doc Purge an object into the cache
@@ -116,4 +116,10 @@ register_in_monitor(RequestedTimes) ->
                     {error, ?ERROR_COULD_NOT_CONNECT}
             end
     end.
+
+
+%% @doc Set s3-endpoint from manager
+%%
+set_endpoint(Endpoint) ->
+    leo_s3_endpoint:set_endpoint(Endpoint).
 

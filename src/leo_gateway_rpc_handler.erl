@@ -254,11 +254,11 @@ handle_error(Node, Mod, Method, _Args, timeout = Error) ->
 
 %% @doc Timeout depends on length of an object
 %%
-timeout(Len) when ?TIMEOUT_L1_LEN > Len -> ?TIMEOUT_L1_SEC;
-timeout(Len) when ?TIMEOUT_L2_LEN > Len -> ?TIMEOUT_L2_SEC;
-timeout(Len) when ?TIMEOUT_L3_LEN > Len -> ?TIMEOUT_L3_SEC;
-timeout(Len) when ?TIMEOUT_L4_LEN > Len -> ?TIMEOUT_L4_SEC;
-timeout(_)                              -> ?TIMEOUT_L5_SEC.
+timeout(Len) when ?TIMEOUT_L1_LEN > Len -> ?env_timeout_level_1();
+timeout(Len) when ?TIMEOUT_L2_LEN > Len -> ?env_timeout_level_2();
+timeout(Len) when ?TIMEOUT_L3_LEN > Len -> ?env_timeout_level_3();
+timeout(Len) when ?TIMEOUT_L4_LEN > Len -> ?env_timeout_level_4();
+timeout(_)                              -> ?env_timeout_level_5().
 
 timeout(put, [#object{dsize = DSize}, _]) ->
     timeout(DSize);
