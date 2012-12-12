@@ -44,8 +44,8 @@
 -define(DEF_TIMEOUT,     1000).
 -define(DEF_REQ_TIMEOUT, 1000).
 -else.
--define(DEF_TIMEOUT,      3000). %%  3 sec
--define(DEF_REQ_TIMEOUT, 10000). %% 10 sec
+-define(DEF_TIMEOUT,      5000). %%  5 sec
+-define(DEF_REQ_TIMEOUT, 30000). %% 30 sec
 -endif.
 
 %% error
