@@ -186,6 +186,7 @@ after_process_1(SystemConf, Members) ->
 
     %% Launch S3Libs:Auth/Bucket/EndPoint
     ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
+    _ = leo_s3_endpoint:get_endpoints(),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
