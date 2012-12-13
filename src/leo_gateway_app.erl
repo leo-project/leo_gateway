@@ -61,7 +61,6 @@
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
     consider_profiling(),
-    leo_gateway_deps:ensure(),
     App = leo_gateway,
 
     %% Launch Logger(s)

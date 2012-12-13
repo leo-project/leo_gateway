@@ -42,7 +42,6 @@ ensure_started(App) ->
 %% @spec start() -> ok
 %% @doc Start the leo_gateway server.
 start() ->
-    leo_gateway_deps:ensure(),
     ensure_started(crypto),
 
     case application:start(leo_gateway) of
