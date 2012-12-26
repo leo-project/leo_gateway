@@ -47,7 +47,7 @@ purge(Path) ->
 %%
 -spec(get_node_status() -> {ok, #cluster_node_status{}}).
 get_node_status() ->
-    {ok, Version} = application:get_key(leo_gateway, vsn),
+    {ok, Version} = application:get_env(leo_gateway, system_version),
     {RingHashCur, RingHashPrev} =
         case leo_redundant_manager_api:checksum(ring) of
             {ok, {Chksum0, Chksum1}} -> {Chksum0, Chksum1};

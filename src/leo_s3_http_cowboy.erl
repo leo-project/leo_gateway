@@ -805,7 +805,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-put1(?BIN_EMPTY, Req, Key, Params) ->
+put1(?BIN_EMPTY, Req, Key, #req_params{has_inner_cache = HasInnerCache} = Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
     case (Size0 >= Params#req_params.threshold_obj_len) of
@@ -836,6 +836,16 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
 
             case leo_gateway_rpc_handler:put(Key, Bin1, Size1, CIndex) of
                 {ok, ETag} ->
+                    case HasInnerCache of
+                        true  ->
+                            Mime = leo_mime:guess_mime(Key),
+                            BinVal = term_to_binary(#cache{etag = ETag,
+                                                           mtime = leo_date:now(),
+                                                           content_type = Mime,
+                                                           body = Bin1}),
+                            _ = ecache_api:put(Key, BinVal);
+                        false -> void
+                    end,
                     cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
                                                         {?HTTP_HEAD_BIN_ETAG4AWS,
                                                          lists:append(["\"",

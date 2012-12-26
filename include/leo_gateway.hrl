@@ -25,20 +25,8 @@
 -author('Yosuke Hara').
 
 -define(SHUTDOWN_WAITING_TIME, 2000).
--define(MAX_RESTART,              5).
--define(MAX_TIME,                60).
-
--define(DEF_LISTEN_PORT,    8080).
--define(DEF_NUM_OF_ACCS,    32).
--define(DEF_RPC_HANDLER,    'leo_gateway_web_model').
+-define(S3_HTTP, leo_s3_http).
 -define(DEF_LAYERS_OF_DIRS, {3, 12}).
--define(DEF_CACHE_EXPIRE, 60).
--define(DEF_CACHE_MAX_CONTENT_LEN, 1024000).
--define(DEF_CACHE_CONTENT_TYPES, []). %all
--define(DEF_CACHE_PATH_PATTERNS, []). %all
-
--define(S3_HTTP, leo_s3_http). %% listener-1
--define(T6_HTTP, leo_t6).      %% listener-2
 
 -ifdef(TEST).
 -define(DEF_TIMEOUT,     1000).
@@ -50,14 +38,16 @@
 
 %% error
 -define(ERROR_COULD_NOT_CONNECT, "could not connect").
--define(MSG_INCOMPLETE_BODY,   {400, 'incomplete body'  }).
--define(MSG_INVALID_ARGUMENT,  {400, 'invalid argument' }).
--define(MSG_INVALID_URI,       {400, 'invalid uri'      }).
--define(MSG_KEY_TOO_LONG,      {400, 'key too long'     }).
--define(MSG_REQ_TIMEOUT,       {400, 'request timeout'  }).
--define(MSG_FILE_NOT_FOUND,    {404, 'file not found'   }).
--define(MSG_INTERNAL_ERROR,    {500, 'internal_error'   }).
--define(MSG_SLOW_DOWN,         {503, 'slow down'        }).
+
+%% @pending
+%% -define(MSG_INCOMPLETE_BODY,   {400, 'incomplete body'  }).
+%% -define(MSG_INVALID_ARGUMENT,  {400, 'invalid argument' }).
+%% -define(MSG_INVALID_URI,       {400, 'invalid uri'      }).
+%% -define(MSG_KEY_TOO_LONG,      {400, 'key too long'     }).
+%% -define(MSG_REQ_TIMEOUT,       {400, 'request timeout'  }).
+%% -define(MSG_FILE_NOT_FOUND,    {404, 'file not found'   }).
+%% -define(MSG_INTERNAL_ERROR,    {500, 'internal_error'   }).
+%% -define(MSG_SLOW_DOWN,         {503, 'slow down'        }).
 
 %% timeout
 -define(TIMEOUT_L1_LEN,   65535).
@@ -71,14 +61,6 @@
 -define(TIMEOUT_L4_SEC,   20000).
 -define(TIMEOUT_L5_SEC,   30000).
 
-
-%% macros.
--define(def_gateway_conf(),
-        fun() ->
-                {ok, Hostname} = inet:gethostname(),
-                {?DEF_LISTEN_PORT, ?DEF_NUM_OF_ACCS,
-                 [list_to_atom("leo_remote_manager_test@" ++ Hostname)]}
-        end).
 
 -define(env_layer_of_dirs(),
         case application:get_env(leo_gateway, layer_of_dirs) of
@@ -123,11 +105,11 @@
         end).
 
 
-%% REQ/RESP ERRORS
--record(error_code, {
-          code             :: atom(),
-          description      :: list(),
-          http_status_code :: integer()}).
+%% %% REQ/RESP ERRORS
+%% -record(error_code, {
+%%           code             :: atom(),
+%%           description      :: list(),
+%%           http_status_code :: integer()}).
 
 
 -record(statistics, {

@@ -43,6 +43,7 @@
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
+-undef(DEF_TIMEOUT).
 -define(DEF_TIMEOUT, 30000).
 
 -record(state, {num_of_chunks  :: integer(),
