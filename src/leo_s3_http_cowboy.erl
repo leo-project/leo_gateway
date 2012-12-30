@@ -248,27 +248,32 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
                 {ok, _} ->
                     _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
-                    {ok, XMLBin, Req1} = cowboy_http_req:body(Req0),
-                    {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
-                    TotalUploadedObjs = length(Content),
+                    case cowboy_http_req:body(Req0) of
+                        {ok, XMLBin, Req1} ->
+                            {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
+                            TotalUploadedObjs = length(Content),
 
-                    case handle2(TotalUploadedObjs, Path0, []) of
-                        {ok, {Len, ETag}} ->
-                            case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
-                                {ok, _} ->
-                                    [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
-                                    ETagStr = leo_hex:integer_to_hex(ETag,32),
-                                    XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
-                                    {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req1),
+                            case handle2(TotalUploadedObjs, Path0, []) of
+                                {ok, {Len, ETag}} ->
+                                    case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
+                                        {ok, _} ->
+                                            [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+                                            ETagStr = leo_hex:integer_to_hex(ETag,32),
+                                            XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
+                                            {ok, Req2} = cowboy_http_req:set_resp_body(XML, Req1),
 
-                                    cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
+                                            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
+                                        {error, Cause} ->
+                                            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                                            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                                    end;
                                 {error, Cause} ->
                                     ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
                                     cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
                             end;
                         {error, Cause} ->
                             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
                     end;
                 _ ->
                     cowboy_http_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
@@ -805,7 +810,7 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
 
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
-put1(?BIN_EMPTY, Req, Key, #req_params{has_inner_cache = HasInnerCache} = Params) ->
+put1(?BIN_EMPTY, Req, Key, Params) ->
     {Size0, _} = cowboy_http_req:body_length(Req),
 
     case (Size0 >= Params#req_params.threshold_obj_len) of
@@ -814,51 +819,19 @@ put1(?BIN_EMPTY, Req, Key, #req_params{has_inner_cache = HasInnerCache} = Params
         true when Params#req_params.is_upload == false ->
             put_large_object(Req, Key, Size0, Params);
         false ->
-            {Size1, Bin1, Req1} =
-                case cowboy_http_req:has_body(Req) of
-                    {true, _} ->
-                        {ok, Bin0, Req0} = cowboy_http_req:body(Req),
-                        {Size0, Bin0, Req0};
-                    {false, _} ->
-                        {0, ?BIN_EMPTY, Req}
-                end,
-
-            CIndex = case Params#req_params.upload_part_num of
-                         <<>> -> 0;
-                         PartNum ->
-                             case is_integer(PartNum) of
-                                 true ->
-                                     PartNum;
-                                 false ->
-                                     list_to_integer(binary_to_list(PartNum))
-                             end
-                     end,
-
-            case leo_gateway_rpc_handler:put(Key, Bin1, Size1, CIndex) of
-                {ok, ETag} ->
-                    case HasInnerCache of
-                        true  ->
-                            Mime = leo_mime:guess_mime(Key),
-                            BinVal = term_to_binary(#cache{etag = ETag,
-                                                           mtime = leo_date:now(),
-                                                           content_type = Mime,
-                                                           body = Bin1}),
-                            _ = ecache_api:put(Key, BinVal);
-                        false -> void
-                    end,
-                    cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                                        {?HTTP_HEAD_BIN_ETAG4AWS,
-                                                         lists:append(["\"",
-                                                                       leo_hex:integer_to_hex(ETag, 32),
-                                                                       "\""])}
-                                                       ], Req1);
-                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                    cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1);
-                {error, timeout} ->
-                    cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req1)
-            end
+            Ret = case cowboy_http_req:has_body(Req) of
+                      {true, _} ->
+                          case cowboy_http_req:body(Req) of
+                              {ok, Bin0, Req0} ->
+                                  {ok, {Size0, Bin0, Req0}};
+                              {error, Cause} ->
+                                  {error, Cause}
+                          end;
+                      {false, _} ->
+                          {ok, {0, ?BIN_EMPTY, Req}}
+                  end,
+            put_small_object(Ret, Key, Params)
     end;
-
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
@@ -924,7 +897,48 @@ put4(Req, Meta) ->
     end.
 
 
-%% @doc
+%% @doc Put a small object into the storage
+%% @private
+put_small_object({error, Cause}, _, _) ->
+    {error, Cause};
+put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
+    CIndex = case Params#req_params.upload_part_num of
+                 <<>> -> 0;
+                 PartNum ->
+                     case is_integer(PartNum) of
+                         true ->
+                             PartNum;
+                         false ->
+                             list_to_integer(binary_to_list(PartNum))
+                     end
+             end,
+
+    case leo_gateway_rpc_handler:put(Key, Bin, Size, CIndex) of
+        {ok, ETag} ->
+            case Params#req_params.has_inner_cache of
+                true  ->
+                    Mime = leo_mime:guess_mime(Key),
+                    BinVal = term_to_binary(#cache{etag = ETag,
+                                                   mtime = leo_date:now(),
+                                                   content_type = Mime,
+                                                   body = Bin}),
+                    _ = ecache_api:put(Key, BinVal);
+                false -> void
+            end,
+            cowboy_http_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
+                                                {?HTTP_HEAD_BIN_ETAG4AWS,
+                                                 lists:append(["\"",
+                                                               leo_hex:integer_to_hex(ETag, 32),
+                                                               "\""])}
+                                               ], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            cowboy_http_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+        {error, timeout} ->
+            cowboy_http_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+    end.
+
+
+%% @doc Put a large-object into the storage
 %% @private
 put_large_object(Req0, Key, Size0, Params)->
     %% PUT children's data (Chunked objects)
