@@ -206,8 +206,14 @@ handle_loop(Key0, Total, Index, Req) ->
     case leo_gateway_rpc_handler:get(Key1) of
         %% only children
         {ok, #metadata{cnumber = 0}, Bin} ->
-            ok = cowboy_http_req:chunk(Bin, Req),
-            handle_loop(Key0, Total, Index + 1, Req);
+            case cowboy_http_req:chunk(Bin, Req) of
+                ok ->
+                    handle_loop(Key0, Total, Index + 1, Req);
+                {error, Cause} ->
+                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                           [binary_to_list(Key0), Index, Cause]),
+                    {error, Cause}
+            end;
 
         %% both children and grand-children
         {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
@@ -216,10 +222,14 @@ handle_loop(Key0, Total, Index, Req) ->
                 {ok, Req} ->
                     %% children
                     handle_loop(Key0, Total, Index + 1, Req);
-                Error ->
-                    Error
+                {error, Cause} ->
+                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                           [binary_to_list(Key0), Index, Cause]),
+                    {error, Cause}
             end;
         {error, Cause} ->
+            ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                   [binary_to_list(Key0), Index, Cause]),
             {error, Cause}
     end.
 
