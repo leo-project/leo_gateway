@@ -511,6 +511,7 @@ is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Header
 %% Compile Options:
 %%
 -compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2,
+                   put_small_object/3, put_large_object/4,
                    get_header/2, auth1/5, auth2/4, http_verb/1]}).
 
 %% @doc Create a key
