@@ -133,6 +133,8 @@ inspect_cluster_status(Res, ManagerNodes) ->
 -spec(after_process_0({ok, pid()} | {error, any()}) ->
              {ok, pid()} | {error, any()}).
 after_process_0({ok, _Pid} = Res) ->
+    ok = leo_misc:init_env(),
+
     ManagerNodes0  = ?env_manager_nodes(leo_gateway),
     ManagerNodes1 = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes0),
 
@@ -153,10 +155,7 @@ after_process_0({ok, _Pid} = Res) ->
     ok = leo_s3_libs:start(slave),
 
     %% Launch a listener - [s3_http]
-    case ?env_listener() of
-        ?S3_HTTP ->
-            ok = leo_s3_http_api:start(leo_gateway_sup, leo_gateway)
-    end,
+    ok = leo_s3_http_api:start(leo_gateway_sup),
 
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);

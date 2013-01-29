@@ -127,6 +127,8 @@ setup(InitFun, TermFun) ->
     {ok, Node0} = slave:start_link(list_to_atom(Hostname), 'storage_0', Args),
     {ok, Node1} = slave:start_link(list_to_atom(Hostname), 'storage_1', Args),
 
+    ok = leo_misc:init_env(),
+
     meck:new(leo_redundant_manager_api),
     meck:expect(leo_redundant_manager_api, get_redundancies_by_key,
                 fun(_Method, _Key) ->
@@ -138,18 +140,19 @@ setup(InitFun, TermFun) ->
     meck:expect(leo_s3_endpoint, get_endpoints, 0, {ok, [{endpoint, <<"localhost">>, 0}]}),
 
     code:add_path("../cherly/ebin"),
-    ok = file:write_file("./cert.pem", ?SSL_CERT_DATA),
-    ok = file:write_file("./key.pem",  ?SSL_KEY_DATA),
+    ok = file:write_file("./server_cert.pem", ?SSL_CERT_DATA),
+    ok = file:write_file("./server_key.pem",  ?SSL_KEY_DATA),
 
     InitFun(),
     [TermFun, Node0, Node1].
 
 setup_cowboy() ->
     application:start(cowboy),
-    {ok, Options} = leo_s3_http_api:get_options(cowboy, [{port,8080},{num_of_acceptors,32},
-                                                         {ssl_port,8443},
-                                                         {ssl_certfile,"./cert.pem"},
-                                                         {ssl_keyfile, "./key.pem"}]),
+    %% {ok, Options} = leo_s3_http_api:get_options(cowboy, [{port,8080},{num_of_acceptors,32},
+    %%                                                      {ssl_port,8443},
+    %%                                                      {ssl_certfile,"./server_cert.pem"},
+    %%                                                      {ssl_keyfile, "./server_key.pem"}]),
+    {ok, Options} = leo_s3_http_api:get_options(),
     InitFun = fun() -> leo_s3_http_cowboy:start(Options) end,
     TermFun = fun() -> leo_s3_http_cowboy:stop() end,
     setup(InitFun, TermFun).

@@ -51,6 +51,7 @@
 -define(HTTP_HEAD_ATOM_CONTENT_MD5,        'Content-Md5').
 -define(HTTP_HEAD_ATOM_CONTENT_TYPE,       'Content-Type').
 -define(HTTP_HEAD_ATOM_DATE,               'Date').
+
 -define(HTTP_HEAD_ATOM_ETAG,               'Etag').
 -define(HTTP_HEAD_ATOM_IF_MODIFIED_SINCE,  'If-Modified-Since').
 -define(HTTP_HEAD_ATOM_LAST_MODIFIED,      'Last-Modified').
@@ -144,52 +145,53 @@
 
 
 -record(http_options, {
-          port = 0                   :: integer(),      %% http port number
-          ssl_port = 0               :: integer(),      %% ssl port number
+          port = 0                   :: pos_integer(),  %% http port number
+          ssl_port = 0               :: pos_integer(),  %% ssl port number
           ssl_certfile = []          :: string(),       %% ssl cert file name
           ssl_keyfile = []           :: string(),       %% ssk key file name
-          num_of_acceptors = 0       :: integer(),      %% # of acceptors (http server's workers)
+          num_of_acceptors = 0       :: pos_integer(),  %% # of acceptors (http server's workers)
           s3_api = true              :: boolean(),      %% use s3-api?
           %% for cache
           cache_method               :: cache_method(), %% cahce method: [http | inner]
-          cache_expire = 0           :: integer(),      %% cache expire time (sec)
-          cache_max_content_len = 0  :: integer(),      %% cache max content length (byte)
+          cache_capacity = 0         :: pos_integer(),
+          cache_expire = 0           :: pos_integer(),  %% cache expire time (sec)
+          cache_max_content_len = 0  :: pos_integer(),  %% cache max content length (byte)
           cachable_content_type = [] :: list(),         %% cachable content types
           cachable_path_pattern = [] :: list(),         %% cachable path patterns
           %% for large-object
-          max_chunked_objs = 0       :: integer(),      %% max chunked objects
-          max_len_for_obj = 0        :: integer(),      %% max length a object (byte)
-          chunked_obj_len = 0        :: integer(),      %% chunked object length for large object (byte)
-          threshold_obj_len = 0      :: integer()       %% threshold object length for large object (byte)
+          max_chunked_objs = 0       :: pos_integer(),  %% max chunked objects
+          max_len_for_obj = 0        :: pos_integer(),  %% max length a object (byte)
+          chunked_obj_len = 0        :: pos_integer(),  %% chunked object length for large object (byte)
+          threshold_obj_len = 0      :: pos_integer()   %% threshold object length for large object (byte)
          }).
 
 -record(req_params, {
-          path = <<>>                :: binary(),  %% path (uri)
-          access_key_id = []         :: string(),  %% s3's access-key-id
-          token_length = 0           :: integer(), %% length of tokened path
-          min_layers = 0             :: integer(), %% acceptable # of min layers
-          max_layers = 0             :: integer(), %% acceptable # of max layers
-          qs_prefix = []             :: string(),  %% query string
-          range_header               :: string(),  %% range header
-          has_inner_cache = false    :: boolean(), %% has inner-cache?
-          is_cached = false          :: boolean(), %% is cached?
-          is_dir = false             :: boolean(), %% is directory?
+          path = <<>>                :: binary(),       %% path (uri)
+          access_key_id = []         :: string(),       %% s3's access-key-id
+          token_length = 0           :: pos_integer(),  %% length of tokened path
+          min_layers = 0             :: pos_integer(),  %% acceptable # of min layers
+          max_layers = 0             :: pos_integer(),  %% acceptable # of max layers
+          qs_prefix = []             :: string(),       %% query string
+          range_header               :: string(),       %% range header
+          has_inner_cache = false    :: boolean(),      %% has inner-cache?
+          is_cached = false          :: boolean(),      %% is cached?
+          is_dir = false             :: boolean(),      %% is directory?
           %% For large-object
-          is_upload = false          :: boolean(), %% is upload operation? (for multipart upload)
-          upload_id = <<>>           :: binary(),  %% upload id for multipart upload
-          upload_part_num = 0        :: integer(), %% upload part number for multipart upload
-          max_chunked_objs = 0       :: integer(), %% max chunked objects
-          max_len_for_multipart = 0  :: integer(), %% max length a multipart object (byte)
-          max_len_for_obj = 0        :: integer(), %% max length a object (byte)
-          chunked_obj_len = 0        :: integer(), %% chunked object length for large-object (byte)
-          threshold_obj_len = 0      :: integer()  %% threshold object length for large-object (byte)
+          is_upload = false          :: boolean(),      %% is upload operation? (for multipart upload)
+          upload_id = <<>>           :: binary(),       %% upload id for multipart upload
+          upload_part_num = 0        :: pos_integer(),  %% upload part number for multipart upload
+          max_chunked_objs = 0       :: pos_integer(),  %% max chunked objects
+          max_len_for_multipart = 0  :: pos_integer(),  %% max length a multipart object (byte)
+          max_len_for_obj = 0        :: pos_integer(),  %% max length a object (byte)
+          chunked_obj_len = 0        :: pos_integer(),  %% chunked object length for large-object (byte)
+          threshold_obj_len = 0      :: pos_integer()   %% threshold object length for large-object (byte)
          }).
 
 -record(cache, {
-          etag         = 0    :: integer(), %% actual value is checksum
-          mtime        = 0    :: integer(), %% gregorian_seconds
-          content_type = []   :: string(),  %% from a Content-Type header
-          body         = <<>> :: binary()   %% body (value)
+          etag         = 0    :: pos_integer(), %% actual value is checksum
+          mtime        = 0    :: pos_integer(), %% gregorian_seconds
+          content_type = []   :: string(),      %% from a Content-Type header
+          body         = <<>> :: binary()       %% body (value)
          }).
 
 
