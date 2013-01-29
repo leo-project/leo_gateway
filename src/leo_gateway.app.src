@@ -4,7 +4,7 @@
    {vsn, "0.12.9"},
    {id, "leo_gateway"},
    {registered, []},
-   {applications, [kernel, stdlib]},
+   {applications, [kernel, stdlib, crypto]},
    {mod, {leo_gateway_app, []}},
    {env, []}
   ]

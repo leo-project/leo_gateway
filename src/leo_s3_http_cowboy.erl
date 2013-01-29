@@ -176,7 +176,7 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
                                                             is_upload = true},_State) ->
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
-    UploadId    = leo_hex:binary_to_hex(erlang:md5(<< Path0/binary, NowBin/binary >>)),
+    UploadId    = leo_hex:binary_to_hex(crypto:md5(<< Path0/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
 
     case leo_gateway_rpc_handler:put(<<Path0/binary, ?STR_NEWLINE, UploadIdBin/binary>> , <<>>, 0) of
@@ -311,7 +311,7 @@ handle2(0, _, Acc) ->
                              ETagBin1 = list_to_binary(leo_hex:integer_to_hex(Checksum, 32)),
                              {Sum + DSize, <<ETagBin0/binary, ETagBin1/binary>>}
                      end, {0, <<>>}, lists:sort(Metas)),
-    ETag1 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(erlang:md5(ETag0))),
+    ETag1 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(crypto:md5(ETag0))),
     {ok, {Len, ETag1}};
 
 handle2(PartNum, Path, Acc) ->
@@ -423,7 +423,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
 
                     Bin = term_to_binary(
                             #cache{mtime        = Now,
-                                   etag         = leo_hex:binary_to_integer(erlang:md5(Body)),
+                                   etag         = leo_hex:binary_to_integer(crypto:md5(Body)),
                                    content_type = ContentType,
                                    body         = Body}),
                     _ = ecache_api:put(Key, Bin),
