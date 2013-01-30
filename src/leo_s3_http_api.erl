@@ -46,10 +46,20 @@
 start(Sup) ->
     {ok, Options} = get_options(),
 
-    ChildSpec = {cowboy_sup,
-                 {cowboy_sup, start_link, []},
-                 permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [cowboy_sup]},
-    {ok, _} = supervisor:start_child(Sup, ChildSpec),
+    %% for ECache
+    NumOfECacheWorkers = Options#http_options.cache_capacity,
+    TotalCacheCapacity = Options#http_options.cache_workers,
+    ChildSpec0 = {ecache_sup,
+                  {ecache_sup, start_link, [NumOfECacheWorkers, TotalCacheCapacity]},
+                  permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [ecache_sup]},
+    {ok, _} = supervisor:start_child(Sup, ChildSpec0),
+
+    %% for Cowboy
+    ChildSpec1 = {cowboy_sup,
+                  {cowboy_sup, start_link, []},
+                  permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [cowboy_sup]},
+    {ok, _} = supervisor:start_child(Sup, ChildSpec1),
+
     leo_s3_http_cowboy:start(Options),
     ok.
 
@@ -71,6 +81,7 @@ get_options() ->
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
     UserHttpCache        = leo_misc:get_value('http_cache',            CacheProp, false),
+    CacheWorkers         = leo_misc:get_value('cache_workers',         CacheProp, 64),
     CacheCapacity        = leo_misc:get_value('cache_capacity',        CacheProp, 64000000), %% about 64MB
     CacheExpire          = leo_misc:get_value('cache_expire',          CacheProp, 300),      %% 300sec
     CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', CacheProp, 1000000),  %% about 1MB
@@ -113,6 +124,7 @@ get_options() ->
                                 ssl_keyfile            = SSLKeyFile,
                                 num_of_acceptors       = NumOfAcceptors,
                                 cache_method           = CacheMethod,
+                                cache_workers          = CacheWorkers,
                                 cache_capacity         = CacheCapacity,
                                 cache_expire           = CacheExpire,
                                 cache_max_content_len  = CacheMaxContentLen,
@@ -121,8 +133,7 @@ get_options() ->
                                 max_chunked_objs       = MaxChunkedObjs,
                                 max_len_for_obj        = MaxObjLen,
                                 chunked_obj_len        = ChunkedObjLen,
-                                threshold_obj_len      = ThresholdObjLen
-                               },
+                                threshold_obj_len      = ThresholdObjLen},
     ?info("start/3", "s3-api: ~p",                  [UseS3API]),
     ?info("start/3", "port: ~p",                    [Port]),
     ?info("start/3", "ssl port: ~p",                [SSLPort]),
@@ -130,6 +141,7 @@ get_options() ->
     ?info("start/3", "ssl keyfile: ~p",             [SSLKeyFile]),
     ?info("start/3", "num of acceptors: ~p",        [NumOfAcceptors]),
     ?info("start/3", "cache_method: ~p",            [CacheMethod]),
+    ?info("start/3", "cache workers: ~p",           [CacheWorkers]),
     ?info("start/3", "cache capacity: ~p",          [CacheCapacity]),
     ?info("start/3", "cache expire: ~p",            [CacheExpire]),
     ?info("start/3", "cache_max_content_len: ~p",   [CacheMaxContentLen]),

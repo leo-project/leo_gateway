@@ -90,7 +90,6 @@ start(#http_options{port                   = Port,
                       {onresponse, onresponse(CacheCondition)}]
              end,
 
-    application:start(ecache),
     cowboy:start_listener(?MODULE, NumOfAcceptors,
                           cowboy_tcp_transport, [{port, Port}],
                           cowboy_http_protocol, Config),

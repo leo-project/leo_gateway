@@ -153,6 +153,7 @@
           s3_api = true              :: boolean(),      %% use s3-api?
           %% for cache
           cache_method               :: cache_method(), %% cahce method: [http | inner]
+          cache_workers = 0          :: pos_integer(),
           cache_capacity = 0         :: pos_integer(),
           cache_expire = 0           :: pos_integer(),  %% cache expire time (sec)
           cache_max_content_len = 0  :: pos_integer(),  %% cache max content length (byte)
