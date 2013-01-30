@@ -47,8 +47,10 @@ start(Sup) ->
     {ok, Options} = get_options(),
 
     %% for ECache
-    NumOfECacheWorkers = Options#http_options.cache_capacity,
-    TotalCacheCapacity = Options#http_options.cache_workers,
+    NumOfECacheWorkers = Options#http_options.cache_workers,
+    TotalCacheCapacity = Options#http_options.cache_capacity,
+    ?debugVal({NumOfECacheWorkers, TotalCacheCapacity}),
+
     ChildSpec0 = {ecache_sup,
                   {ecache_sup, start_link, [NumOfECacheWorkers, TotalCacheCapacity]},
                   permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [ecache_sup]},
