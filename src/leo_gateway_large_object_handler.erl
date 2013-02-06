@@ -110,7 +110,7 @@ result(Pid) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 init([]) ->
-    Context = erlang:md5_init(),
+    Context = crypto:md5_init(),
     {ok, #state{md5_context = Context,
                 errors = []}}.
 
@@ -127,7 +127,7 @@ handle_call(result, _From, #state{md5_context = Context,
                                   errors = Errors} = State) ->
     Reply = case Errors of
                 [] ->
-                    Digest = erlang:md5_final(Context),
+                    Digest = crypto:md5_final(Context),
                     {ok, Digest};
                 _  ->
                     {error, Errors}
@@ -142,7 +142,7 @@ handle_call({put, Key, Index, Size, Bin}, _From, #state{md5_context = Context,
     case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
                                      Bin, Size, Index) of
         {ok, _ETag} ->
-            NewContext = erlang:md5_update(Context, Bin),
+            NewContext = crypto:md5_update(Context, Bin),
             {reply, ok, State#state{md5_context = NewContext,
                                     errors = Errors}};
         {error, Cause} ->
@@ -206,8 +206,14 @@ handle_loop(Key0, Total, Index, Req) ->
     case leo_gateway_rpc_handler:get(Key1) of
         %% only children
         {ok, #metadata{cnumber = 0}, Bin} ->
-            ok = cowboy_http_req:chunk(Bin, Req),
-            handle_loop(Key0, Total, Index + 1, Req);
+            case cowboy_http_req:chunk(Bin, Req) of
+                ok ->
+                    handle_loop(Key0, Total, Index + 1, Req);
+                {error, Cause} ->
+                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                           [binary_to_list(Key0), Index, Cause]),
+                    {error, Cause}
+            end;
 
         %% both children and grand-children
         {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
@@ -216,10 +222,14 @@ handle_loop(Key0, Total, Index, Req) ->
                 {ok, Req} ->
                     %% children
                     handle_loop(Key0, Total, Index + 1, Req);
-                Error ->
-                    Error
+                {error, Cause} ->
+                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                           [binary_to_list(Key0), Index, Cause]),
+                    {error, Cause}
             end;
         {error, Cause} ->
+            ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                   [binary_to_list(Key0), Index, Cause]),
             {error, Cause}
     end.
 

@@ -78,6 +78,8 @@ setup() ->
         ++ " -sasl sasl_error_logger '{file, \"../sasl.log\"}' ",
     {ok, Node1} = slave:start_link(list_to_atom(Hostname), 'manager_0', Args),
 
+    ok = leo_misc:init_env(),
+
     meck:new(leo_redundant_manager_api),
     meck:expect(leo_redundant_manager_api, get_redundancies_by_key,
                 fun(_Method, _Key) ->

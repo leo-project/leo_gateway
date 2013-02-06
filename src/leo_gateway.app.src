@@ -1,10 +1,10 @@
 {application, leo_gateway,
   [
    {description, "LeoFS Gateway Server"},
-   {vsn, "0.12.9"},
+   {vsn, "0.12.10"},
    {id, "leo_gateway"},
    {registered, []},
-   {applications, [kernel, stdlib]},
+   {applications, [kernel, stdlib, crypto]},
    {mod, {leo_gateway_app, []}},
    {env, []}
   ]

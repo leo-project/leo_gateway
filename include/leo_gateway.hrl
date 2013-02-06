@@ -62,54 +62,80 @@
 -define(TIMEOUT_L5_SEC,   30000).
 
 
+-define(env_http_properties(),
+        case application:get_env(leo_gateway, http) of
+            {ok, EnvHttp} -> EnvHttp;
+            _ -> []
+        end).
+
 -define(env_layer_of_dirs(),
         case application:get_env(leo_gateway, layer_of_dirs) of
-            {ok, GW_Val_1} -> GW_Val_1;
+            {ok, EnvLayerOfDirs} -> EnvLayerOfDirs;
             _ -> ?DEF_LAYERS_OF_DIRS
         end).
 
 -define(env_listener(),
         case application:get_env(leo_gateway, listener) of
-            {ok, Listener} -> Listener;
+            {ok, EnvListener} -> EnvListener;
             _ -> ?S3_HTTP
         end).
 
+-define(env_cache_properties(),
+        case application:get_env(leo_gateway, cache) of
+            {ok, EnvCache} -> EnvCache;
+            _ -> []
+        end).
+
+-define(env_large_object_properties(),
+        case application:get_env(leo_gateway, large_object) of
+            {ok, EnvLargeObject} -> EnvLargeObject;
+            _ -> []
+        end).
+
+-define(env_recover_properties(),
+        case application:get_env(leo_gateway, recover) of
+            {ok, EnvRecover} -> EnvRecover;
+            _ -> []
+        end).
+
+
+%% Timeout-related:
+%%
+-define(env_timeout(),
+        case application:get_env(leo_gateway, timeout) of
+            {ok, EnvTimeout} -> EnvTimeout;
+            _ -> []
+        end).
+
 -define(env_timeout_level_1(),
-        case application:get_env(leo_gateway, timeout_level_1) of
+        case leo_misc:get_env(leo_gateway, level_1) of
             {ok, EnvTimeoutL1} -> EnvTimeoutL1;
             _ -> ?TIMEOUT_L1_SEC
         end).
 
 -define(env_timeout_level_2(),
-        case application:get_env(leo_gateway, timeout_level_2) of
+        case leo_misc:get_env(leo_gateway, level_2) of
             {ok, EnvTimeoutL2} -> EnvTimeoutL2;
             _ -> ?TIMEOUT_L2_SEC
         end).
 
 -define(env_timeout_level_3(),
-        case application:get_env(leo_gateway, timeout_level_3) of
+        case leo_misc:get_env(leo_gateway, level_3) of
             {ok, EnvTimeoutL3} -> EnvTimeoutL3;
             _ -> ?TIMEOUT_L3_SEC
         end).
 
 -define(env_timeout_level_4(),
-        case application:get_env(leo_gateway, timeout_level_4) of
+        case leo_misc:get_env(leo_gateway, level_4) of
             {ok, EnvTimeoutL4} -> EnvTimeoutL4;
             _ -> ?TIMEOUT_L4_SEC
         end).
 
 -define(env_timeout_level_5(),
-        case application:get_env(leo_gateway, timeout_level_5) of
+        case leo_misc:get_env(leo_gateway, timeout_level_5) of
             {ok, EnvTimeoutL5} -> EnvTimeoutL5;
             _ -> ?TIMEOUT_L5_SEC
         end).
-
-
-%% %% REQ/RESP ERRORS
-%% -record(error_code, {
-%%           code             :: atom(),
-%%           description      :: list(),
-%%           http_status_code :: integer()}).
 
 
 -record(statistics, {
