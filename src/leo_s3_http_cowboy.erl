@@ -935,7 +935,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 %% @private
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
-    Ret = put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 0, Pid),
+    Ret = put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 1, Pid),
     catch leo_gateway_large_object_handler:stop(Pid),
     Ret.
 
