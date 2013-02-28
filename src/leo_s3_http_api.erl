@@ -49,7 +49,6 @@ start(Sup) ->
     %% for ECache
     NumOfECacheWorkers = Options#http_options.cache_workers,
     TotalCacheCapacity = Options#http_options.cache_capacity,
-    ?debugVal({NumOfECacheWorkers, TotalCacheCapacity}),
 
     ChildSpec0 = {ecache_sup,
                   {ecache_sup, start_link, [NumOfECacheWorkers, TotalCacheCapacity]},
