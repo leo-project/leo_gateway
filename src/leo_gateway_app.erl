@@ -132,7 +132,7 @@ inspect_cluster_status(Res, ManagerNodes) ->
 %% @private
 -spec(after_process_0({ok, pid()} | {error, any()}) ->
              {ok, pid()} | {error, any()}).
-after_process_0({ok, _Pid} = Res) ->
+after_process_0({ok, Pid} = Res) ->
     ok = leo_misc:init_env(),
 
     ManagerNodes0  = ?env_manager_nodes(leo_gateway),
@@ -149,7 +149,15 @@ after_process_0({ok, _Pid} = Res) ->
     ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
     %% Launch Redundant-manager#1
-    ok = leo_redundant_manager_api:start(gateway),
+    case whereis(leo_redundant_manager_sup) of
+        undefined ->
+            ChildSpec  = {leo_redundant_manager_sup,
+                          {leo_redundant_manager_sup, start_link, [gateway]},
+                          permanent, 2000, supervisor, [leo_redundant_manager_sup]},
+            {ok, _} = supervisor:start_child(Pid, ChildSpec);
+        _ ->
+            void
+    end,
 
     %% Launch S3Libs:Auth/Bucket/EndPoint
     ok = leo_s3_libs:start(slave),
@@ -174,7 +182,19 @@ after_process_1(SystemConf, Members) ->
     ManagerNodes    = ?env_manager_nodes(leo_gateway),
     NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
 
-    ok = leo_redundant_manager_api:start(gateway, NewManagerNodes, ?env_queue_dir(leo_gateway)),
+    RefSup = whereis(leo_gateway_sup),
+    case whereis(leo_redundant_manager_sup) of
+        undefined ->
+            ChildSpec = {leo_redundant_manager_sup,
+                         {leo_redundant_manager_sup, start_link,
+                          [gateway, NewManagerNodes, ?env_queue_dir(leo_gateway)]},
+                         permanent, 2000, supervisor, [leo_redundant_manager_sup]},
+            {ok, _} = supervisor:start_child(RefSup, ChildSpec);
+        _ ->
+            {ok, _} = leo_redundant_manager_sup:start_link(
+                        gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
+    end,
+
     {ok,_,_} = leo_redundant_manager_api:create(
                  Members, [{n, SystemConf#system_conf.n},
                            {r, SystemConf#system_conf.r},
