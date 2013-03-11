@@ -48,10 +48,15 @@ start(Sup) ->
 
     %% for ECache
     NumOfECacheWorkers = Options#http_options.cache_workers,
-    TotalCacheCapacity = Options#http_options.cache_capacity,
+    CacheRAMCapacity   = Options#http_options.cache_ram_capacity,
+    CacheDiscCapacity  = Options#http_options.cache_disc_capacity,
+    CacheDiscChunkSize = Options#http_options.cache_disc_chunk_size,
+    CacheDiscDir1      = Options#http_options.cache_disc_dir_data,
+    CacheDiscDir2      = Options#http_options.cache_disc_dir_journal,
 
     ChildSpec0 = {ecache_sup,
-                  {ecache_sup, start_link, [NumOfECacheWorkers, TotalCacheCapacity]},
+                  {ecache_sup, start_link, [NumOfECacheWorkers, CacheRAMCapacity, CacheDiscCapacity,
+                                            CacheDiscChunkSize, CacheDiscDir1, CacheDiscDir2]},
                   permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [ecache_sup]},
     {ok, _} = supervisor:start_child(Sup, ChildSpec0),
 
@@ -81,13 +86,17 @@ get_options() ->
 
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
-    UserHttpCache        = leo_misc:get_value('http_cache',            CacheProp, false),
-    CacheWorkers         = leo_misc:get_value('cache_workers',         CacheProp, 64),
-    CacheCapacity        = leo_misc:get_value('cache_capacity',        CacheProp, 64000000), %% about 64MB
-    CacheExpire          = leo_misc:get_value('cache_expire',          CacheProp, 300),      %% 300sec
-    CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len', CacheProp, 1000000),  %% about 1MB
-    CachableContentTypes = leo_misc:get_value('cachable_content_type', CacheProp, []),
-    CachablePathPatterns = leo_misc:get_value('cachable_path_pattern', CacheProp, []),
+    UserHttpCache        = leo_misc:get_value('http_cache',             CacheProp, false),
+    CacheWorkers         = leo_misc:get_value('cache_workers',          CacheProp, 64),
+    CacheRAMCapacity     = leo_misc:get_value('cache_ram_capacity',     CacheProp, 64000000),  %% about 64MB
+    CacheDiscCapacity    = leo_misc:get_value('cache_disc_capacity',    CacheProp, 64000000),  %% about 64MB
+    CacheDiscChunkSize   = leo_misc:get_value('cache_disc_chunk_size',  CacheProp, 16384),     %% about 16KB
+    CacheDiscDirData     = leo_misc:get_value('cache_disc_dir_data',    CacheProp, "./cache/data"),
+    CacheDiscDirJournal  = leo_misc:get_value('cache_disc_dir_journal', CacheProp, "./cache/journal"),
+    CacheExpire          = leo_misc:get_value('cache_expire',           CacheProp, 300),       %% 300sec
+    CacheMaxContentLen   = leo_misc:get_value('cache_max_content_len',  CacheProp, 1000000),   %% about 1MB
+    CachableContentTypes = leo_misc:get_value('cachable_content_type',  CacheProp, []),
+    CachablePathPatterns = leo_misc:get_value('cachable_path_pattern',  CacheProp, []),
 
     CacheMethod = case UserHttpCache of
                       true  -> ?CACHE_HTTP;
@@ -126,7 +135,11 @@ get_options() ->
                                 num_of_acceptors       = NumOfAcceptors,
                                 cache_method           = CacheMethod,
                                 cache_workers          = CacheWorkers,
-                                cache_capacity         = CacheCapacity,
+                                cache_ram_capacity     = CacheRAMCapacity,
+                                cache_disc_capacity    = CacheDiscCapacity,
+                                cache_disc_chunk_size  = CacheDiscChunkSize,
+                                cache_disc_dir_data    = CacheDiscDirData,
+                                cache_disc_dir_journal = CacheDiscDirJournal,
                                 cache_expire           = CacheExpire,
                                 cache_max_content_len  = CacheMaxContentLen,
                                 cachable_content_type  = CachableContentTypes1,
@@ -143,7 +156,11 @@ get_options() ->
     ?info("start/3", "num of acceptors: ~p",        [NumOfAcceptors]),
     ?info("start/3", "cache_method: ~p",            [CacheMethod]),
     ?info("start/3", "cache workers: ~p",           [CacheWorkers]),
-    ?info("start/3", "cache capacity: ~p",          [CacheCapacity]),
+    ?info("start/3", "cache ram capacity: ~p",      [CacheRAMCapacity]),
+    ?info("start/3", "cache disc capacity: ~p",     [CacheDiscCapacity]),
+    ?info("start/3", "cache disc chunk size: ~p",   [CacheDiscChunkSize]),
+    ?info("start/3", "cache disc data-dir: ~p",     [CacheDiscDirData]),
+    ?info("start/3", "cache disc journal-dir: ~p",  [CacheDiscDirJournal]),
     ?info("start/3", "cache expire: ~p",            [CacheExpire]),
     ?info("start/3", "cache_max_content_len: ~p",   [CacheMaxContentLen]),
     ?info("start/3", "cacheable_content_types: ~p", [CachableContentTypes]),
