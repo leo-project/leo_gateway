@@ -163,7 +163,7 @@ generate_xml(Key, Prefix, MetadataList) ->
                                                 "<Contents>",
                                                 "<Key>", PrefixStr, Entry, "</Key>",
                                                 "<LastModified>", leo_http:web_date(TS), "</LastModified>",
-                                                "<ETag>", leo_hex:integer_to_hex(CS), "</ETag>",
+                                                "<ETag>", leo_hex:integer_to_hex(CS, 32), "</ETag>",
                                                 "<Size>", integer_to_list(Length), "</Size>",
                                                 "<StorageClass>STANDARD</StorageClass>",
                                                 "<Owner>",

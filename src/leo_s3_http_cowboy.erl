@@ -422,7 +422,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
 
                     Bin = term_to_binary(
                             #cache{mtime        = Now,
-                                   etag         = leo_hex:binary_to_integer(crypto:md5(Body)),
+                                   etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
                                    content_type = ContentType,
                                    body         = Body}),
                     _ = ecache_api:put(Key, Bin),
@@ -956,7 +956,7 @@ put_large_object(Req0, Key, Size0, Params)->
                   %%
                   case catch leo_gateway_large_object_handler:result(Pid) of
                       {ok, Digest0} when Size0 == TotalLength ->
-                          Digest1 = leo_hex:binary_to_integer(Digest0),
+                          Digest1 = leo_hex:raw_binary_to_integer(Digest0),
 
                           case leo_gateway_rpc_handler:put(
                                  Key, ?BIN_EMPTY, Size0, ChunkedSize, TotalChunckedObjs, Digest1) of
