@@ -75,10 +75,10 @@ handle_call({sync, ?STAT_INTERVAL_1M}) ->
                 {_, _Cause} -> #stats{}
             end,
 
-    #stats{gets    = NumOfRead,
-           hits    = HitCount,
-           records = NumOfObjects,
-           total_cache_used = TotalOfSize0} = Stats,
+    #stats{gets        = NumOfRead,
+           hits        = HitCount,
+           records     = NumOfObjects,
+           cached_size = TotalOfSize0} = Stats,
     TotalOfSize1 = erlang:round(TotalOfSize0 / (1024*1024)),
 
     catch snmp_generic:variable_set(?SNMP_CACHE_HIT_COUNT,  HitCount),
