@@ -145,25 +145,29 @@
 
 
 -record(http_options, {
-          port = 0                   :: pos_integer(),  %% http port number
-          ssl_port = 0               :: pos_integer(),  %% ssl port number
-          ssl_certfile = []          :: string(),       %% ssl cert file name
-          ssl_keyfile = []           :: string(),       %% ssk key file name
-          num_of_acceptors = 0       :: pos_integer(),  %% # of acceptors (http server's workers)
-          s3_api = true              :: boolean(),      %% use s3-api?
+          port = 0                     :: pos_integer(),  %% http port number
+          ssl_port = 0                 :: pos_integer(),  %% ssl port number
+          ssl_certfile = []            :: string(),       %% ssl cert file name
+          ssl_keyfile = []             :: string(),       %% ssk key file name
+          num_of_acceptors = 0         :: pos_integer(),  %% # of acceptors (http server's workers)
+          s3_api = true                :: boolean(),      %% use s3-api?
           %% for cache
-          cache_method               :: cache_method(), %% cahce method: [http | inner]
-          cache_workers = 0          :: pos_integer(),
-          cache_capacity = 0         :: pos_integer(),
-          cache_expire = 0           :: pos_integer(),  %% cache expire time (sec)
-          cache_max_content_len = 0  :: pos_integer(),  %% cache max content length (byte)
-          cachable_content_type = [] :: list(),         %% cachable content types
-          cachable_path_pattern = [] :: list(),         %% cachable path patterns
+          cache_method                 :: cache_method(), %% cahce method: [http | inner]
+          cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers
+          cache_ram_capacity = 0       :: pos_integer(),  %% cache size (RAM)
+          cache_disc_capacity = 0      :: pos_integer(),  %% cache size (Disc)
+          cache_disc_threshold_len = 0 :: pos_integer(),  %% cache disc threshold length (Disc)
+          cache_disc_dir_data = []     :: string(),       %% cache-directory for data    (Disc)
+          cache_disc_dir_journal = []  :: string(),       %% cache-directory for journal (Disc)
+          cache_expire = 0             :: pos_integer(),  %% cache expire time (sec)
+          cache_max_content_len = 0    :: pos_integer(),  %% cache max content length (byte)
+          cachable_content_type = []   :: list(),         %% cachable content types
+          cachable_path_pattern = []   :: list(),         %% cachable path patterns
           %% for large-object
-          max_chunked_objs = 0       :: pos_integer(),  %% max chunked objects
-          max_len_for_obj = 0        :: pos_integer(),  %% max length a object (byte)
-          chunked_obj_len = 0        :: pos_integer(),  %% chunked object length for large object (byte)
-          threshold_obj_len = 0      :: pos_integer()   %% threshold object length for large object (byte)
+          max_chunked_objs = 0         :: pos_integer(),  %% max chunked objects
+          max_len_for_obj = 0          :: pos_integer(),  %% max length a object (byte)
+          chunked_obj_len = 0          :: pos_integer(),  %% chunked object length for large object (byte)
+          threshold_obj_len = 0        :: pos_integer()   %% threshold object length for large object (byte)
          }).
 
 -record(req_params, {

@@ -54,8 +54,14 @@ get_node_status() ->
             _ -> {[], []}
         end,
 
-    Directories = [{log,    ?env_log_dir(leo_gateway)},
-                   {mnesia, mnesia:system_info(directory)}
+    SNMPAgent = case application:get_env(leo_storage, snmp_agent) of
+                   {ok, EnvSNMPAgent} -> EnvSNMPAgent;
+                   _ -> []
+               end,
+
+    Directories = [{log,        ?env_log_dir(leo_gateway)},
+                   {mnesia,     []},
+                   {snmp_agent, SNMPAgent}
                   ],
     RingHashes  = [{ring_cur,  RingHashCur},
                    {ring_prev, RingHashPrev }
