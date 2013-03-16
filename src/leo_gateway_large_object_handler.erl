@@ -206,7 +206,7 @@ handle_loop(Key0, Total, Index, Req) ->
     case leo_gateway_rpc_handler:get(Key1) of
         %% only children
         {ok, #metadata{cnumber = 0}, Bin} ->
-            case cowboy_http_req:chunk(Bin, Req) of
+            case cowboy_req:chunk(Bin, Req) of
                 ok ->
                     handle_loop(Key0, Total, Index + 1, Req);
                 {error, Cause} ->
