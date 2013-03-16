@@ -148,6 +148,8 @@ setup(InitFun, TermFun) ->
 
 setup_cowboy() ->
     application:start(ecache),
+    application:start(crypto),
+    application:start(ranch),
     application:start(cowboy),
     %% {ok, Options} = leo_s3_http_api:get_options(cowboy, [{port,8080},{num_of_acceptors,32},
     %%                                                      {ssl_port,8443},
