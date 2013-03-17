@@ -7,8 +7,7 @@ Overview
 --------
 
 * "leo_gateway" is one of the core component of [LeoFS](https://github.com/leo-project/leofs). Main roles are described below.
-  * HTTP server as the _Gate_ of _LeoFS_ powered by [mochiweb](https://github.com/mochi/mochiweb).
-  * Also, We will plan to support [cowboy](https://github.com/essen/cowboy) with Ver-0.9.1.
+  * LeoFS's Gateway use [Cowboy](https://github.com/extend/cowboy) as Erlang's HTTP server.
   * Able to speak [Amazon S3 compatible REST API](http://docs.amazonwebservices.com/AmazonS3/2006-03-01/dev/Welcome.html?r=5754).
   * Implemented a subset of Caching in HTTP(RFC2616).
 
