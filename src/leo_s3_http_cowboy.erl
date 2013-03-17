@@ -70,8 +70,8 @@ start(#http_options{port                   = Port,
                     cachable_path_pattern  = CachablePathPatterns} = Props) ->
     InternalCache = (CacheMethod == 'inner'),
     Dispatch      = cowboy_router:compile(
-        [{'_', [{'_', ?MODULE,
-            [?env_layer_of_dirs(), InternalCache, Props]}]}]),
+                      [{'_', [{'_', ?MODULE,
+                               [?env_layer_of_dirs(), InternalCache, Props]}]}]),
 
     Config = case InternalCache of
                  %% Using inner-cache
@@ -89,13 +89,13 @@ start(#http_options{port                   = Port,
              end,
 
     cowboy:start_http(?MODULE, NumOfAcceptors,
-                          [{port, Port}],
-                          Config),
+                      [{port, Port}],
+                      Config),
     cowboy:start_https(?SSL_PROC_NAME, NumOfAcceptors,
-                          [{port,     SSLPort},
-                           {certfile, SSLCertFile},
-                           {keyfile,  SSLKeyFile}],
-                          Config).
+                       [{port,     SSLPort},
+                        {certfile, SSLCertFile},
+                        {keyfile,  SSLKeyFile}],
+                       Config).
 
 
 %% @doc
@@ -399,43 +399,43 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
 %% @private
 onresponse(#cache_condition{expire = Expire} = Config) ->
     fun(?HTTP_ST_OK, Headers, Body, Req) ->
-        case cowboy_req:get(method, Req) of
-            ?HTTP_GET ->
-                Key = gen_key(Req),
+            case cowboy_req:get(method, Req) of
+                ?HTTP_GET ->
+                    Key = gen_key(Req),
 
-                case lists:all(fun(Fun) ->
-                                       Fun(Key, Config, Headers, Body)
-                               end, [fun is_cachable_req1/4,
-                                     fun is_cachable_req2/4,
-                                     fun is_cachable_req3/4]) of
-                    true ->
-                        Now = leo_date:now(),
-                        ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
-                                          false ->
-                                              ?HTTP_CTYPE_OCTET_STREAM;
-                                          {_, Val} ->
-                                              Val
-                                      end,
+                    case lists:all(fun(Fun) ->
+                                           Fun(Key, Config, Headers, Body)
+                                   end, [fun is_cachable_req1/4,
+                                         fun is_cachable_req2/4,
+                                         fun is_cachable_req3/4]) of
+                        true ->
+                            Now = leo_date:now(),
+                            ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
+                                              false ->
+                                                  ?HTTP_CTYPE_OCTET_STREAM;
+                                              {_, Val} ->
+                                                  Val
+                                          end,
 
-                        Bin = term_to_binary(
-                                #cache{mtime        = Now,
-                                       etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
-                                       content_type = ContentType,
-                                       body         = Body}),
-                        _ = ecache_api:put(Key, Bin),
+                            Bin = term_to_binary(
+                                    #cache{mtime        = Now,
+                                           etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
+                                           content_type = ContentType,
+                                           body         = Body}),
+                            _ = ecache_api:put(Key, Bin),
 
-                        Headers2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Headers),
-                        Headers3 = [{?HTTP_HEAD_CACHE_CTRL, lists:append(["max-age=",integer_to_list(Expire)])},
-                                    {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
-                                    |Headers2],
-                        {ok, Req2} = cowboy_req:reply(?HTTP_ST_OK, Headers3, Req),
-                        Req2;
-                    false ->
-                        cowboy_req:set_resp_body(<<>>, Req)
-                end;
-           _ ->
-                cowboy_req:set_resp_body(<<>>, Req)
-        end
+                            Headers2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Headers),
+                            Headers3 = [{?HTTP_HEAD_CACHE_CTRL, lists:append(["max-age=",integer_to_list(Expire)])},
+                                        {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
+                                        |Headers2],
+                            {ok, Req2} = cowboy_req:reply(?HTTP_ST_OK, Headers3, Req),
+                            Req2;
+                        false ->
+                            cowboy_req:set_resp_body(<<>>, Req)
+                    end;
+                _ ->
+                    cowboy_req:set_resp_body(<<>>, Req)
+            end
     end.
 
 
@@ -949,14 +949,14 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
         {ok, Digest0} when Size == TotalSize ->
             Digest1 = leo_hex:raw_binary_to_integer(Digest0),
             case leo_gateway_rpc_handler:put(
-                    Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
+                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
                 {ok, _ETag} ->
                     cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
                                                    {?HTTP_HEAD_ETAG4AWS,
                                                     lists:append(["\"",
-                                                                 leo_hex:integer_to_hex(Digest1, 32),
-                                                                 "\""])}
-                                                    ], Req);
+                                                                  leo_hex:integer_to_hex(Digest1, 32),
+                                                                  "\""])}
+                                                  ], Req);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
                 {error, timeout} ->
