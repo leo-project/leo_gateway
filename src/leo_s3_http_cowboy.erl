@@ -207,8 +207,8 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
                     upload_part_num = PartNum0} = Params, _State) when UploadId /= <<>>,
                                                                        PartNum0 /= 0 ->
     PartNum1 = list_to_binary(integer_to_list(PartNum0)),
-    Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,  %% for confirmation
-    Key1 = << Path0/binary, ?STR_NEWLINE, PartNum1/binary  >>, %% for put a part of an object
+    Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>, %% for confirmation
+    Key1 = << Path0/binary, ?STR_NEWLINE, PartNum1/binary >>, %% for put a part of an object
 
     case leo_gateway_rpc_handler:head(Key0) of
         {ok, _Metadata} ->
@@ -935,9 +935,16 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 %% @private
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
-    Ret = put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 1, Pid),
+
+    Ret2 = case catch put_large_object(
+                        cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 1, Pid) of
+               {'EXIT', Cause} ->
+                   {error, Cause};
+               Ret1 ->
+                   Ret1
+           end,
     catch leo_gateway_large_object_handler:stop(Pid),
-    Ret.
+    Ret2.
 
 %% @todo ChunkedSize
 put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->

@@ -145,6 +145,9 @@ handle_call({put, ChunkSize, Size0, Bin0}, _From, State) ->
     {reply, Ret, NewState};
 
 
+handle_call({put, done}, _From, #state{chunk_bin = <<>>,
+                                       chunk_num = ChunkNum0} = State) ->
+    {reply, {ok, ChunkNum0}, State};
 handle_call({put, done}, _From, #state{key = Key,
                                        chunk_bin = Bin,
                                        chunk_num = ChunkNum0,
@@ -205,24 +208,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Put chunked objects
 %% @private
-chunk_and_put(ChunkSize, Size0, Bin0, #state{chunk_bin = ChunkBin,
+chunk_and_put(ChunkSize, _Size, Bin0, #state{chunk_bin = ChunkBin,
                                              chunk_num = ChunkNum0} = State) ->
-    Ret = case (ChunkSize =< Size0) of
+    Bin1  = << ChunkBin/binary, Bin0/binary >>,
+    Size1 = byte_size(Bin1),
+
+    Ret = case (ChunkSize =< Size1) of
               true ->
-                  <<Acc1:ChunkSize/binary, Acc2/binary>> = Bin0,
+                  <<Acc1:ChunkSize/binary, Acc2/binary>> = Bin1,
                   {true, {ChunkNum0 + 1, Acc1, Acc2}};
-
               false ->
-                  Bin1  = << ChunkBin/binary, Bin0/binary >>,
-                  Size1 = byte_size(Bin1),
-
-                  case (ChunkSize =< Size1) of
-                      true ->
-                          <<Acc1:ChunkSize/binary, Acc2/binary>> = Bin1,
-                          {true, {ChunkNum0 + 1, Acc1, Acc2}};
-                      false ->
-                          {false, {ChunkNum0, <<>>, Bin1}}
-                  end
+                  {false, {ChunkNum0, <<>>, Bin1}}
           end,
     chunk_and_put(Ret, State).
 
