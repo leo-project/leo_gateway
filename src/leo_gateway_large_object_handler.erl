@@ -31,8 +31,8 @@
 
 
 %% Application callbacks
--export([start_link/0, stop/1]).
--export([put/5, get/4, rollback/3, result/1]).
+-export([start_link/1, stop/1]).
+-export([put/2, put/4, get/3, rollback/2, result/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -46,9 +46,11 @@
 -undef(DEF_TIMEOUT).
 -define(DEF_TIMEOUT, 30000).
 
--record(state, {num_of_chunks  :: integer(),
-                md5_context    :: binary(),
-                errors = []    :: list()
+-record(state, {key = <<>>       :: binary(),
+                chunk_bin = <<>> :: binary(),
+                chunk_num = 0    :: pos_integer(),
+                md5_context      :: binary(),
+                errors = []      :: list()
                }).
 
 
@@ -57,10 +59,10 @@
 %% ===================================================================
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
--spec(start_link() ->
+-spec(start_link(binary()) ->
              ok | {error, any()}).
-start_link() ->
-    gen_server:start_link(?MODULE, [], []).
+start_link(Key) ->
+    gen_server:start_link(?MODULE, [Key], []).
 
 %% @doc Stop this server
 %%
@@ -71,26 +73,29 @@ stop(Pid) ->
 
 %% @doc Insert a chunked object into the storage cluster
 %%
--spec(put(pid(), binary(), integer(), integer(), binary()) ->
+-spec(put(pid(), integer(), integer(), binary()) ->
              ok | {error, any()}).
-put(Pid, Key, Index, Size, Bin) ->
-    gen_server:call(Pid, {put, Key, Index, Size, Bin}, ?DEF_TIMEOUT).
+put(Pid, ChunkSize, Size, Bin) ->
+    gen_server:call(Pid, {put, ChunkSize, Size, Bin}, ?DEF_TIMEOUT).
+
+put(Pid, done) ->
+    gen_server:call(Pid, {put, done}, ?DEF_TIMEOUT).
 
 
 %% @doc Retrieve a chunked object from the storage cluster
 %%
--spec(get(pid(), binary(), integer(), pid()) ->
+-spec(get(pid(), integer(), pid()) ->
              ok | {error, any()}).
-get(Pid, Key, TotalOfChunkedObjs, Req) ->
-    gen_server:call(Pid, {get, Key, TotalOfChunkedObjs, Req}, ?DEF_TIMEOUT).
+get(Pid, TotalOfChunkedObjs, Req) ->
+    gen_server:call(Pid, {get, TotalOfChunkedObjs, Req}, ?DEF_TIMEOUT).
 
 
 %% @doc Make a rollback before all operations
 %%
--spec(rollback(pid(), binary(), integer()) ->
+-spec(rollback(pid(), integer()) ->
              ok | {error, any()}).
-rollback(Pid, Key, TotalOfChunkedObjs) ->
-    gen_server:call(Pid, {rollback, Key, TotalOfChunkedObjs}, ?DEF_TIMEOUT).
+rollback(Pid, TotalOfChunkedObjs) ->
+    gen_server:call(Pid, {rollback, TotalOfChunkedObjs}, ?DEF_TIMEOUT).
 
 
 %% @doc Retrieve a result
@@ -109,16 +114,16 @@ result(Pid) ->
 %%                         ignore               |
 %%                         {stop, Reason}
 %% Description: Initiates the server
-init([]) ->
-    Context = crypto:md5_init(),
-    {ok, #state{md5_context = Context,
+init([Key]) ->
+    {ok, #state{key = Key,
+                md5_context = crypto:md5_init(),
                 errors = []}}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 
-handle_call({get, Key, TotalOfChunkedObjs, Req}, _From, State) ->
+handle_call({get, TotalOfChunkedObjs, Req}, _From, #state{key = Key} = State) ->
     Reply = handle_loop(Key, TotalOfChunkedObjs, Req),
     {reply, Reply, State};
 
@@ -135,23 +140,34 @@ handle_call(result, _From, #state{md5_context = Context,
     {reply, Reply, State};
 
 
-handle_call({put, Key, Index, Size, Bin}, _From, #state{md5_context = Context,
-                                                        errors = Errors} = State) ->
-    IndexBin = list_to_binary(integer_to_list(Index)),
+handle_call({put, ChunkSize, Size0, Bin0}, _From, State) ->
+    {Ret, NewState} = chunk_and_put(ChunkSize, Size0, Bin0, State),
+    {reply, Ret, NewState};
+
+
+handle_call({put, done}, _From, #state{key = Key,
+                                       chunk_bin = Bin,
+                                       chunk_num = ChunkNum0,
+                                       md5_context = Context,
+                                       errors = Errors} = State) ->
+    Size = byte_size(Bin),
+    ChunkNum1 = ChunkNum0 + 1,
+    IndexBin = list_to_binary(integer_to_list(ChunkNum1)),
 
     case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-                                     Bin, Size, Index) of
+                                     Bin, Size, ChunkNum1) of
         {ok, _ETag} ->
             NewContext = crypto:md5_update(Context, Bin),
-            {reply, ok, State#state{md5_context = NewContext,
-                                    errors = Errors}};
+            {reply, {ok, ChunkNum1}, State#state{chunk_num = ChunkNum1,
+                                                 md5_context = NewContext,
+                                                 errors = Errors}};
         {error, Cause} ->
             ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-            {reply, {error, Cause}, State#state{errors = [{Index, Cause}|Errors]}}
+            {reply, {error, Cause}, State#state{errors = [{ChunkNum1, Cause}|Errors]}}
     end;
 
 
-handle_call({rollback, Key, TotalOfChunkedObjs}, _From, State) ->
+handle_call({rollback, TotalOfChunkedObjs}, _From, #state{key = Key} = State) ->
     ok = delete_chunked_objects(Key, TotalOfChunkedObjs),
     {reply, ok, State#state{errors = []}}.
 
@@ -187,7 +203,53 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% INNTERNAL FUNCTION
 %%====================================================================
-%% @doc Handle retrieve chunked objects
+%% @doc Put chunked objects
+%% @private
+chunk_and_put(ChunkSize, Size0, Bin0, #state{chunk_bin = ChunkBin,
+                                             chunk_num = ChunkNum0} = State) ->
+    Ret = case (ChunkSize =< Size0) of
+              true ->
+                  <<Acc1:ChunkSize/binary, Acc2/binary>> = Bin0,
+                  {true, {ChunkNum0 + 1, Acc1, Acc2}};
+
+              false ->
+                  Bin1  = << ChunkBin/binary, Bin0/binary >>,
+                  Size1 = byte_size(Bin1),
+
+                  case (ChunkSize =< Size1) of
+                      true ->
+                          <<Acc1:ChunkSize/binary, Acc2/binary>> = Bin1,
+                          {true, {ChunkNum0 + 1, Acc1, Acc2}};
+                      false ->
+                          {false, {ChunkNum0, <<>>, Bin1}}
+                  end
+          end,
+    chunk_and_put(Ret, State).
+
+chunk_and_put({true, {ChunkNum, Bin, Acc}}, #state{key = Key,
+                                                   md5_context = Context,
+                                                   errors = Errors} = State) ->
+    Size = byte_size(Bin),
+    IndexBin = list_to_binary(integer_to_list(ChunkNum)),
+
+    case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+                                     Bin, Size, ChunkNum) of
+        {ok, _ETag} ->
+            NewContext = crypto:md5_update(Context, Bin),
+            {ok, State#state{chunk_bin = Acc,
+                             chunk_num = ChunkNum,
+                             md5_context = NewContext,
+                             errors = Errors}};
+        {error, Cause} ->
+            ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {{error, Cause}, State#state{errors = [{ChunkNum, Cause}|Errors]}}
+    end;
+
+chunk_and_put({false, {_, _, Acc}}, State) ->
+    {ok, State#state{chunk_bin = Acc}}.
+
+
+%% @doc Retrieve chunked objects
 %% @private
 -spec(handle_loop(binary(), integer(), any()) ->
              {ok, any()}).
@@ -252,4 +314,3 @@ delete_chunked_objects(Key0, Index) ->
                    [binary_to_list(Key0), Index, Cause])
     end,
     delete_chunked_objects(Key0, Index - 1).
-

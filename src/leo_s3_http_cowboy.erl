@@ -688,10 +688,10 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
-            {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
+            {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
             {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, [?SERVER_HEADER], Req),
 
-            Ret = leo_gateway_large_object_handler:get(Pid, Key, TotalChunkedObjs, Req2),
+            Ret = leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req2),
             catch leo_gateway_large_object_handler:stop(Pid),
 
             case Ret of
@@ -934,45 +934,53 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 %% @doc Put a large-object into the storage
 %% @private
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
-    {ok, Pid}  = leo_gateway_large_object_handler:start_link(),
+    {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
     Ret = put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 1, Pid),
     catch leo_gateway_large_object_handler:stop(Pid),
     Ret.
 
 %% @todo ChunkedSize
-put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
+put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
     DataSize = byte_size(Data),
-    catch leo_gateway_large_object_handler:put(Pid, Key, TotalChunks, DataSize, Data),
-    put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize, TotalSize + DataSize, TotalChunks + 1, Pid);
 
-put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks0, Pid) ->
-    TotalChunks1 = TotalChunks0 - 1,
+    catch leo_gateway_large_object_handler:put(Pid, ChunkedSize, DataSize, Data),
+    put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize,
+                     TotalSize + DataSize, Counter + 1, Pid);
 
-    case catch leo_gateway_large_object_handler:result(Pid) of
-        {ok, Digest0} when Size == TotalSize ->
-            Digest1 = leo_hex:raw_binary_to_integer(Digest0),
-            case leo_gateway_rpc_handler:put(
-                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
-                {ok, _ETag} ->
-                    cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                                   {?HTTP_HEAD_ETAG4AWS,
-                                                    lists:append(["\"",
-                                                                  leo_hex:integer_to_hex(Digest1, 32),
-                                                                  "\""])}
-                                                  ], Req);
-                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                    cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
-                {error, timeout} ->
-                    cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
+    case catch leo_gateway_large_object_handler:put(Pid, done) of
+        {ok, TotalChunks} ->
+            case catch leo_gateway_large_object_handler:result(Pid) of
+                {ok, Digest0} when Size == TotalSize ->
+                    Digest1 = leo_hex:raw_binary_to_integer(Digest0),
+
+                    case leo_gateway_rpc_handler:put(
+                           Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
+                        {ok, _ETag} ->
+                            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
+                                                           {?HTTP_HEAD_ETAG4AWS,
+                                                            lists:append(["\"",
+                                                                          leo_hex:integer_to_hex(Digest1, 32),
+                                                                          "\""])}
+                                                          ], Req);
+                        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+                        {error, timeout} ->
+                            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+                    end;
+                {_, _Cause} ->
+                    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
+                    cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
             end;
-        {_, _Cause} ->
-            ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunks1),
+        {error, _Cause} ->
+            ok = leo_gateway_large_object_handler:rollback(Pid, Counter),
             cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
     end;
+
 %% An error occurred while reading the body, connection is gone.
-put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, TotalChunks, Pid) ->
+put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, Counter, Pid) ->
     ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-    ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunks).
+    ok = leo_gateway_large_object_handler:rollback(Pid, Counter).
 
 
 %% @doc getter helper function. return "" if specified header is undefined
