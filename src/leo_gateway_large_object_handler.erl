@@ -32,7 +32,7 @@
 
 %% Application callbacks
 -export([start_link/1, stop/1]).
--export([put/2, put/4, get/3, rollback/2, result/1]).
+-export([put/2, put/3, get/3, rollback/2, result/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -73,10 +73,10 @@ stop(Pid) ->
 
 %% @doc Insert a chunked object into the storage cluster
 %%
--spec(put(pid(), integer(), integer(), binary()) ->
+-spec(put(pid(), integer(), binary()) ->
              ok | {error, any()}).
-put(Pid, ChunkSize, Size, Bin) ->
-    gen_server:call(Pid, {put, ChunkSize, Size, Bin}, ?DEF_TIMEOUT).
+put(Pid, ChunkSize, Bin) ->
+    gen_server:call(Pid, {put, ChunkSize, Bin}, ?DEF_TIMEOUT).
 
 put(Pid, done) ->
     gen_server:call(Pid, {put, done}, ?DEF_TIMEOUT).
@@ -140,8 +140,8 @@ handle_call(result, _From, #state{md5_context = Context,
     {reply, Reply, State};
 
 
-handle_call({put, ChunkSize, Size0, Bin0}, _From, State) ->
-    {Ret, NewState} = chunk_and_put(ChunkSize, Size0, Bin0, State),
+handle_call({put, ChunkSize, Bin0}, _From, State) ->
+    {Ret, NewState} = chunk_and_put(ChunkSize, Bin0, State),
     {reply, Ret, NewState};
 
 
@@ -208,8 +208,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Put chunked objects
 %% @private
-chunk_and_put(ChunkSize, _Size, Bin0, #state{chunk_bin = ChunkBin,
-                                             chunk_num = ChunkNum0} = State) ->
+chunk_and_put(ChunkSize, Bin0, #state{chunk_bin = ChunkBin,
+                                      chunk_num = ChunkNum0} = State) ->
     Bin1  = << ChunkBin/binary, Bin0/binary >>,
     Size1 = byte_size(Bin1),
 

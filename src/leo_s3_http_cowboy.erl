@@ -946,11 +946,10 @@ put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     catch leo_gateway_large_object_handler:stop(Pid),
     Ret2.
 
-%% @todo ChunkedSize
 put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
     DataSize = byte_size(Data),
 
-    catch leo_gateway_large_object_handler:put(Pid, ChunkedSize, DataSize, Data),
+    catch leo_gateway_large_object_handler:put(Pid, ChunkedSize, Data),
     put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize,
                      TotalSize + DataSize, Counter + 1, Pid);
 
