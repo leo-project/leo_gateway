@@ -944,12 +944,15 @@ put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks
     DataSize = byte_size(Data),
     catch leo_gateway_large_object_handler:put(Pid, Key, TotalChunks, DataSize, Data),
     put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize, TotalSize + DataSize, TotalChunks + 1, Pid);
-put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
+
+put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks0, Pid) ->
+    TotalChunks1 = TotalChunks0 - 1,
+
     case catch leo_gateway_large_object_handler:result(Pid) of
         {ok, Digest0} when Size == TotalSize ->
             Digest1 = leo_hex:raw_binary_to_integer(Digest0),
             case leo_gateway_rpc_handler:put(
-                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
+                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
                 {ok, _ETag} ->
                     cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
                                                    {?HTTP_HEAD_ETAG4AWS,
@@ -963,7 +966,7 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
                     cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
             end;
         {_, _Cause} ->
-            ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunks),
+            ok = leo_gateway_large_object_handler:rollback(Pid, Key, TotalChunks1),
             cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
     end;
 %% An error occurred while reading the body, connection is gone.
