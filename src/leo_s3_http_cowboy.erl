@@ -170,64 +170,69 @@ handle1({error, _Cause}, Req0,_,_,_,State) ->
 %% For Multipart Upload - Initiation
 %%
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
-                                                            is_upload = true},_State) ->
+                                                            is_upload = true}, State) ->
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
     UploadId    = leo_hex:binary_to_hex(crypto:md5(<< Path0/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
 
-    case leo_gateway_rpc_handler:put(<<Path0/binary, ?STR_NEWLINE, UploadIdBin/binary>> , <<>>, 0) of
-        {ok, _ETag} ->
-            %% Response xml to a client
-            [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
-            XML = gen_upload_initiate_xml(Bucket, Path1, UploadId),
+    {ok, Req2} =
+        case leo_gateway_rpc_handler:put(<<Path0/binary, ?STR_NEWLINE, UploadIdBin/binary>> , <<>>, 0) of
+            {ok, _ETag} ->
+                %% Response xml to a client
+                [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+                XML = gen_upload_initiate_xml(Bucket, Path1, UploadId),
 
-            Req1 = cowboy_req:set_resp_body(XML, Req0),
-            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1);
-        {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
-        {error, Cause} ->
-            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
-    end;
+                Req1 = cowboy_req:set_resp_body(XML, Req0),
+                cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1);
+            {error, timeout} ->
+                cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
+            {error, Cause} ->
+                ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+        end,
+    {ok, Req2, State};
 
 %% For Multipart Upload - Upload a part of an object
 %%
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
         #req_params{upload_id = UploadId,
                     upload_part_num  = PartNum0,
-                    max_chunked_objs = MaxChunkedObjs}, _State) when UploadId /= <<>>,
-                                                                     PartNum0 > MaxChunkedObjs ->
-    cowboy_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req0);
+                    max_chunked_objs = MaxChunkedObjs}, State) when UploadId /= <<>>,
+                                                                    PartNum0 > MaxChunkedObjs ->
+    {ok, Req1} = cowboy_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req0),
+    {ok, Req1, State};
 
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
         #req_params{path = Path0,
                     is_upload = false,
                     upload_id = UploadId,
-                    upload_part_num = PartNum0} = Params, _State) when UploadId /= <<>>,
-                                                                       PartNum0 /= 0 ->
+                    upload_part_num = PartNum0} = Params, State) when UploadId /= <<>>,
+                                                                      PartNum0 /= 0 ->
     PartNum1 = list_to_binary(integer_to_list(PartNum0)),
     Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>, %% for confirmation
     Key1 = << Path0/binary, ?STR_NEWLINE, PartNum1/binary >>, %% for put a part of an object
 
-    case leo_gateway_rpc_handler:head(Key0) of
-        {ok, _Metadata} ->
-            put1(?BIN_EMPTY, Req0, Key1, Params);
-        {error, not_found} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req0);
-        {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
-    end;
-
+    {ok, Req1} =
+        case leo_gateway_rpc_handler:head(Key0) of
+            {ok, _Metadata} ->
+                put1(?BIN_EMPTY, Req0, Key1, Params);
+            {error, not_found} ->
+                cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req0);
+            {error, timeout} ->
+                cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
+            {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+        end,
+    {ok, Req1, State};
 
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_DELETE, _,
         #req_params{path = Path0,
-                    upload_id = UploadId}, _State) when UploadId /= <<>> ->
+                    upload_id = UploadId}, State) when UploadId /= <<>> ->
     _ = leo_gateway_rpc_handler:put(Path0, <<>>, 0),
     _ = leo_gateway_rpc_handler:delete(Path0),
-    cowboy_req:reply(?HTTP_ST_NO_CONTENT, [?SERVER_HEADER], Req0);
+    {ok, Req1} = cowboy_req:reply(?HTTP_ST_NO_CONTENT, [?SERVER_HEADER], Req0),
+    {ok, Req1, State};
 
 %% For Multipart Upload - Completion
 %%
@@ -235,49 +240,51 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
         #req_params{path = Path0,
                     is_upload = false,
                     upload_id = UploadId,
-                    upload_part_num = PartNum},_State) when UploadId /= <<>>,
+                    upload_part_num = PartNum}, State) when UploadId /= <<>>,
                                                             PartNum  == 0 ->
-    case cowboy_req:has_body(Req0) of
-        true ->
-            Path4Conf = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,
+    {ok, Req3} =
+        case cowboy_req:has_body(Req0) of
+            true ->
+                Path4Conf = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,
 
-            case leo_gateway_rpc_handler:head(Path4Conf) of
-                {ok, _} ->
-                    _ = leo_gateway_rpc_handler:delete(Path4Conf),
+                case leo_gateway_rpc_handler:head(Path4Conf) of
+                    {ok, _} ->
+                        _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
-                    case cowboy_req:body(Req0) of
-                        {ok, XMLBin, Req1} ->
-                            {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
-                            TotalUploadedObjs = length(Content),
+                        case cowboy_req:body(Req0) of
+                            {ok, XMLBin, Req1} ->
+                                {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
+                                TotalUploadedObjs = length(Content),
 
-                            case handle2(TotalUploadedObjs, Path0, []) of
-                                {ok, {Len, ETag}} ->
-                                    case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
-                                        {ok, _} ->
-                                            [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
-                                            ETagStr = leo_hex:integer_to_hex(ETag,32),
-                                            XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
-                                            Req2 = cowboy_req:set_resp_body(XML, Req1),
+                                case handle2(TotalUploadedObjs, Path0, []) of
+                                    {ok, {Len, ETag}} ->
+                                        case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
+                                            {ok, _} ->
+                                                [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+                                                ETagStr = leo_hex:integer_to_hex(ETag,32),
+                                                XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
+                                                Req2 = cowboy_req:set_resp_body(XML, Req1),
 
-                                            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
-                                        {error, Cause} ->
-                                            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
-                                    end;
-                                {error, Cause} ->
-                                    ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                    cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
-                            end;
-                        {error, Cause} ->
-                            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
-                    end;
-                _ ->
-                    cowboy_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
-            end;
-        false ->
-            cowboy_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
-    end;
+                                                cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
+                                            {error, Cause} ->
+                                                ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                                                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                                        end;
+                                    {error, Cause} ->
+                                        ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                                        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                                end;
+                            {error, Cause} ->
+                                ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+                        end;
+                    _ ->
+                        cowboy_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
+                end;
+            false ->
+                cowboy_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
+        end,
+    {ok, Req3, State};
 
 %% For Regular cases
 %%
@@ -290,7 +297,8 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
     case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Cause} ->
             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0);
+            {ok, Req1} = cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
+            {ok, Req1, State};
         {ok, Req1} ->
             Req2 = cowboy_req:compact(Req1),
             {ok, Req2, State}
