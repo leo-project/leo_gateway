@@ -132,38 +132,15 @@ inspect_cluster_status(Res, ManagerNodes) ->
 %% @private
 -spec(after_process_0({ok, pid()} | {error, any()}) ->
              {ok, pid()} | {error, any()}).
-after_process_0({ok, Pid} = Res) ->
+after_process_0({ok, _Pid} = Res) ->
     ok = leo_misc:init_env(),
 
     ManagerNodes0  = ?env_manager_nodes(leo_gateway),
     ManagerNodes1 = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes0),
 
-    %% Launch SNMPA
-    ok = leo_statistics_api:start_link(leo_gateway),
-    ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
-    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
-    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
-    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
-
-    %% Launch Redundant-manager#1
-    case whereis(leo_redundant_manager_sup) of
-        undefined ->
-            ChildSpec  = {leo_redundant_manager_sup,
-                          {leo_redundant_manager_sup, start_link, [gateway]},
-                          permanent, 2000, supervisor, [leo_redundant_manager_sup]},
-            {ok, _} = supervisor:start_child(Pid, ChildSpec);
-        _ ->
-            void
-    end,
-
     %% Launch S3Libs:Auth/Bucket/EndPoint
-    ok = leo_s3_libs:start(slave),
-
-    %% Launch a listener - [s3_http]
-    ok = leo_s3_http_api:start(leo_gateway_sup),
+    ok = leo_s3_libs:start(slave, [{'provider', ManagerNodes1}]),
+    _ = leo_s3_endpoint:get_endpoints(),
 
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);
@@ -195,16 +172,26 @@ after_process_1(SystemConf, Members) ->
                         gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
     end,
 
+    %% Launch SNMPA
+    ok = leo_statistics_api:start_link(leo_gateway),
+    ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
+    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
+
     {ok,_,_} = leo_redundant_manager_api:create(
                  Members, [{n, SystemConf#system_conf.n},
                            {r, SystemConf#system_conf.r},
                            {w, SystemConf#system_conf.w},
                            {d, SystemConf#system_conf.d},
                            {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
+    ok = leo_membership:set_proc_auditor(leo_gateway_api),
 
-    %% Launch S3Libs:Auth/Bucket/EndPoint
-    ok = leo_s3_libs:start(slave, [{'provider', NewManagerNodes}]),
-    _ = leo_s3_endpoint:get_endpoints(),
+    %% Launch a listener - [s3_http]
+    ok = leo_s3_http_api:start(leo_gateway_sup),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
