@@ -53,7 +53,6 @@ start(Sup) ->
     CacheDiscThresholdLen = Options#http_options.cache_disc_threshold_len,
     CacheDiscDirData      = Options#http_options.cache_disc_dir_data,
     CacheDiscDirJournal   = Options#http_options.cache_disc_dir_journal,
-
     ChildSpec0 = {ecache_sup,
                   {ecache_sup, start_link, [NumOfECacheWorkers, CacheRAMCapacity, CacheDiscCapacity,
                                             CacheDiscThresholdLen, CacheDiscDirData, CacheDiscDirJournal]},

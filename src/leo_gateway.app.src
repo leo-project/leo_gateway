@@ -22,10 +22,10 @@
 {application, leo_gateway,
   [
    {description, "LeoFS Gateway Server"},
-   {vsn, "0.14.0-RC2"},
+   {vsn, "0.14.0-RC3"},
    {id, "leo_gateway"},
    {registered, []},
-   {applications, [kernel, stdlib, crypto]},
+   {applications, [kernel, stdlib, crypto, ranch]},
    {mod, {leo_gateway_app, []}},
    {env, []}
   ]
