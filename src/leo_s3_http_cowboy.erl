@@ -51,6 +51,19 @@
           path_patterns   = [] :: list()     %% compiled regular expressions
          }).
 
+
+-define(reply_ok(_H, _R),              cowboy_req:reply(?HTTP_ST_OK, _H, _R)).
+-define(reply_no_content(_H, _R),      cowboy_req:reply(?HTTP_ST_NO_CONTENT, _H, _R)).
+-define(reply_partial_content(_H, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _R)).
+-define(reply_not_modified(_H, _R),    cowboy_req:reply(?HTTP_ST_NOT_MODIFIED, _H, _R)).
+-define(reply_bad_request(_H, _R),     cowboy_req:reply(?HTTP_ST_BAD_REQ, _H, _R)).
+-define(reply_forbidden(_H, _R),       cowboy_req:reply(?HTTP_ST_FORBIDDEN, _H, _R)).
+-define(reply_not_found(_H, _R),       cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H, _R)).
+-define(reply_bad_range(_H, _R),       cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H, _R)).
+-define(reply_internal_error(_H, _R),  cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, _R)).
+-define(reply_timeout(_H, _R),         cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H, _R)).
+
+
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
@@ -156,7 +169,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
 
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
-            {ok, Req3} = cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req2),
+            {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Req2),
             {ok, Req3, State}
     end.
 
@@ -164,7 +177,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
 %% @doc Handle a request (sub)
 %% @private
 handle1({error, _Cause}, Req0,_,_,_,State) ->
-    {ok, Req1} = cowboy_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0),
+    {ok, Req1} = ?reply_forbidden([?SERVER_HEADER], Req0),
     {ok, Req1, State};
 
 %% For Multipart Upload - Initiation
@@ -184,12 +197,12 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
                 XML = gen_upload_initiate_xml(Bucket, Path1, UploadId),
 
                 Req1 = cowboy_req:set_resp_body(XML, Req0),
-                cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req1);
+                ?reply_ok([?SERVER_HEADER], Req1);
             {error, timeout} ->
-                cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
+                ?reply_timeout([?SERVER_HEADER], Req0);
             {error, Cause} ->
                 ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+                ?reply_internal_error([?SERVER_HEADER], Req0)
         end,
     {ok, Req2, State};
 
@@ -200,7 +213,7 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
                     upload_part_num  = PartNum0,
                     max_chunked_objs = MaxChunkedObjs}, State) when UploadId /= <<>>,
                                                                     PartNum0 > MaxChunkedObjs ->
-    {ok, Req1} = cowboy_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req0),
+    {ok, Req1} = ?reply_bad_request([?SERVER_HEADER], Req0),
     {ok, Req1, State};
 
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
@@ -218,11 +231,11 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
             {ok, _Metadata} ->
                 put1(?BIN_EMPTY, Req0, Key1, Params);
             {error, not_found} ->
-                cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req0);
+                ?reply_not_found([?SERVER_HEADER], Req0);
             {error, timeout} ->
-                cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req0);
+                ?reply_timeout([?SERVER_HEADER], Req0);
             {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+                ?reply_internal_error([?SERVER_HEADER], Req0)
         end,
     {ok, Req1, State};
 
@@ -231,7 +244,7 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_DELETE, _,
                     upload_id = UploadId}, State) when UploadId /= <<>> ->
     _ = leo_gateway_rpc_handler:put(Path0, <<>>, 0),
     _ = leo_gateway_rpc_handler:delete(Path0),
-    {ok, Req1} = cowboy_req:reply(?HTTP_ST_NO_CONTENT, [?SERVER_HEADER], Req0),
+    {ok, Req1} = ?reply_no_content([?SERVER_HEADER], Req0),
     {ok, Req1, State};
 
 %% For Multipart Upload - Completion
@@ -265,24 +278,24 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
                                                 XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
                                                 Req2 = cowboy_req:set_resp_body(XML, Req1),
 
-                                                cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req2);
+                                                ?reply_ok([?SERVER_HEADER], Req2);
                                             {error, Cause} ->
                                                 ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                                                ?reply_internal_error([?SERVER_HEADER], Req1)
                                         end;
                                     {error, Cause} ->
                                         ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req1)
+                                        ?reply_internal_error([?SERVER_HEADER], Req1)
                                 end;
                             {error, Cause} ->
                                 ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0)
+                                ?reply_internal_error([?SERVER_HEADER], Req0)
                         end;
                     _ ->
-                        cowboy_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
+                        ?reply_forbidden([?SERVER_HEADER], Req0)
                 end;
             false ->
-                cowboy_req:reply(?HTTP_ST_FORBIDDEN, [?SERVER_HEADER], Req0)
+                ?reply_forbidden([?SERVER_HEADER], Req0)
         end,
     {ok, Req3, State};
 
@@ -297,7 +310,7 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
     case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Cause} ->
             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req1} = cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req0),
+            {ok, Req1} = ?reply_internal_error([?SERVER_HEADER], Req0),
             {ok, Req1, State};
         {ok, Req1} ->
             Req2 = cowboy_req:compact(Req1),
@@ -378,13 +391,13 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
-            Heads = [?SERVER_HEADER,
-                     {?HTTP_HEAD_LAST_MODIFIED, LastModified},
-                     {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
-                     {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                     {?HTTP_HEAD_ETAG4AWS,      lists:append(["\"",leo_hex:integer_to_hex(Checksum, 32),"\""])},
-                     {?HTTP_HEAD_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])}
-                    ],
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_LAST_MODIFIED, LastModified},
+                      {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
+                      {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
+                      {?HTTP_HEAD_ETAG4AWS,      lists:append(["\"",leo_hex:integer_to_hex(Checksum, 32),"\""])},
+                      {?HTTP_HEAD_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])}
+                     ],
             IMSSec = case cowboy_req:parse_header(?HTTP_HEAD_IF_MODIFIED_SINCE, Req) of
                          {ok, undefined, _} ->
                              0;
@@ -393,11 +406,11 @@ onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
                      end,
             case IMSSec of
                 MTime ->
-                    {ok, Req2} = cowboy_req:reply(?HTTP_ST_NOT_MODIFIED, Heads, Req),
+                    {ok, Req2} = ?reply_not_modified(Header, Req),
                     Req2;
                 _ ->
                     Req2 = cowboy_req:set_resp_body(Body, Req),
-                    {ok, Req3} = cowboy_req:reply(?HTTP_ST_OK, Heads, Req2),
+                    {ok, Req3} = ?reply_ok([?SERVER_HEADER], Req2),
                     Req3
             end
     end.
@@ -436,7 +449,7 @@ onresponse(#cache_condition{expire = Expire} = Config) ->
                             Headers3 = [{?HTTP_HEAD_CACHE_CTRL, lists:append(["max-age=",integer_to_list(Expire)])},
                                         {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
                                         |Headers2],
-                            {ok, Req2} = cowboy_req:reply(?HTTP_ST_OK, Headers3, Req),
+                            {ok, Req2} = ?reply_ok(Headers3, Req),
                             Req2;
                         false ->
                             cowboy_req:set_resp_body(<<>>, Req)
@@ -538,7 +551,8 @@ gen_key(Req) ->
 %% @private
 exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
                                          max_layers   = Max}) when Len > Max ->
-    cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+    ?reply_not_found([?SERVER_HEADER], Req);
+
 
 %% ---------------------------------------------------------------------
 %% For BUCKET-OPERATION
@@ -551,15 +565,15 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
     case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req2 = cowboy_req:set_resp_body(XML, Req),
-            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                           {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
-                                          ], Req2);
+            ?reply_ok([?SERVER_HEADER,
+                       {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
+                      ], Req2);
         {error, not_found} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end;
 
 %% @doc PUT operation on buckets.
@@ -575,11 +589,11 @@ exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
 
     case leo_s3_http_bucket:put_bucket(AccessKeyId, Bucket) of
         ok ->
-            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req);
+            ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end;
 
 %% @doc DELETE operation on buckets.
@@ -588,13 +602,13 @@ exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
                                           access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
-            cowboy_req:reply(?HTTP_ST_NO_CONTENT, [?SERVER_HEADER], Req);
+            ?reply_no_content([?SERVER_HEADER], Req);
         not_found ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end;
 
 %% @doc HEAD operation on buckets.
@@ -603,13 +617,13 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
                                         access_key_id = AccessKeyId}) ->
     case leo_s3_http_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
-            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER], Req);
+            ?reply_ok([?SERVER_HEADER], Req);
         not_found ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end;
 
 %% ---------------------------------------------------------------------
@@ -633,22 +647,21 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                    end,
     case Start of
         undefined ->
-            cowboy_req:reply(?HTTP_ST_BAD_RANGE, [?SERVER_HEADER], Req);
+            ?reply_bad_range([?SERVER_HEADER], Req);
         _ ->
             case leo_gateway_rpc_handler:get(Key, Start, End) of
                 {ok, _Meta, RespObject} ->
                     Mime = leo_mime:guess_mime(Key),
                     Req2 = cowboy_req:set_resp_body(RespObject, Req),
-                    cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT,
-                                     [?SERVER_HEADER,
-                                      {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
-                                     Req2);
+                    ?reply_partial_content([?SERVER_HEADER,
+                                            {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
+                                           Req2);
                 {error, not_found} ->
-                    cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+                    ?reply_not_found([?SERVER_HEADER], Req);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                    cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+                    ?reply_internal_error([?SERVER_HEADER], Req);
                 {error, timeout} ->
-                    cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+                    ?reply_timeout([?SERVER_HEADER], Req)
             end
     end;
 
@@ -685,14 +698,13 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                     void
             end,
             Req2 = cowboy_req:set_resp_body(RespObject, Req),
-            cowboy_req:reply(?HTTP_ST_OK,
-                             [?SERVER_HEADER,
-                              {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                              {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
-                                                                  leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
-                                                                  "\""])},
-                              {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
-                             Req2);
+            ?reply_ok([?SERVER_HEADER,
+                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                       {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
+                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                           "\""])},
+                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                      Req2);
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
@@ -707,14 +719,14 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                     {ok, Req3};
                 {error, Cause} ->
                     ?error("exec1/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
-                    cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
+                    ?reply_internal_error([?SERVER_HEADER], Req)
             end;
         {error, not_found} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end;
 
 
@@ -731,15 +743,15 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
                                                              "\""])},
                          {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
                          {?HTTP_HEAD_LAST_MODIFIED,  Timestamp}],
-            cowboy_req:reply(?HTTP_ST_OK, Headers, Req);
+            ?reply_ok(Headers, Req);
         {ok, #metadata{del = 1}} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, not_found} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end;
 
 %% @doc DELETE operation on Object.
@@ -747,13 +759,13 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
 exec1(?HTTP_DELETE, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
-            cowboy_req:reply(?HTTP_ST_NO_CONTENT, [?SERVER_HEADER], Req);
+            ?reply_no_content([?SERVER_HEADER], Req);
         {error, not_found} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end;
 
 %% @doc POST/PUT operation on Objects.
@@ -764,7 +776,7 @@ exec1(?HTTP_PUT, Req, Key, Params) ->
 %% @doc invalid request.
 %% @private
 exec1(_, Req, _, _) ->
-    cowboy_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req).
+    ?reply_bad_request([?SERVER_HEADER], Req).
 
 
 %% @doc GET operation with Etag
@@ -773,15 +785,14 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
     case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             Req2 = cowboy_req:set_resp_body(Cached#cache.body, Req),
-            cowboy_req:reply(?HTTP_ST_OK,
-                             [?SERVER_HEADER,
-                              {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
-                              {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
-                                                                  leo_hex:integer_to_hex(Cached#cache.etag, 32),
-                                                                  "\""])},
-                              {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
-                              {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
-                             Req2);
+            ?reply_ok([?SERVER_HEADER,
+                       {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
+                       {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
+                                                           leo_hex:integer_to_hex(Cached#cache.etag, 32),
+                                                           "\""])},
+                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
+                       {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
+                      Req2);
         {ok, Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
             BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
@@ -792,20 +803,19 @@ exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, 
             _ = ecache_api:put(Key, BinVal),
 
             Req2 = cowboy_req:set_resp_body(RespObject, Req),
-            cowboy_req:reply(?HTTP_ST_OK,
-                             [?SERVER_HEADER,
-                              {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                              {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
-                                                                  leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
-                                                                  "\""])},
-                              {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
-                             Req2);
+            ?reply_ok([?SERVER_HEADER,
+                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                       {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
+                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
+                                                           "\""])},
+                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
+                      Req2);
         {error, not_found} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end.
 
 
@@ -816,7 +826,7 @@ put1(?BIN_EMPTY, Req, Key, Params) ->
 
     case (Size0 >= Params#req_params.threshold_obj_len) of
         true when Size0 >= Params#req_params.max_len_for_obj ->
-            cowboy_req:reply(?HTTP_ST_BAD_REQ, [?SERVER_HEADER], Req);
+            ?reply_bad_request([?SERVER_HEADER], Req);
         true when Params#req_params.is_upload == false ->
             put_large_object(Req, Key, Size0, Params);
         false ->
@@ -851,11 +861,11 @@ put1(Directive, Req, Key, _Params) ->
         {ok, Meta, RespObject} ->
             put2(Directive, Req, Key, Meta, RespObject);
         {error, not_found} ->
-            cowboy_req:reply(?HTTP_ST_NOT_FOUND, [?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end.
 
 %% @doc POST/PUT operation on Objects. COPY
@@ -869,9 +879,9 @@ put2(Directive, Req, Key, Meta, Bin) ->
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
             put3(Req, Key, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end.
 
 
@@ -892,9 +902,9 @@ put4(Req, Meta) ->
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end.
 
 
@@ -926,16 +936,16 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
                     _ = ecache_api:put(Key, BinVal);
                 false -> void
             end,
-            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                           {?HTTP_HEAD_ETAG4AWS,
-                                            lists:append(["\"",
-                                                          leo_hex:integer_to_hex(ETag, 32),
-                                                          "\""])}
-                                          ], Req);
+            ?reply_ok([?SERVER_HEADER,
+                       {?HTTP_HEAD_ETAG4AWS,
+                        lists:append(["\"",
+                                      leo_hex:integer_to_hex(ETag, 32),
+                                      "\""])}
+                      ], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
-            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Req)
     end.
 
 
@@ -971,24 +981,24 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) -
                     case leo_gateway_rpc_handler:put(
                            Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
                         {ok, _ETag} ->
-                            cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                                           {?HTTP_HEAD_ETAG4AWS,
-                                                            lists:append(["\"",
-                                                                          leo_hex:integer_to_hex(Digest1, 32),
-                                                                          "\""])}
-                                                          ], Req);
+                            ?reply_ok([?SERVER_HEADER,
+                                       {?HTTP_HEAD_ETAG4AWS,
+                                        lists:append(["\"",
+                                                      leo_hex:integer_to_hex(Digest1, 32),
+                                                      "\""])}
+                                      ], Req);
                         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req);
+                            ?reply_internal_error([?SERVER_HEADER], Req);
                         {error, timeout} ->
-                            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, [?SERVER_HEADER], Req)
+                            ?reply_timeout([?SERVER_HEADER], Req)
                     end;
                 {_, _Cause} ->
                     ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
-                    cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
+                    ?reply_internal_error([?SERVER_HEADER], Req)
             end;
         {error, _Cause} ->
             ok = leo_gateway_large_object_handler:rollback(Pid, Counter),
-            cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, [?SERVER_HEADER], Req)
+            ?reply_internal_error([?SERVER_HEADER], Req)
     end;
 
 %% An error occurred while reading the body, connection is gone.
@@ -1015,9 +1025,9 @@ resp_copy_obj_xml(Req, Meta) ->
                         [leo_http:web_date(Meta#metadata.timestamp),
                          leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
     Req2 = cowboy_req:set_resp_body(XML, Req),
-    cowboy_req:reply(?HTTP_ST_OK, [?SERVER_HEADER,
-                                   {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
-                                  ], Req2).
+    ?reply_ok([?SERVER_HEADER,
+               {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
+              ], Req2).
 
 
 %% @doc Authentication
