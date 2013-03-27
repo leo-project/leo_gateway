@@ -28,11 +28,11 @@
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
 
--export([start/1, stop/0]).
 -export([init/3, handle/2, terminate/3]).
+-export([onrequest/1, onresponse/1]).
 
 -include("leo_gateway.hrl").
--include("leo_s3_http.hrl").
+-include("leo_http.hrl").
 
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
@@ -42,83 +42,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
--define(SSL_PROC_NAME, list_to_atom(lists:append([?MODULE_STRING, "_ssl"]))).
-
--record(cache_condition, {
-          expire          = 0  :: integer(), %% specified per sec
-          max_content_len = 0  :: integer(), %% No cache if Content-Length of a response header was &gt this
-          content_types   = [] :: list(),    %% like ["image/png", "image/gif", "image/jpeg"]
-          path_patterns   = [] :: list()     %% compiled regular expressions
-         }).
-
-
--define(reply_ok(_H, _R),              cowboy_req:reply(?HTTP_ST_OK, _H, _R)).
--define(reply_no_content(_H, _R),      cowboy_req:reply(?HTTP_ST_NO_CONTENT, _H, _R)).
--define(reply_partial_content(_H, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _R)).
--define(reply_not_modified(_H, _R),    cowboy_req:reply(?HTTP_ST_NOT_MODIFIED, _H, _R)).
--define(reply_bad_request(_H, _R),     cowboy_req:reply(?HTTP_ST_BAD_REQ, _H, _R)).
--define(reply_forbidden(_H, _R),       cowboy_req:reply(?HTTP_ST_FORBIDDEN, _H, _R)).
--define(reply_not_found(_H, _R),       cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H, _R)).
--define(reply_bad_range(_H, _R),       cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H, _R)).
--define(reply_internal_error(_H, _R),  cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, _R)).
--define(reply_timeout(_H, _R),         cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H, _R)).
-
-
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
-%% start web-server.
-%%
--spec(start(#http_options{}) ->
-             ok).
-start(#http_options{port                   = Port,
-                    ssl_port               = SSLPort,
-                    ssl_certfile           = SSLCertFile,
-                    ssl_keyfile            = SSLKeyFile,
-                    num_of_acceptors       = NumOfAcceptors,
-                    cache_method           = CacheMethod,
-                    cache_expire           = CacheExpire,
-                    cache_max_content_len  = CacheMaxContentLen,
-                    cachable_content_type  = CachableContentTypes,
-                    cachable_path_pattern  = CachablePathPatterns} = Props) ->
-    InternalCache = (CacheMethod == 'inner'),
-    Dispatch      = cowboy_router:compile(
-                      [{'_', [{'_', ?MODULE,
-                               [?env_layer_of_dirs(), InternalCache, Props]}]}]),
-
-    Config = case InternalCache of
-                 %% Using inner-cache
-                 true ->
-                     [{env, [{dispatch, Dispatch}]}];
-                 %% Using http-cache
-                 false ->
-                     CacheCondition = #cache_condition{expire          = CacheExpire,
-                                                       max_content_len = CacheMaxContentLen,
-                                                       content_types   = CachableContentTypes,
-                                                       path_patterns   = CachablePathPatterns},
-                     [{env,        [{dispatch, Dispatch}]},
-                      {onrequest,  onrequest(CacheCondition)},
-                      {onresponse, onresponse(CacheCondition)}]
-             end,
-
-    {ok, _Pid1}= cowboy:start_http(?MODULE, NumOfAcceptors,
-                                   [{port, Port}], Config),
-    {ok, _Pid2}= cowboy:start_https(?SSL_PROC_NAME, NumOfAcceptors,
-                                    [{port,     SSLPort},
-                                     {certfile, SSLCertFile},
-                                     {keyfile,  SSLKeyFile}],
-                                    Config),
-    ok.
-
-
-%% @doc
--spec(stop() ->
-             ok).
-stop() ->
-    cowboy:stop_listener(?MODULE),
-    cowboy:stop_listener(?SSL_PROC_NAME).
-
-
 %% @doc Initializer
 init({_Any, http}, Req, Opts) ->
     {ok, Req, Opts}.

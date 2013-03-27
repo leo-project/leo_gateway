@@ -28,7 +28,7 @@
 -author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
--include("leo_s3_http.hrl").
+-include("leo_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
@@ -59,6 +59,10 @@
                                             get_members_from_manager(X)}).
 -endif.
 
+
+%%--------------------------------------------------------------------
+%% API
+%%--------------------------------------------------------------------
 %% @spec start(_Type, _StartArgs) -> ServerRet
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
@@ -193,7 +197,8 @@ after_process_1(SystemConf, Members) ->
     ok = leo_membership:set_proc_auditor(leo_gateway_api),
 
     %% Launch http-handler(s)
-    ok = start_http_handler(leo_gateway_sup),
+    {ok, HttpOptions} = get_options(),
+    ok = leo_gateway_http_handler:start(leo_gateway_sup, HttpOptions),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
@@ -385,33 +390,6 @@ get_options() ->
     ?info("start/3", "chunked_obj_len: ~p",          [ChunkedObjLen]),
     ?info("start/3", "threshold_obj_len: ~p",        [ThresholdObjLen]),
     {ok, HttpOptions}.
-
-
-%% @doc Launch http handler
-%% @private
-start_http_handler(Sup) ->
-    {ok, Options} = get_options(),
-
-    %% for ECache
-    NumOfECacheWorkers    = Options#http_options.cache_workers,
-    CacheRAMCapacity      = Options#http_options.cache_ram_capacity,
-    CacheDiscCapacity     = Options#http_options.cache_disc_capacity,
-    CacheDiscThresholdLen = Options#http_options.cache_disc_threshold_len,
-    CacheDiscDirData      = Options#http_options.cache_disc_dir_data,
-    CacheDiscDirJournal   = Options#http_options.cache_disc_dir_journal,
-    ChildSpec0 = {ecache_sup,
-                  {ecache_sup, start_link, [NumOfECacheWorkers, CacheRAMCapacity, CacheDiscCapacity,
-                                            CacheDiscThresholdLen, CacheDiscDirData, CacheDiscDirJournal]},
-                  permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [ecache_sup]},
-    {ok, _} = supervisor:start_child(Sup, ChildSpec0),
-
-    %% for Cowboy
-    ChildSpec1 = {cowboy_sup,
-                  {cowboy_sup, start_link, []},
-                  permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [cowboy_sup]},
-    {ok, _} = supervisor:start_child(Sup, ChildSpec1),
-
-    leo_gateway_s3_handler:start(Options).
 
 
 %% @doc Data-type transmit from list to binary

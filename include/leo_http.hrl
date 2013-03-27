@@ -90,7 +90,6 @@
 -define(CACHE_INNER, 'inner').
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
 
-
 -define(HTTP_HANDLER_S3,    'leo_gateway_s3_handler').
 -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_handler').
 -define(HTTP_HANDLER_REST,  'leo_gateway_rest_handler').
@@ -98,7 +97,22 @@
 
 
 %%
-%% S3 RESPONSE XML
+%% Response Macros
+%%
+-define(reply_ok(_H, _R),              cowboy_req:reply(?HTTP_ST_OK, _H, _R)).
+-define(reply_no_content(_H, _R),      cowboy_req:reply(?HTTP_ST_NO_CONTENT, _H, _R)).
+-define(reply_partial_content(_H, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _R)).
+-define(reply_not_modified(_H, _R),    cowboy_req:reply(?HTTP_ST_NOT_MODIFIED, _H, _R)).
+-define(reply_bad_request(_H, _R),     cowboy_req:reply(?HTTP_ST_BAD_REQ, _H, _R)).
+-define(reply_forbidden(_H, _R),       cowboy_req:reply(?HTTP_ST_FORBIDDEN, _H, _R)).
+-define(reply_not_found(_H, _R),       cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H, _R)).
+-define(reply_bad_range(_H, _R),       cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H, _R)).
+-define(reply_internal_error(_H, _R),  cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, _R)).
+-define(reply_timeout(_H, _R),         cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H, _R)).
+
+
+%%
+%% S3 Response XML
 %%
 -define(XML_BUCKET_LIST,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
@@ -204,4 +218,10 @@
           body         = <<>> :: binary()       %% body (value)
          }).
 
+-record(cache_condition, {
+          expire          = 0  :: integer(), %% specified per sec
+          max_content_len = 0  :: integer(), %% No cache if Content-Length of a response header was &gt this
+          content_types   = [] :: list(),    %% like ["image/png", "image/gif", "image/jpeg"]
+          path_patterns   = [] :: list()     %% compiled regular expressions
+         }).
 

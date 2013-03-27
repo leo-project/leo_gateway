@@ -27,7 +27,7 @@
 -author('Yoshiyuki Kanno').
 
 -include("leo_gateway.hrl").
--include("leo_s3_http.hrl").
+-include("leo_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
@@ -151,9 +151,10 @@ setup_cowboy() ->
     application:start(crypto),
     application:start(ranch),
     application:start(cowboy),
+
     {ok, Options} = leo_gateway_app:get_options(),
-    InitFun = fun() -> leo_gateway_s3_handler:start(Options) end,
-    TermFun = fun() -> leo_gateway_s3_handler:stop() end,
+    InitFun = fun() -> leo_gateway_http_handler:start(Options) end,
+    TermFun = fun() -> ok end,
     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->
@@ -164,6 +165,10 @@ teardown([TermFun, Node0, Node1]) ->
 
     meck:unload(),
     TermFun(),
+
+    cowboy:stop_listener(leo_gateway_s3_handler),
+    cowboy:stop_listener(leo_gateway_s3_handler_ssl),
+
     timer:sleep(250),
     ok.
 
@@ -354,8 +359,8 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3,
-                           {ok, {metadata, "", 
-                                 0, 4, 4, 0, 
+                           {ok, {metadata, "",
+                                 0, 4, 4, 0,
                                  0, 0, 0, 0, 1,
                                  calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
                                  19740926, 0, 0}, <<"body">>}]),
