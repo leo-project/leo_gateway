@@ -79,7 +79,7 @@ handle1(Req0, HTTPMethod0, Path, Params, State) ->
                       Other      -> Other
                   end,
 
-    case catch exec1(HTTPMethod1, Req0, Path, Params) of
+    case catch invoke(HTTPMethod1, Req0, Path, Params) of
         {'EXIT', Cause} ->
             ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             {ok, Req1} = ?reply_internal_error([?SERVER_HEADER], Req0),
@@ -115,7 +115,7 @@ onresponse(CacheCondition) ->
 %%--------------------------------------------------------------------
 %% Compile Options:
 %%
--compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4,
+-compile({inline, [gen_key/1, invoke/4, get_obj_with_etag/4, put1/4,
                    put_small_object/3, put_large_object/4]}).
 
 %% @doc Create a key
@@ -130,8 +130,8 @@ gen_key(Req) ->
 %% ---------------------------------------------------------------------
 %% @doc Constraint violation.
 %% @private
-exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
-                                         max_layers   = Max}) when Len > Max ->
+invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
+                                          max_layers   = Max}) when Len > Max ->
     ?reply_not_found([?SERVER_HEADER], Req);
 
 
@@ -140,21 +140,21 @@ exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Object if inner cache is enabled.
 %% @private
-exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
-                                                    is_cached = true,
-                                                    has_inner_cache = true} = Params) ->
+invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
+                                                     is_cached = true,
+                                                     has_inner_cache = true} = Params) ->
     case ecache_api:get(Key) of
         not_found ->
-            exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
+            invoke(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj} ->
             Cached = binary_to_term(CachedObj),
-            exec2(HTTPMethod, Req, Key, Params, Cached)
+            get_obj_with_etag(Req, Key, Params, Cached)
     end;
 
 %% @doc GET operation on Object.
 %% @private
-exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
-                                       has_inner_cache = HasInnerCache}) ->
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
+                                        has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
@@ -205,7 +205,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
 
 %% @doc HEAD operation on Object.
 %% @private
-exec1(?HTTP_HEAD, Req, Key, _Params) ->
+invoke(?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
@@ -229,7 +229,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
 
 %% @doc DELETE operation on Object.
 %% @private
-exec1(?HTTP_DELETE, Req, Key, _Params) ->
+invoke(?HTTP_DELETE, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -243,18 +243,18 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 
 %% @doc POST/PUT operation on Objects.
 %% @private
-exec1(?HTTP_PUT, Req, Key, Params) ->
+invoke(?HTTP_PUT, Req, Key, Params) ->
     put1(?BIN_EMPTY, Req, Key, Params);
 
 %% @doc invalid request.
 %% @private
-exec1(_, Req, _, _) ->
+invoke(_, Req, _, _) ->
     ?reply_bad_request([?SERVER_HEADER], Req).
 
 
 %% @doc GET operation with Etag
 %% @private
-exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
+get_obj_with_etag(Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
     case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             Req2 = cowboy_req:set_resp_body(Cached#cache.body, Req),

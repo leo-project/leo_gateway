@@ -190,7 +190,7 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
                       Other      -> Other
                   end,
 
-    case catch exec1(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
+    case catch invoke(HTTPMethod1, Req0, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Cause} ->
             ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             {ok, Req1} = ?reply_internal_error([?SERVER_HEADER], Req0),
@@ -319,7 +319,7 @@ request_params(Req, Params) ->
 
 %% Compile Options:
 %%
--compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2,
+-compile({inline, [gen_key/1, invoke/4, get_obj_with_etag/4, put1/4, put2/5, put3/3, put4/2,
                    put_small_object/3, put_large_object/4,
                    get_header/2, auth1/4, auth2/4]}).
 
@@ -342,8 +342,8 @@ gen_key(Req) ->
 %% ---------------------------------------------------------------------
 %% @doc Constraint violation.
 %% @private
-exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
-                                         max_layers   = Max}) when Len > Max ->
+invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
+                                          max_layers   = Max}) when Len > Max ->
     ?reply_not_found([?SERVER_HEADER], Req);
 
 
@@ -352,9 +352,9 @@ exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
 %% ---------------------------------------------------------------------
 %% @doc GET operation on buckets & Dirs.
 %% @private
-exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
-                                       access_key_id = AccessKeyId,
-                                       qs_prefix     = Prefix}) ->
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
+                                        access_key_id = AccessKeyId,
+                                        qs_prefix     = Prefix}) ->
     case leo_gateway_s3_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req2 = cowboy_req:set_resp_body(XML, Req),
@@ -371,8 +371,8 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
 
 %% @doc PUT operation on buckets.
 %% @private
-exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
-                                       access_key_id = AccessKeyId}) ->
+invoke(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
+                                        access_key_id = AccessKeyId}) ->
     Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
                  true ->
                      binary:part(Key, {0, byte_size(Key) -1});
@@ -391,8 +391,8 @@ exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
 
 %% @doc DELETE operation on buckets.
 %% @private
-exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
-                                          access_key_id = AccessKeyId}) ->
+invoke(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
+                                           access_key_id = AccessKeyId}) ->
     case leo_gateway_s3_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -406,8 +406,8 @@ exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
 
 %% @doc HEAD operation on buckets.
 %% @private
-exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
-                                        access_key_id = AccessKeyId}) ->
+invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
+                                         access_key_id = AccessKeyId}) ->
     case leo_gateway_s3_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
@@ -424,8 +424,8 @@ exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Object with Range Header.
 %% @private
-exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
-                                       range_header = RangeHeader}) when RangeHeader /= undefined ->
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
+                                        range_header = RangeHeader}) when RangeHeader /= undefined ->
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
@@ -460,21 +460,21 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
 
 %% @doc GET operation on Object if inner cache is enabled.
 %% @private
-exec1(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
-                                                    is_cached = true,
-                                                    has_inner_cache = true} = Params) ->
+invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
+                                                     is_cached = true,
+                                                     has_inner_cache = true} = Params) ->
     case ecache_api:get(Key) of
         not_found ->
-            exec1(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
+            invoke(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj} ->
             Cached = binary_to_term(CachedObj),
-            exec2(HTTPMethod, Req, Key, Params, Cached)
+            get_obj_with_etag(Req, Key, Params, Cached)
     end;
 
 %% @doc GET operation on Object.
 %% @private
-exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
-                                       has_inner_cache = HasInnerCache}) ->
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
+                                        has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
@@ -525,7 +525,7 @@ exec1(?HTTP_GET, Req, Key, #req_params{is_dir = false,
 
 %% @doc HEAD operation on Object.
 %% @private
-exec1(?HTTP_HEAD, Req, Key, _Params) ->
+invoke(?HTTP_HEAD, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
@@ -549,7 +549,7 @@ exec1(?HTTP_HEAD, Req, Key, _Params) ->
 
 %% @doc DELETE operation on Object.
 %% @private
-exec1(?HTTP_DELETE, Req, Key, _Params) ->
+invoke(?HTTP_DELETE, Req, Key, _Params) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -563,18 +563,18 @@ exec1(?HTTP_DELETE, Req, Key, _Params) ->
 
 %% @doc POST/PUT operation on Objects.
 %% @private
-exec1(?HTTP_PUT, Req, Key, Params) ->
+invoke(?HTTP_PUT, Req, Key, Params) ->
     put1(get_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params);
 
 %% @doc invalid request.
 %% @private
-exec1(_, Req, _, _) ->
+invoke(_, Req, _, _) ->
     ?reply_bad_request([?SERVER_HEADER], Req).
 
 
 %% @doc GET operation with Etag
 %% @private
-exec2(?HTTP_GET, Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
+get_obj_with_etag(Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
     case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             Req2 = cowboy_req:set_resp_body(Cached#cache.body, Req),
