@@ -23,18 +23,14 @@
 %% @doc
 %% @end
 %%======================================================================
-%%
 %% HTTP METHODS
-%%
 -define(HTTP_GET,        <<"GET">>).
 -define(HTTP_POST,       <<"POST">>).
 -define(HTTP_PUT,        <<"PUT">>).
 -define(HTTP_DELETE,     <<"DELETE">>).
 -define(HTTP_HEAD,       <<"HEAD">>).
 
-%%
 %% HTTP-RELATED
-%%
 -define(SERVER_HEADER,   {<<"server">>,<<"LeoFS">>}).
 -define(STR_NEWLINE,     "\n").
 -define(STR_SLASH,       "/").
@@ -96,9 +92,7 @@
 -type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST).
 
 
-%%
-%% Response Macros
-%%
+%% Macros
 -define(reply_ok(_H, _R),              cowboy_req:reply(?HTTP_ST_OK, _H, _R)).
 -define(reply_no_content(_H, _R),      cowboy_req:reply(?HTTP_ST_NO_CONTENT, _H, _R)).
 -define(reply_partial_content(_H, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _R)).
@@ -110,10 +104,12 @@
 -define(reply_internal_error(_H, _R),  cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, _R)).
 -define(reply_timeout(_H, _R),         cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H, _R)).
 
+-define(http_header(_R, _K),           case cowboy_req:header(_K, _R) of
+                                           {undefined, _} -> ?BIN_EMPTY;
+                                           {Bin, _}       -> Bin
+                                       end).
 
-%%
 %% S3 Response XML
-%%
 -define(XML_BUCKET_LIST,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">",
@@ -162,6 +158,7 @@
                       "</CompleteMultipartUploadResult>"])).
 
 
+%% Records
 -record(http_options, {
           %% for basic
           handler                      :: http_handler(), %% http-handler
@@ -190,6 +187,7 @@
          }).
 
 -record(req_params, {
+          handler                    :: http_handler(), %% http-handler
           path = <<>>                :: binary(),       %% path (uri)
           access_key_id = []         :: string(),       %% s3's access-key-id
           token_length = 0           :: pos_integer(),  %% length of tokened path
