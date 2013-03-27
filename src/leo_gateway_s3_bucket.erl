@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo S3 HTTP
+%% Leo S3 Bucket
 %%
 %% Copyright (c) 2012 Rakuten, Inc.
 %%
@@ -19,11 +19,11 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo S3 HTTP - S3 Bucket-related
+%% Leo S3 Bucket
 %% @doc
 %% @end
 %%======================================================================
--module(leo_s3_http_bucket).
+-module(leo_gateway_s3_bucket).
 
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
@@ -185,7 +185,8 @@ generate_xml(MetadataList) ->
                       false ->
                           lists:append([Acc,
                                         "<Bucket><Name>", BucketStr, "</Name>",
-                                        "<CreationDate>", leo_http:web_date(CreatedAt), "</CreationDate></Bucket>"])
+                                        "<CreationDate>", leo_http:web_date(CreatedAt),
+                                        "</CreationDate></Bucket>"])
                   end
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).

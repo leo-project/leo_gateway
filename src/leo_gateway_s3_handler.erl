@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo S3 HTTP
+%% Leo S3 Handler
 %%
 %% Copyright (c) 2012 Rakuten, Inc.
 %%
@@ -19,11 +19,11 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo S3 HTTP - powered by Cowboy version
+%% Leo S3 Handler
 %% @doc
 %% @end
 %%======================================================================
--module(leo_s3_http_cowboy).
+-module(leo_gateway_s3_handler).
 
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
@@ -101,14 +101,14 @@ start(#http_options{port                   = Port,
                       {onresponse, onresponse(CacheCondition)}]
              end,
 
-    cowboy:start_http(?MODULE, NumOfAcceptors,
-                      [{port, Port}],
-                      Config),
-    cowboy:start_https(?SSL_PROC_NAME, NumOfAcceptors,
-                       [{port,     SSLPort},
-                        {certfile, SSLCertFile},
-                        {keyfile,  SSLKeyFile}],
-                       Config).
+    {ok, _Pid1}= cowboy:start_http(?MODULE, NumOfAcceptors,
+                                   [{port, Port}], Config),
+    {ok, _Pid2}= cowboy:start_https(?SSL_PROC_NAME, NumOfAcceptors,
+                                    [{port,     SSLPort},
+                                     {certfile, SSLCertFile},
+                                     {keyfile,  SSLKeyFile}],
+                                    Config),
+    ok.
 
 
 %% @doc
@@ -562,7 +562,7 @@ exec1(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
 exec1(?HTTP_GET, Req, Key, #req_params{is_dir        = true,
                                        access_key_id = AccessKeyId,
                                        qs_prefix     = Prefix}) ->
-    case leo_s3_http_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
+    case leo_gateway_s3_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req2 = cowboy_req:set_resp_body(XML, Req),
             ?reply_ok([?SERVER_HEADER,
@@ -587,7 +587,7 @@ exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
                      Key
              end,
 
-    case leo_s3_http_bucket:put_bucket(AccessKeyId, Bucket) of
+    case leo_gateway_s3_bucket:put_bucket(AccessKeyId, Bucket) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -600,7 +600,7 @@ exec1(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
 %% @private
 exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
                                           access_key_id = AccessKeyId}) ->
-    case leo_s3_http_bucket:delete_bucket(AccessKeyId, Key) of
+    case leo_gateway_s3_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
         not_found ->
@@ -615,7 +615,7 @@ exec1(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
 %% @private
 exec1(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
                                         access_key_id = AccessKeyId}) ->
-    case leo_s3_http_bucket:head_bucket(AccessKeyId, Key) of
+    case leo_gateway_s3_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         not_found ->

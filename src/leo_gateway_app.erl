@@ -411,8 +411,7 @@ start_http_handler(Sup) ->
                   permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [cowboy_sup]},
     {ok, _} = supervisor:start_child(Sup, ChildSpec1),
 
-    leo_s3_http_cowboy:start(Options),
-    ok.
+    leo_gateway_s3_handler:start(Options).
 
 
 %% @doc Data-type transmit from list to binary

@@ -151,13 +151,9 @@ setup_cowboy() ->
     application:start(crypto),
     application:start(ranch),
     application:start(cowboy),
-    %% {ok, Options} = leo_s3_http_api:get_options(cowboy, [{port,8080},{num_of_acceptors,32},
-    %%                                                      {ssl_port,8443},
-    %%                                                      {ssl_certfile,"./server_cert.pem"},
-    %%                                                      {ssl_keyfile, "./server_key.pem"}]),
     {ok, Options} = leo_gateway_app:get_options(),
-    InitFun = fun() -> leo_s3_http_cowboy:start(Options) end,
-    TermFun = fun() -> leo_s3_http_cowboy:stop() end,
+    InitFun = fun() -> leo_gateway_s3_handler:start(Options) end,
+    TermFun = fun() -> leo_gateway_s3_handler:stop() end,
     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->

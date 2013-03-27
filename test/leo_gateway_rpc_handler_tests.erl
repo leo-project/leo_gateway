@@ -101,7 +101,7 @@ get_bucket_list_error_([_Node0, Node1]) ->
                                         fun(_Key,_,_,_) ->
                                                 {error, some_error}
                                         end]),
-    Res = leo_s3_http_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
+    Res = leo_gateway_s3_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
     ?assertEqual({error, internal_server_error}, Res),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),
     ok.
@@ -112,7 +112,7 @@ get_bucket_list_empty_([_Node0, Node1]) ->
                                         fun(_Key,_,_,_) ->
                                                 {ok, []}
                                         end]),
-    _Res = leo_s3_http_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
+    _Res = leo_gateway_s3_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
     _Xml = io_lib:format(?XML_OBJ_LIST, [[], []]),
 
     %% @TODO
@@ -132,7 +132,7 @@ get_bucket_list_normal1_([_Node0, Node1]) ->
                                                         }
                                                      ]}
                                         end]),
-    {ok, [Head|Tail], _Xml} = leo_s3_http_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
+    {ok, [Head|Tail], _Xml} = leo_gateway_s3_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
     ?assertEqual(10, Head#metadata.dsize),
     ?assertEqual([], Tail),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),
