@@ -173,54 +173,14 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_DELETE, _,
 %% For Multipart Upload - Completion
 %%
 handle1({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
-        #req_params{path = Path0,
+        #req_params{path = Path,
                     is_upload = false,
                     upload_id = UploadId,
                     upload_part_num = PartNum}, State) when UploadId /= <<>>,
                                                             PartNum  == 0 ->
-    {ok, Req3} =
-        case cowboy_req:has_body(Req0) of
-            true ->
-                Path4Conf = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>,
-
-                case leo_gateway_rpc_handler:head(Path4Conf) of
-                    {ok, _} ->
-                        _ = leo_gateway_rpc_handler:delete(Path4Conf),
-
-                        case cowboy_req:body(Req0) of
-                            {ok, XMLBin, Req1} ->
-                                {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(XMLBin)),
-                                TotalUploadedObjs = length(Content),
-
-                                case handle2(TotalUploadedObjs, Path0, []) of
-                                    {ok, {Len, ETag}} ->
-                                        case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag) of
-                                            {ok, _} ->
-                                                [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
-                                                ETagStr = leo_hex:integer_to_hex(ETag,32),
-                                                XML = gen_upload_completion_xml(Bucket, Path1, ETagStr),
-                                                Req2 = cowboy_req:set_resp_body(XML, Req1),
-
-                                                ?reply_ok([?SERVER_HEADER], Req2);
-                                            {error, Cause} ->
-                                                ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                                ?reply_internal_error([?SERVER_HEADER], Req1)
-                                        end;
-                                    {error, Cause} ->
-                                        ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                        ?reply_internal_error([?SERVER_HEADER], Req1)
-                                end;
-                            {error, Cause} ->
-                                ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
-                                ?reply_internal_error([?SERVER_HEADER], Req0)
-                        end;
-                    _ ->
-                        ?reply_forbidden([?SERVER_HEADER], Req0)
-                end;
-            false ->
-                ?reply_forbidden([?SERVER_HEADER], Req0)
-        end,
-    {ok, Req3, State};
+    Res = cowboy_req:has_body(Req0),
+    {ok, Req1} = handle_multi_upload_1(Res, Req0, Path, UploadId),
+    {ok, Req1, State};
 
 %% For Regular cases
 %%
@@ -241,11 +201,53 @@ handle1({ok, AccessKeyId}, Req0, HTTPMethod0, Path, Params, State) ->
     end.
 
 
+%% @doc Handle multi-upload processing
+%% @private
+handle_multi_upload_1(true, Req, Path, UploadId) ->
+    Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
+
+    case leo_gateway_rpc_handler:head(Path4Conf) of
+        {ok, _} ->
+            _ = leo_gateway_rpc_handler:delete(Path4Conf),
+
+            Ret = cowboy_req:body(Req),
+            handle_multi_upload_2(Ret, Req, Path);
+        _ ->
+            ?reply_forbidden([?SERVER_HEADER], Req)
+    end;
+handle_multi_upload_1(false, Req,_Path,_UploadId) ->
+    ?reply_forbidden([?SERVER_HEADER], Req).
+
+handle_multi_upload_2({ok, Bin, Req0}, _Req, Path0) ->
+    {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(Bin)),
+    TotalUploadedObjs = length(Content),
+
+    case handle_multi_upload_3(TotalUploadedObjs, Path0, []) of
+        {ok, {Len, ETag0}} ->
+            case leo_gateway_rpc_handler:put(Path0, <<>>, Len, 0, TotalUploadedObjs, ETag0) of
+                {ok, _} ->
+                    [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
+                    ETag1 = leo_hex:integer_to_hex(ETag0, 32),
+                    XML   = gen_upload_completion_xml(Bucket, Path1, ETag1),
+                    Req1  = cowboy_req:set_resp_body(XML, Req0),
+                    ?reply_ok([?SERVER_HEADER], Req1);
+                {error, Cause} ->
+                    ?error("handle_multi_upload_2/2", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                    ?reply_internal_error([?SERVER_HEADER], Req0)
+            end;
+        {error, Cause} ->
+            ?error("handle_multi_upload_2/2", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+            ?reply_internal_error([?SERVER_HEADER], Req0)
+    end;
+handle_multi_upload_2({error, Cause}, Req, Path) ->
+    ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+    ?reply_internal_error([?SERVER_HEADER], Req).
+
 %% @doc Retrieve Metadatas for uploaded objects (Multipart)
 %% @private
--spec(handle2(integer(), binary(), list(tuple())) ->
+-spec(handle_multi_upload_3(integer(), binary(), list(tuple())) ->
              {ok, tuple()} | {error, any()}).
-handle2(0, _, Acc) ->
+handle_multi_upload_3(0, _, Acc) ->
     Metas = lists:reverse(Acc),
     {Len, ETag0} = lists:foldl(
                      fun({_, {DSize, Checksum}}, {Sum, ETagBin0}) ->
@@ -255,14 +257,14 @@ handle2(0, _, Acc) ->
     ETag1 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(crypto:md5(ETag0))),
     {ok, {Len, ETag1}};
 
-handle2(PartNum, Path, Acc) ->
+handle_multi_upload_3(PartNum, Path, Acc) ->
     PartNumBin = list_to_binary(integer_to_list(PartNum)),
     Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary  >>,
 
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{dsize = Len,
                        checksum = Checksum}} ->
-            handle2(PartNum - 1, Path, [{PartNum, {Len, Checksum}} | Acc]);
+            handle_multi_upload_3(PartNum - 1, Path, [{PartNum, {Len, Checksum}} | Acc]);
         Error ->
             Error
     end.

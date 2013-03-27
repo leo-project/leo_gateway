@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo S3 Handler
+%% Leo Gateway
 %%
 %% Copyright (c) 2012 Rakuten, Inc.
 %%
@@ -19,7 +19,7 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo S3 Handler
+%% Leo Gateway Rest Handler
 %% @doc
 %% @end
 %%======================================================================
@@ -81,7 +81,7 @@ handle1(Req0, HTTPMethod0, Path, Params, State) ->
 
     case catch exec1(HTTPMethod1, Req0, Path, Params) of
         {'EXIT', Cause} ->
-            ?error("handle1/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             {ok, Req1} = ?reply_internal_error([?SERVER_HEADER], Req0),
             {ok, Req1, State};
         {ok, Req1} ->
