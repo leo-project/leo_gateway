@@ -179,8 +179,8 @@ after_process_1(SystemConf, Members) ->
     ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
     ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
     ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
-    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
     {ok,_,_} = leo_redundant_manager_api:create(
                  Members, [{n, SystemConf#system_conf.n},
