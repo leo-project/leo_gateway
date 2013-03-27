@@ -155,7 +155,7 @@ setup_cowboy() ->
     %%                                                      {ssl_port,8443},
     %%                                                      {ssl_certfile,"./server_cert.pem"},
     %%                                                      {ssl_keyfile, "./server_key.pem"}]),
-    {ok, Options} = leo_s3_http_api:get_options(),
+    {ok, Options} = leo_gateway_app:get_options(),
     InitFun = fun() -> leo_s3_http_cowboy:start(Options) end,
     TermFun = fun() -> leo_s3_http_cowboy:stop() end,
     setup(InitFun, TermFun).
