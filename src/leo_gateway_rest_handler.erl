@@ -99,152 +99,20 @@ terminate(_Reason, _Req, _State) ->
 %% Callbacks
 %%--------------------------------------------------------------------
 %% @doc Handle request
-%% @private
-onrequest(#cache_condition{expire = Expire}) ->
-    fun(Req) ->
-            Method = cowboy_req:get(method, Req),
-            onrequest_fun1(Method, Req, Expire)
-    end.
-
-
-%% @doc Handle request
-%% @private
-onrequest_fun1(?HTTP_GET, Req, Expire) ->
-    Key = gen_key(Req),
-    Ret = ecache_api:get(Key),
-    onrequest_fun2(Req, Expire, Key, Ret);
-onrequest_fun1(_, Req, _) ->
-    Req.
-
-
-%% @doc Handle request
-%% @private
-onrequest_fun2(Req,_Expire,_Key, not_found) ->
-    Req;
-onrequest_fun2(Req, Expire, Key, {ok, CachedObj}) ->
-    #cache{mtime        = MTime,
-           content_type = ContentType,
-           etag         = Checksum,
-           body         = Body} = binary_to_term(CachedObj),
-
-    Now = leo_date:now(),
-    Diff = Now - MTime,
-
-    case (Diff > Expire) of
-        true ->
-            _ = ecache_api:delete(Key),
-            Req;
-        false ->
-            LastModified = leo_http:rfc1123_date(MTime),
-            Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_LAST_MODIFIED, LastModified},
-                      {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
-                      {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                      {?HTTP_HEAD_ETAG4AWS,      lists:append(["\"",leo_hex:integer_to_hex(Checksum, 32),"\""])},
-                      {?HTTP_HEAD_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])}
-                     ],
-            IMSSec = case cowboy_req:parse_header(?HTTP_HEAD_IF_MODIFIED_SINCE, Req) of
-                         {ok, undefined, _} ->
-                             0;
-                         {ok, IMSDateTime, _} ->
-                             calendar:datetime_to_gregorian_seconds(IMSDateTime)
-                     end,
-            case IMSSec of
-                MTime ->
-                    {ok, Req2} = ?reply_not_modified(Header, Req),
-                    Req2;
-                _ ->
-                    Req2 = cowboy_req:set_resp_body(Body, Req),
-                    {ok, Req3} = ?reply_ok([?SERVER_HEADER], Req2),
-                    Req3
-            end
-    end.
+%%
+onrequest(CacheCondition) ->
+    leo_gateway_http_handler:onrequest(CacheCondition, fun gen_key/1).
 
 
 %% @doc Handle response
-%% @private
-onresponse(#cache_condition{expire = Expire} = Config) ->
-    fun(?HTTP_ST_OK, Headers, Body, Req) ->
-            case cowboy_req:get(method, Req) of
-                ?HTTP_GET ->
-                    Key = gen_key(Req),
-
-                    case lists:all(fun(Fun) ->
-                                           Fun(Key, Config, Headers, Body)
-                                   end, [fun is_cachable_req1/4,
-                                         fun is_cachable_req2/4,
-                                         fun is_cachable_req3/4]) of
-                        true ->
-                            Now = leo_date:now(),
-                            ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
-                                              false ->
-                                                  ?HTTP_CTYPE_OCTET_STREAM;
-                                              {_, Val} ->
-                                                  Val
-                                          end,
-
-                            Bin = term_to_binary(
-                                    #cache{mtime        = Now,
-                                           etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
-                                           content_type = ContentType,
-                                           body         = Body}),
-                            _ = ecache_api:put(Key, Bin),
-
-                            Headers2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Headers),
-                            Headers3 = [{?HTTP_HEAD_CACHE_CTRL, lists:append(["max-age=",integer_to_list(Expire)])},
-                                        {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
-                                        |Headers2],
-                            {ok, Req2} = ?reply_ok(Headers3, Req),
-                            Req2;
-                        false ->
-                            cowboy_req:set_resp_body(<<>>, Req)
-                    end;
-                _ ->
-                    cowboy_req:set_resp_body(<<>>, Req)
-            end
-    end.
+%%
+onresponse(CacheCondition) ->
+    leo_gateway_http_handler:onresponse(CacheCondition, fun gen_key/1).
 
 
 %%--------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------
-%% @doc Judge cachable request
-%% @private
-is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Headers, Body) ->
-    HasNOTCacheControl = (false == lists:keyfind(?HTTP_HEAD_CACHE_CTRL, 1, Headers)),
-    HasNOTCacheControl  andalso
-        is_binary(Body) andalso
-        size(Body) > 0  andalso
-        size(Body) < MaxLen.
-
-%% @doc Judge cachable request
-%% @private
-is_cachable_req2(_Key, #cache_condition{path_patterns = []}, _Headers, _Body) ->
-    true;
-is_cachable_req2(_Key, #cache_condition{path_patterns = undefined}, _Headers, _Body) ->
-    true;
-is_cachable_req2( Key, #cache_condition{path_patterns = PathPatterns}, _Headers, _Body) ->
-    Res = lists:any(fun(Path) ->
-                            nomatch /= re:run(Key, Path)
-                    end, PathPatterns),
-    Res.
-
-
-%% @doc Judge cachable request
-%% @private
-is_cachable_req3(_, #cache_condition{content_types = []}, _Headers, _Body) ->
-    true;
-is_cachable_req3(_, #cache_condition{content_types = undefined}, _Headers, _Body) ->
-    true;
-is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Headers, _Body) ->
-    case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
-        false ->
-            false;
-        {_, ContentType} ->
-            lists:member(ContentType, ContentTypeList)
-    end.
-
-
 %% Compile Options:
 %%
 -compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4,
