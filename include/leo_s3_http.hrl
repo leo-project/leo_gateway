@@ -91,6 +91,12 @@
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
 
 
+-define(HTTP_HANDLER_S3,    'leo_gateway_s3_handler').
+-define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_handler').
+-define(HTTP_HANDLER_REST,  'leo_gateway_rest_handler').
+-type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST).
+
+
 %%
 %% S3 RESPONSE XML
 %%
@@ -143,12 +149,13 @@
 
 
 -record(http_options, {
+          %% for basic
+          handler                      :: http_handler(), %% http-handler
           port = 0                     :: pos_integer(),  %% http port number
           ssl_port = 0                 :: pos_integer(),  %% ssl port number
           ssl_certfile = []            :: string(),       %% ssl cert file name
           ssl_keyfile = []             :: string(),       %% ssk key file name
           num_of_acceptors = 0         :: pos_integer(),  %% # of acceptors (http server's workers)
-          s3_api = true                :: boolean(),      %% use s3-api?
           %% for cache
           cache_method                 :: cache_method(), %% cahce method: [http | inner]
           cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers

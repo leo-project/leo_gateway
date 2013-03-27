@@ -159,14 +159,11 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
                                             has_inner_cache   = HasInnerCache,
                                             is_cached         = true,
                                             is_dir            = IsDir,
-                                            max_chunked_objs      = Props#http_options.max_chunked_objs,
-                                            max_len_for_obj       = Props#http_options.max_len_for_obj,
-                                            chunked_obj_len       = Props#http_options.chunked_obj_len,
-                                            threshold_obj_len     = Props#http_options.threshold_obj_len}),
-
-            UseS3API = Props#http_options.s3_api,
-            AuthRet = auth1(UseS3API, Req2, HTTPMethod0, Path2, TokenLen),
-
+                                            max_chunked_objs  = Props#http_options.max_chunked_objs,
+                                            max_len_for_obj   = Props#http_options.max_len_for_obj,
+                                            chunked_obj_len   = Props#http_options.chunked_obj_len,
+                                            threshold_obj_len = Props#http_options.threshold_obj_len}),
+            AuthRet = auth1(Req2, HTTPMethod0, Path2, TokenLen),
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
             {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Req2),
@@ -528,7 +525,7 @@ is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Header
 %%
 -compile({inline, [gen_key/1, exec1/4, exec2/5, put1/4, put2/5, put3/3, put4/2,
                    put_small_object/3, put_large_object/4,
-                   get_header/2, auth1/5, auth2/4]}).
+                   get_header/2, auth1/4, auth2/4]}).
 
 %% @doc Create a key
 %% @private
@@ -1032,17 +1029,15 @@ resp_copy_obj_xml(Req, Meta) ->
 
 %% @doc Authentication
 %% @private
-auth1(false,_Req,_HTTPMethod,_Path,_TokenLen) ->
-    {ok, []};
-auth1(true,  Req, HTTPMethod, Path, TokenLen) when TokenLen =< 1 ->
+auth1(Req, HTTPMethod, Path, TokenLen) when TokenLen =< 1 ->
     auth2(Req, HTTPMethod, Path, TokenLen);
-auth1(true,  Req, ?HTTP_POST = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+auth1(Req, ?HTTP_POST = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
     auth2(Req, HTTPMethod, Path, TokenLen);
-auth1(true,  Req, ?HTTP_PUT = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+auth1(Req, ?HTTP_PUT = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
     auth2(Req, HTTPMethod, Path, TokenLen);
-auth1(true,  Req, ?HTTP_DELETE = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
+auth1(Req, ?HTTP_DELETE = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
     auth2(Req, HTTPMethod, Path, TokenLen);
-auth1(_,_,_,_,_) ->
+auth1(_,_,_,_) ->
     {ok, []}.
 
 auth2(Req, HTTPMethod, Path, TokenLen) ->

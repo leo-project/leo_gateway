@@ -292,7 +292,7 @@ log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
 get_options() ->
     %% Retrieve http-related properties:
     HttpProp = ?env_http_properties(),
-    UseS3API             = leo_misc:get_value('s3_api',           HttpProp, true),
+    HttpHandler          = leo_misc:get_value('handler',          HttpProp, ?HTTP_HANDLER_S3),
     Port                 = leo_misc:get_value('port',             HttpProp, 8080),
     SSLPort              = leo_misc:get_value('ssl_port',         HttpProp, 8443),
     SSLCertFile          = leo_misc:get_value('ssl_certfile',     HttpProp, "./server_cert.pem"),
@@ -342,7 +342,7 @@ get_options() ->
                           leo_misc:set_env(leo_gateway, K, T)
                   end, ?env_timeout()),
 
-    HttpOptions = #http_options{s3_api                   = UseS3API,
+    HttpOptions = #http_options{handler                  = HttpHandler,
                                 port                     = Port,
                                 ssl_port                 = SSLPort,
                                 ssl_certfile             = SSLCertFile,
@@ -363,7 +363,7 @@ get_options() ->
                                 max_len_for_obj          = MaxObjLen,
                                 chunked_obj_len          = ChunkedObjLen,
                                 threshold_obj_len        = ThresholdObjLen},
-    ?info("start/3", "s3-api: ~p",                   [UseS3API]),
+    ?info("start/3", "handler: ~p",                  [HttpHandler]),
     ?info("start/3", "port: ~p",                     [Port]),
     ?info("start/3", "ssl port: ~p",                 [SSLPort]),
     ?info("start/3", "ssl certfile: ~p",             [SSLCertFile]),
