@@ -248,87 +248,39 @@ invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
 %% For BUCKET-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET operation on buckets & Dirs.
-invoke(?HTTP_GET, Req, Key, #req_params{is_dir = true,
-                                        access_key_id = AccessKeyId,
-                                        qs_prefix     = Prefix,
+invoke(?HTTP_GET, Req,_Key, #req_params{is_dir  = true,
                                         invoker = #invoker{fun_bucket_get = undefined}}) ->
-    case leo_gateway_s3_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
-        {ok, Meta, XML} when is_list(Meta) == true ->
-            Req2 = cowboy_req:set_resp_body(XML, Req),
-            Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
-            ?reply_ok(Header, Req2);
-        {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
-    end;
-invoke(?HTTP_GET, Req, Key, #req_params{is_dir = true,
+    ?reply_bad_request([?SERVER_HEADER], Req);
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir  = true,
                                         invoker = #invoker{fun_bucket_get = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc PUT operation on buckets.
-invoke(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
-                                        access_key_id = AccessKeyId,
+invoke(?HTTP_PUT, Req,_Key, #req_params{token_length = 1,
                                         invoker = #invoker{fun_bucket_put = undefined}}) ->
-    Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
-                 true ->
-                     binary:part(Key, {0, byte_size(Key) -1});
-                 false ->
-                     Key
-             end,
-    case leo_gateway_s3_bucket:put_bucket(AccessKeyId, Bucket) of
-        ok ->
-            ?reply_ok([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
-    end;
-invoke(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
+    ?reply_bad_request([?SERVER_HEADER], Req);
+invoke(?HTTP_PUT, Req, Key, #req_params{token_length = 1,
                                         invoker = #invoker{fun_bucket_put = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc DELETE operation on buckets.
 %% @private
-invoke(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
-                                           access_key_id = AccessKeyId,
+invoke(?HTTP_DELETE, Req,_Key, #req_params{token_length = 1,
                                            invoker = #invoker{fun_bucket_del = undefined}}) ->
-    case leo_gateway_s3_bucket:delete_bucket(AccessKeyId, Key) of
-        ok ->
-            ?reply_no_content([?SERVER_HEADER], Req);
-        not_found ->
-            ?reply_not_found([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
-    end;
-invoke(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
+    ?reply_bad_request([?SERVER_HEADER], Req);
+invoke(?HTTP_DELETE, Req, Key, #req_params{token_length = 1,
                                            invoker = #invoker{fun_bucket_del = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc HEAD operation on buckets.
 %% @private
-invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
-                                         access_key_id = AccessKeyId,
+invoke(?HTTP_HEAD, Req,_Key, #req_params{token_length = 1,
                                          invoker = #invoker{fun_bucket_del = undefined}}) ->
-    case leo_gateway_s3_bucket:head_bucket(AccessKeyId, Key) of
-        ok ->
-            ?reply_ok([?SERVER_HEADER], Req);
-        not_found ->
-            ?reply_not_found([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
-    end;
-invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
+    ?reply_bad_request([?SERVER_HEADER], Req);
+invoke(?HTTP_HEAD, Req, Key, #req_params{token_length = 1,
                                          invoker = #invoker{fun_bucket_del = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
@@ -337,7 +289,7 @@ invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% For OBJECT-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Object with Range Header.
-invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                                         range_header = RangeHeader,
                                         invoker = #invoker{
                                           fun_object_range = undefined}}) when RangeHeader /= undefined ->
@@ -372,7 +324,7 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                     ?reply_timeout([?SERVER_HEADER], Req)
             end
     end;
-invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                                         range_header = RangeHeader,
                                         invoker = #invoker{
                                           fun_object_range = Fun}} = Params) when RangeHeader /= undefined ->
@@ -406,7 +358,7 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
 
             case HasInnerCache of
                 true ->
-                    Val = term_to_binary(#cache{etag = Meta#metadata.checksum,
+                    Val = term_to_binary(#cache{etag  = Meta#metadata.checksum,
                                                 mtime = Meta#metadata.timestamp,
                                                 content_type = Mime,
                                                 body = RespObject}),
@@ -544,26 +496,22 @@ is_cachable_req1(_Key, #cache_condition{max_content_len = MaxLen}, Headers, Body
         size(Body) > 0  andalso
         size(Body) < MaxLen.
 
-is_cachable_req2(_Key, #cache_condition{path_patterns = []}, _Headers, _Body) ->
-    true;
-is_cachable_req2(_Key, #cache_condition{path_patterns = undefined}, _Headers, _Body) ->
-    true;
-is_cachable_req2( Key, #cache_condition{path_patterns = PathPatterns}, _Headers, _Body) ->
+is_cachable_req2(_Key, #cache_condition{path_patterns = []},       _Headers, _Body) -> true;
+is_cachable_req2(_Key, #cache_condition{path_patterns = undefined},_Headers, _Body) -> true;
+is_cachable_req2( Key, #cache_condition{path_patterns = Patterns}, _Headers, _Body) ->
     Res = lists:any(fun(Path) ->
                             nomatch /= re:run(Key, Path)
-                    end, PathPatterns),
+                    end, Patterns),
     Res.
 
-is_cachable_req3(_, #cache_condition{content_types = []}, _Headers, _Body) ->
-    true;
-is_cachable_req3(_, #cache_condition{content_types = undefined}, _Headers, _Body) ->
-    true;
-is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Headers, _Body) ->
+is_cachable_req3(_, #cache_condition{content_types = []},       _Headers, _Body) -> true;
+is_cachable_req3(_, #cache_condition{content_types = undefined},_Headers, _Body) -> true;
+is_cachable_req3(_Key, #cache_condition{content_types = CTypes}, Headers, _Body) ->
     case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
         false ->
             false;
         {_, ContentType} ->
-            lists:member(ContentType, ContentTypeList)
+            lists:member(ContentType, CTypes)
     end.
 
 
@@ -607,7 +555,7 @@ get_obj(Req, Key, Cached) ->
 
 %% @doc Put a small object into the storage
 %% @private
-put_small_object({error, Cause}, _, _) ->
+put_small_object({error, Cause},_,_) ->
     {error, Cause};
 put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
     CIndex = case Params#req_params.upload_part_num of

@@ -74,22 +74,25 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
 
     case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
-            ReqParams = request_params(Req2,
-                                       #req_params{handler           = Props#http_options.handler,
-                                                   path              = Path2,
-                                                   token_length      = TokenLen,
-                                                   min_layers        = NumOfMinLayers,
-                                                   max_layers        = NumOfMaxLayers,
-                                                   qs_prefix         = Prefix,
-                                                   has_inner_cache   = HasInnerCache,
-                                                   is_cached         = true,
-                                                   is_dir            = IsDir,
-                                                   max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                                   max_len_for_obj   = Props#http_options.max_len_for_obj,
-                                                   chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                                   threshold_obj_len = Props#http_options.threshold_obj_len,
-                                                   invoker = #invoker{fun_object_put = fun put_obj/3}
-                                                  }),
+            ReqParams = request_params(
+                          Req2, #req_params{handler           = Props#http_options.handler,
+                                            path              = Path2,
+                                            token_length      = TokenLen,
+                                            min_layers        = NumOfMinLayers,
+                                            max_layers        = NumOfMaxLayers,
+                                            qs_prefix         = Prefix,
+                                            has_inner_cache   = HasInnerCache,
+                                            is_cached         = true,
+                                            is_dir            = IsDir,
+                                            max_chunked_objs  = Props#http_options.max_chunked_objs,
+                                            max_len_for_obj   = Props#http_options.max_len_for_obj,
+                                            chunked_obj_len   = Props#http_options.chunked_obj_len,
+                                            threshold_obj_len = Props#http_options.threshold_obj_len,
+                                            invoker = #invoker{fun_bucket_get  = fun get_bucket/3,
+                                                               fun_bucket_put  = fun put_bucket/3,
+                                                               fun_bucket_del  = fun delete_bucket/3,
+                                                               fun_bucket_head = fun head_bucket/3,
+                                                               fun_object_put  = fun put_obj/3}}),
             AuthRet = auth1(Req2, HTTPMethod0, Path2, TokenLen),
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
@@ -234,11 +237,11 @@ handle_multi_upload_2({ok, Bin, Req0}, _Req, Path0) ->
                     Req1  = cowboy_req:set_resp_body(XML, Req0),
                     ?reply_ok([?SERVER_HEADER], Req1);
                 {error, Cause} ->
-                    ?error("handle_multi_upload_2/2", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+                    ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Req0)
             end;
         {error, Cause} ->
-            ?error("handle_multi_upload_2/2", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
+            ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
             ?reply_internal_error([?SERVER_HEADER], Req0)
     end;
 handle_multi_upload_2({error, Cause}, Req, Path) ->
@@ -333,6 +336,9 @@ gen_key(Req) ->
     leo_http:key(EndPoints1, Host, Path).
 
 
+%% ---------------------------------------------------------------------
+%% Authentication
+%% ---------------------------------------------------------------------
 %% @doc Authentication
 %% @private
 auth1(Req, HTTPMethod, Path, TokenLen) when TokenLen =< 1 ->
@@ -408,6 +414,9 @@ auth2(Req, HTTPMethod, Path, TokenLen) ->
     end.
 
 
+%% ---------------------------------------------------------------------
+%% Multi-part upload
+%% ---------------------------------------------------------------------
 %% @doc Generate an update-initiate xml
 %% @private
 -spec(gen_upload_initiate_xml(binary(), list(binary()), string()) ->
@@ -437,6 +446,79 @@ gen_upload_key(Path) ->
     Key.
 
 
+%% ---------------------------------------------------------------------
+%% For BUCKET-OPERATION
+%% ---------------------------------------------------------------------
+%% @doc GET buckets and dirs
+%% @private
+get_bucket(Req0, Key, #req_params{access_key_id = AccessKeyId,
+                                  qs_prefix     = Prefix}) ->
+    case leo_gateway_s3_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
+        {ok, Meta, XML} when is_list(Meta) == true ->
+            Req1 = cowboy_req:set_resp_body(XML, Req0),
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
+            ?reply_ok(Header, Req1);
+        {error, not_found} ->
+            ?reply_not_found([?SERVER_HEADER], Req0);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Req0);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Req0)
+    end.
+
+%% @doc Put a bucket
+%% @private
+put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
+                 true ->
+                     binary:part(Key, {0, byte_size(Key) -1});
+                 false ->
+                     Key
+             end,
+    case leo_gateway_s3_bucket:put_bucket(AccessKeyId, Bucket) of
+        ok ->
+            ?reply_ok([?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Req);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Req)
+    end.
+
+
+%% @doc Remove a bucket
+%% @private
+delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    case leo_gateway_s3_bucket:delete_bucket(AccessKeyId, Key) of
+        ok ->
+            ?reply_no_content([?SERVER_HEADER], Req);
+        not_found ->
+            ?reply_not_found([?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Req);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Req)
+    end.
+
+
+%% @doc Retrieve a bucket-info
+%% @private
+head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    case leo_gateway_s3_bucket:head_bucket(AccessKeyId, Key) of
+        ok ->
+            ?reply_ok([?SERVER_HEADER], Req);
+        not_found ->
+            ?reply_not_found([?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Req);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Req)
+    end.
+
+
+%% ---------------------------------------------------------------------
+%% For OBJECT-OPERATION
+%% ---------------------------------------------------------------------
 %% @doc POST/PUT operation on Objects. NORMAL
 %% @private
 put_obj(Req, Key, Params) ->
