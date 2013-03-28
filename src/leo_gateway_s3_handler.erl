@@ -74,20 +74,22 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
 
     case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
-            ReqParams = request_params(
-                          Req2, #req_params{handler           = Props#http_options.handler,
-                                            path              = Path2,
-                                            token_length      = TokenLen,
-                                            min_layers        = NumOfMinLayers,
-                                            max_layers        = NumOfMaxLayers,
-                                            qs_prefix         = Prefix,
-                                            has_inner_cache   = HasInnerCache,
-                                            is_cached         = true,
-                                            is_dir            = IsDir,
-                                            max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                            max_len_for_obj   = Props#http_options.max_len_for_obj,
-                                            chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                            threshold_obj_len = Props#http_options.threshold_obj_len}),
+            ReqParams = request_params(Req2,
+                                       #req_params{handler           = Props#http_options.handler,
+                                                   path              = Path2,
+                                                   token_length      = TokenLen,
+                                                   min_layers        = NumOfMinLayers,
+                                                   max_layers        = NumOfMaxLayers,
+                                                   qs_prefix         = Prefix,
+                                                   has_inner_cache   = HasInnerCache,
+                                                   is_cached         = true,
+                                                   is_dir            = IsDir,
+                                                   max_chunked_objs  = Props#http_options.max_chunked_objs,
+                                                   max_len_for_obj   = Props#http_options.max_len_for_obj,
+                                                   chunked_obj_len   = Props#http_options.chunked_obj_len,
+                                                   threshold_obj_len = Props#http_options.threshold_obj_len,
+                                                   invoker = #invoker{fun_object_put = fun put_obj/3}
+                                                  }),
             AuthRet = auth1(Req2, HTTPMethod0, Path2, TokenLen),
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
@@ -151,7 +153,7 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
     {ok, Req1} =
         case leo_gateway_rpc_handler:head(Key0) of
             {ok, _Metadata} ->
-                leo_gateway_http_handler:put_obj(?BIN_EMPTY, Req0, Key1, Params);
+                put_obj(?BIN_EMPTY, Req0, Key1, Params);
             {error, not_found} ->
                 ?reply_not_found([?SERVER_HEADER], Req0);
             {error, timeout} ->
@@ -434,3 +436,106 @@ gen_upload_key(Path) ->
                       end, [], Path),
     Key.
 
+
+%% @doc POST/PUT operation on Objects. NORMAL
+%% @private
+put_obj(Req, Key, Params) ->
+    put_obj(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params).
+
+put_obj(?BIN_EMPTY, Req, Key, Params) ->
+    {Size0, _} = cowboy_req:body_length(Req),
+
+    case (Size0 >= Params#req_params.threshold_obj_len) of
+        true when Size0 >= Params#req_params.max_len_for_obj ->
+            ?reply_bad_request([?SERVER_HEADER], Req);
+        true when Params#req_params.is_upload == false ->
+            leo_gateway_http_handler:put_large_object(Req, Key, Size0, Params);
+        false ->
+            Ret = case cowboy_req:has_body(Req) of
+                      true ->
+                          case cowboy_req:body(Req) of
+                              {ok, Bin0, Req0} ->
+                                  {ok, {Size0, Bin0, Req0}};
+                              {error, Cause} ->
+                                  {error, Cause}
+                          end;
+                      false ->
+                          {ok, {0, ?BIN_EMPTY, Req}}
+                  end,
+            leo_gateway_http_handler:put_small_object(Ret, Key, Params)
+    end;
+
+%% @doc POST/PUT operation on Objects. COPY/REPLACE
+%% @private
+put_obj(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
+    CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+
+    %% need to trim head '/' when cooperating with s3fs(-c)
+    CS2 = case binary:part(CS, {0, 1}) of
+              ?BIN_SLASH ->
+                  binary:part(CS, {1, byte_size(CS) -1});
+              _ ->
+                  CS
+          end,
+
+    case leo_gateway_rpc_handler:get(CS2) of
+        {ok, Meta, RespObject} ->
+            put_obj_1(Directive, Req, Key, Meta, RespObject);
+        {error, not_found} ->
+            ?reply_not_found([?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Req);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Req)
+    end.
+
+%% @doc POST/PUT operation on Objects. COPY
+%% @private
+put_obj_1(Directive, Req, Key, Meta, Bin) ->
+    Size = size(Bin),
+
+    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
+        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
+            resp_copy_obj_xml(Req, Meta);
+        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
+            put_obj_2(Req, Key, Meta);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Req);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Req)
+    end.
+
+
+%% @doc POST/PUT operation on Objects. REPLACE
+%% @private
+put_obj_2(Req, Key, Meta) ->
+    KeyList = binary_to_list(Key),
+    case KeyList == Meta#metadata.key of
+        true  -> resp_copy_obj_xml(Req, Meta);
+        false -> put_obj_3(Req, Meta)
+    end.
+
+put_obj_3(Req, Meta) ->
+    KeyBin = list_to_binary(Meta#metadata.key),
+    case leo_gateway_rpc_handler:delete(KeyBin) of
+        ok ->
+            resp_copy_obj_xml(Req, Meta);
+        {error, not_found} ->
+            resp_copy_obj_xml(Req, Meta);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Req);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Req)
+    end.
+
+
+%% @doc Generate copy-obj's xml
+%% @private
+resp_copy_obj_xml(Req, Meta) ->
+    XML = io_lib:format(?XML_COPY_OBJ_RESULT,
+                        [leo_http:web_date(Meta#metadata.timestamp),
+                         leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
+    Req2 = cowboy_req:set_resp_body(XML, Req),
+    ?reply_ok([?SERVER_HEADER,
+               {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
+              ], Req2).

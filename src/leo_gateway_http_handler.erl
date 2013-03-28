@@ -35,7 +35,7 @@
 
 -export([start/1, start/2, stop/0]).
 -export([onrequest/2, onresponse/2]).
--export([invoke/4, put_obj/4]).
+-export([invoke/4, put_small_object/3, put_large_object/4]).
 
 %%--------------------------------------------------------------------
 %% API
@@ -45,7 +45,7 @@
 -spec(start(atom(), #http_options{}) ->
              ok).
 start(Sup, Options) ->
-    %% for ECache
+    %% launch ECache/DCerl
     NumOfECacheWorkers    = Options#http_options.cache_workers,
     CacheRAMCapacity      = Options#http_options.cache_ram_capacity,
     CacheDiscCapacity     = Options#http_options.cache_disc_capacity,
@@ -58,7 +58,7 @@ start(Sup, Options) ->
                   permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [ecache_sup]},
     {ok, _} = supervisor:start_child(Sup, ChildSpec0),
 
-    %% for Cowboy
+    %% launch Cowboy
     ChildSpec1 = {cowboy_sup,
                   {cowboy_sup, start_link, []},
                   permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [cowboy_sup]},
@@ -129,6 +129,8 @@ stop() ->
 %%--------------------------------------------------------------------
 %% @doc Handle request
 %%
+-spec(onrequest(#cache_condition{}, function()) ->
+             any()).
 onrequest(#cache_condition{expire = Expire}, FunGenKey) ->
     fun(Req) ->
             Method = cowboy_req:get(method, Req),
@@ -163,9 +165,8 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
                       {?HTTP_HEAD_LAST_MODIFIED, LastModified},
                       {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
                       {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                      {?HTTP_HEAD_ETAG4AWS,      lists:append(["\"",leo_hex:integer_to_hex(Checksum, 32),"\""])},
-                      {?HTTP_HEAD_CACHE_CTRL,    lists:append(["max-age=",integer_to_list(Expire)])}
-                     ],
+                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Checksum)},
+                      {?HTTP_HEAD_CACHE_CTRL,    ?httP_cache_ctl(Expire)}],
             IMSSec = case cowboy_req:parse_header(?HTTP_HEAD_IF_MODIFIED_SINCE, Req) of
                          {ok, undefined, _} ->
                              0;
@@ -184,22 +185,24 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
     end.
 
 
-%% @doc
+%% @doc Handle response
 %%
+-spec(onresponse(#cache_condition{}, function()) ->
+             any()).
 onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
-    fun(?HTTP_ST_OK, Headers, Body, Req) ->
+    fun(?HTTP_ST_OK, Header1, Body, Req) ->
             case cowboy_req:get(method, Req) of
                 ?HTTP_GET ->
                     Key = FunGenKey(Req),
 
                     case lists:all(fun(Fun) ->
-                                           Fun(Key, Config, Headers, Body)
+                                           Fun(Key, Config, Header1, Body)
                                    end, [fun is_cachable_req1/4,
                                          fun is_cachable_req2/4,
                                          fun is_cachable_req3/4]) of
                         true ->
                             Now = leo_date:now(),
-                            ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Headers) of
+                            ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Header1) of
                                               false ->
                                                   ?HTTP_CTYPE_OCTET_STREAM;
                                               {_, Val} ->
@@ -213,11 +216,11 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                                            body         = Body}),
                             _ = ecache_api:put(Key, Bin),
 
-                            Headers2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Headers),
-                            Headers3 = [{?HTTP_HEAD_CACHE_CTRL, lists:append(["max-age=",integer_to_list(Expire)])},
-                                        {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
-                                        |Headers2],
-                            {ok, Req2} = ?reply_ok(Headers3, Req),
+                            Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
+                            Header3 = [{?HTTP_HEAD_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
+                                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
+                                       |Header2],
+                            {ok, Req2} = ?reply_ok(Header3, Req),
                             Req2;
                         false ->
                             cowboy_req:set_resp_body(<<>>, Req)
@@ -229,16 +232,17 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
 
 
 %% Compile Options:
-%%
--compile({inline, [invoke/4, get_obj_with_etag/4, put_obj/4, put_obj_1/5, put_obj_2/3, put_obj_3/2,
+-compile({inline, [invoke/4, get_obj/4,
                    put_small_object/3, put_large_object/4]}).
 
 
+%%--------------------------------------------------------------------
+%% INVALID OPERATION
+%%--------------------------------------------------------------------
 %% @doc Constraint violation.
 invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
                                           max_layers   = Max}) when Len > Max ->
     ?reply_not_found([?SERVER_HEADER], Req);
-
 
 %% ---------------------------------------------------------------------
 %% For BUCKET-OPERATION
@@ -246,13 +250,14 @@ invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
 %% @doc GET operation on buckets & Dirs.
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir = true,
                                         access_key_id = AccessKeyId,
-                                        qs_prefix     = Prefix}) ->
+                                        qs_prefix     = Prefix,
+                                        invoker = #invoker{fun_bucket_get = undefined}}) ->
     case leo_gateway_s3_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req2 = cowboy_req:set_resp_body(XML, Req),
-            ?reply_ok([?SERVER_HEADER,
-                       {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
-                      ], Req2);
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
+            ?reply_ok(Header, Req2);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -260,10 +265,15 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir = true,
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir = true,
+                                        invoker = #invoker{fun_bucket_get = Fun}} = Params) ->
+    Fun(Req, Key, Params);
+
 
 %% @doc PUT operation on buckets.
 invoke(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
-                                        access_key_id = AccessKeyId}) ->
+                                        access_key_id = AccessKeyId,
+                                        invoker = #invoker{fun_bucket_put = undefined}}) ->
     Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
                  true ->
                      binary:part(Key, {0, byte_size(Key) -1});
@@ -278,11 +288,16 @@ invoke(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
+invoke(?HTTP_PUT, Req, Key, #req_params{token_length  = 1,
+                                        invoker = #invoker{fun_bucket_put = Fun}} = Params) ->
+    Fun(Req, Key, Params);
+
 
 %% @doc DELETE operation on buckets.
 %% @private
 invoke(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
-                                           access_key_id = AccessKeyId}) ->
+                                           access_key_id = AccessKeyId,
+                                           invoker = #invoker{fun_bucket_del = undefined}}) ->
     case leo_gateway_s3_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -293,11 +308,16 @@ invoke(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
+invoke(?HTTP_DELETE, Req, Key, #req_params{token_length  = 1,
+                                           invoker = #invoker{fun_bucket_del = Fun}} = Params) ->
+    Fun(Req, Key, Params);
+
 
 %% @doc HEAD operation on buckets.
 %% @private
 invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
-                                         access_key_id = AccessKeyId}) ->
+                                         access_key_id = AccessKeyId,
+                                         invoker = #invoker{fun_bucket_del = undefined}}) ->
     case leo_gateway_s3_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
@@ -308,6 +328,9 @@ invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
+invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
+                                         invoker = #invoker{fun_bucket_del = Fun}} = Params) ->
+    Fun(Req, Key, Params);
 
 
 %% ---------------------------------------------------------------------
@@ -315,7 +338,9 @@ invoke(?HTTP_HEAD, Req, Key, #req_params{token_length  = 1,
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Object with Range Header.
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
-                                        range_header = RangeHeader}) when RangeHeader /= undefined ->
+                                        range_header = RangeHeader,
+                                        invoker = #invoker{
+                                          fun_object_range = undefined}}) when RangeHeader /= undefined ->
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
@@ -336,9 +361,9 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                 {ok, _Meta, RespObject} ->
                     Mime = leo_mime:guess_mime(Key),
                     Req2 = cowboy_req:set_resp_body(RespObject, Req),
-                    ?reply_partial_content([?SERVER_HEADER,
-                                            {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
-                                           Req2);
+                    Header = [?SERVER_HEADER,
+                              {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
+                    ?reply_partial_content(Header, Req2);
                 {error, not_found} ->
                     ?reply_not_found([?SERVER_HEADER], Req);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -347,6 +372,12 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
                     ?reply_timeout([?SERVER_HEADER], Req)
             end
     end;
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir       = false,
+                                        range_header = RangeHeader,
+                                        invoker = #invoker{
+                                          fun_object_range = Fun}} = Params) when RangeHeader /= undefined ->
+    Fun(Req, Key, Params);
+
 
 %% @doc GET operation on Object if inner cache is enabled.
 %% @private
@@ -358,13 +389,16 @@ invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
             invoke(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj} ->
             Cached = binary_to_term(CachedObj),
-            get_obj_with_etag(Req, Key, Params, Cached)
+            get_obj(Req, Key, Params, Cached)
     end;
+
 
 %% @doc GET operation on Object.
 %% @private
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
-                                        has_inner_cache = HasInnerCache}) ->
+                                        has_inner_cache = HasInnerCache,
+                                        invoker = #invoker{
+                                          fun_object_get = undefined}}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
@@ -372,22 +406,21 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
 
             case HasInnerCache of
                 true ->
-                    BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
-                                                   mtime = Meta#metadata.timestamp,
-                                                   content_type = Mime,
-                                                   body = RespObject}),
-                    _ = ecache_api:put(Key, BinVal);
+                    Val = term_to_binary(#cache{etag = Meta#metadata.checksum,
+                                                mtime = Meta#metadata.timestamp,
+                                                content_type = Mime,
+                                                body = RespObject}),
+                    ecache_api:put(Key, Val);
                 false ->
                     void
             end,
+
             Req2 = cowboy_req:set_resp_body(RespObject, Req),
-            ?reply_ok([?SERVER_HEADER,
-                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                       {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
-                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
-                                                           "\""])},
-                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
-                      Req2);
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
+                      {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+            ?reply_ok(Header, Req2);
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
@@ -411,18 +444,22 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
+invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
+                                        invoker = #invoker{
+                                          fun_object_get = Fun}} = Params) ->
+    Fun(Req, Key, Params);
+
 
 %% @doc HEAD operation on Object.
 %% @private
-invoke(?HTTP_HEAD, Req, Key, _Params) ->
+invoke(?HTTP_HEAD, Req, Key, #req_params{invoker = #invoker{
+                                           fun_object_head = undefined}}) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {?HTTP_HEAD_CONTENT_TYPE, leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
-                                                             leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
-                                                             "\""])},
+                         {?HTTP_HEAD_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
+                         {?HTTP_HEAD_ETAG4AWS,       ?http_etag(Meta#metadata.checksum)},
                          {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
                          {?HTTP_HEAD_LAST_MODIFIED,  Timestamp}],
             ?reply_ok(Headers, Req);
@@ -435,10 +472,15 @@ invoke(?HTTP_HEAD, Req, Key, _Params) ->
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
+invoke(?HTTP_HEAD, Req, Key, #req_params{invoker = #invoker{
+                                           fun_object_head = Fun}} = Params) ->
+    Fun(Req, Key, Params);
+
 
 %% @doc DELETE operation on Object.
 %% @private
-invoke(?HTTP_DELETE, Req, Key, _Params) ->
+invoke(?HTTP_DELETE, Req, Key, #req_params{invoker = #invoker{
+                                             fun_object_del = undefined}}) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -449,11 +491,40 @@ invoke(?HTTP_DELETE, Req, Key, _Params) ->
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
+invoke(?HTTP_DELETE, Req, Key, #req_params{invoker = #invoker{
+                                             fun_object_del = Fun}} = Params) ->
+    Fun(Req, Key, Params);
+
 
 %% @doc POST/PUT operation on Objects.
 %% @private
-invoke(?HTTP_PUT, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3} = Params) ->
-    put_obj(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params);
+invoke(?HTTP_PUT, Req, Key, #req_params{invoker = #invoker{
+                                          fun_object_put = undefined}} = Params) ->
+    {Size0, _} = cowboy_req:body_length(Req),
+
+    case (Size0 >= Params#req_params.threshold_obj_len) of
+        true when Size0 >= Params#req_params.max_len_for_obj ->
+            ?reply_bad_request([?SERVER_HEADER], Req);
+        true when Params#req_params.is_upload == false ->
+            put_large_object(Req, Key, Size0, Params);
+        false ->
+            Ret = case cowboy_req:has_body(Req) of
+                      true ->
+                          case cowboy_req:body(Req) of
+                              {ok, Bin0, Req0} ->
+                                  {ok, {Size0, Bin0, Req0}};
+                              {error, Cause} ->
+                                  {error, Cause}
+                          end;
+                      false ->
+                          {ok, {0, ?BIN_EMPTY, Req}}
+                  end,
+            put_small_object(Ret, Key, Params)
+    end;
+invoke(?HTTP_PUT, Req, Key, #req_params{invoker = #invoker{
+                                          fun_object_put = Fun}} = Params) ->
+    Fun(Req, Key, Params);
+
 
 %% @doc invalid request.
 %% @private
@@ -495,128 +566,36 @@ is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Header
             lists:member(ContentType, ContentTypeList)
     end.
 
-%% @doc GET operation with Etag
+
+%% @doc GET an object with Etag
 %% @private
-get_obj_with_etag(Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
+get_obj(Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
     case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             Req2 = cowboy_req:set_resp_body(Cached#cache.body, Req),
-            ?reply_ok([?SERVER_HEADER,
-                       {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
-                       {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
-                                                           leo_hex:integer_to_hex(Cached#cache.etag, 32),
-                                                           "\""])},
-                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
-                       {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
-                      Req2);
-        {ok, Meta, RespObject} ->
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_CONTENT_TYPE,  Cached#cache.content_type},
+                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Cached#cache.etag)},
+                      {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Cached#cache.mtime)},
+                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
+            ?reply_ok(Header, Req2);
+        {ok, Meta, Body} ->
             Mime = leo_mime:guess_mime(Key),
-            BinVal = term_to_binary(#cache{etag = Meta#metadata.checksum,
-                                           mtime = Meta#metadata.timestamp,
-                                           content_type = Mime,
-                                           body = RespObject}),
+            Val = term_to_binary(#cache{etag = Meta#metadata.checksum,
+                                        mtime = Meta#metadata.timestamp,
+                                        content_type = Mime,
+                                        body = Body}),
 
-            _ = ecache_api:put(Key, BinVal),
+            _ = ecache_api:put(Key, Val),
 
-            Req2 = cowboy_req:set_resp_body(RespObject, Req),
-            ?reply_ok([?SERVER_HEADER,
-                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                       {?HTTP_HEAD_ETAG4AWS, lists:append(["\"",
-                                                           leo_hex:integer_to_hex(Meta#metadata.checksum, 32),
-                                                           "\""])},
-                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Meta#metadata.timestamp)}],
-                      Req2);
+            Req2 = cowboy_req:set_resp_body(Body, Req),
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_CONTENT_TYPE,  Mime},
+                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
+                      {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+            ?reply_ok(Header, Req2);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
-    end.
-
-
-%% @doc POST/PUT operation on Objects. NORMAL
-%% @private
-put_obj(?BIN_EMPTY, Req, Key, Params) ->
-    {Size0, _} = cowboy_req:body_length(Req),
-
-    case (Size0 >= Params#req_params.threshold_obj_len) of
-        true when Size0 >= Params#req_params.max_len_for_obj ->
-            ?reply_bad_request([?SERVER_HEADER], Req);
-        true when Params#req_params.is_upload == false ->
-            put_large_object(Req, Key, Size0, Params);
-        false ->
-            Ret = case cowboy_req:has_body(Req) of
-                      true ->
-                          case cowboy_req:body(Req) of
-                              {ok, Bin0, Req0} ->
-                                  {ok, {Size0, Bin0, Req0}};
-                              {error, Cause} ->
-                                  {error, Cause}
-                          end;
-                      false ->
-                          {ok, {0, ?BIN_EMPTY, Req}}
-                  end,
-            put_small_object(Ret, Key, Params)
-    end;
-
-%% @doc POST/PUT operation on Objects. COPY/REPLACE
-%% @private
-put_obj(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
-    CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
-
-    %% need to trim head '/' when cooperating with s3fs(-c)
-    CS2 = case binary:part(CS, {0, 1}) of
-              ?BIN_SLASH ->
-                  binary:part(CS, {1, byte_size(CS) -1});
-              _ ->
-                  CS
-          end,
-
-    case leo_gateway_rpc_handler:get(CS2) of
-        {ok, Meta, RespObject} ->
-            put_obj_1(Directive, Req, Key, Meta, RespObject);
-        {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
-    end.
-
-%% @doc POST/PUT operation on Objects. COPY
-%% @private
-put_obj_1(Directive, Req, Key, Meta, Bin) ->
-    Size = size(Bin),
-
-    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
-        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
-            resp_copy_obj_xml(Req, Meta);
-        {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
-            put_obj_2(Req, Key, Meta);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
-    end.
-
-
-%% @doc POST/PUT operation on Objects. REPLACE
-%% @private
-put_obj_2(Req, Key, Meta) ->
-    KeyList = binary_to_list(Key),
-    case KeyList == Meta#metadata.key of
-        true  -> resp_copy_obj_xml(Req, Meta);
-        false -> put_obj_3(Req, Meta)
-    end.
-
-put_obj_3(Req, Meta) ->
-    KeyBin = list_to_binary(Meta#metadata.key),
-    case leo_gateway_rpc_handler:delete(KeyBin) of
-        ok ->
-            resp_copy_obj_xml(Req, Meta);
-        {error, not_found} ->
-            resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
@@ -645,19 +624,17 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
             case Params#req_params.has_inner_cache of
                 true  ->
                     Mime = leo_mime:guess_mime(Key),
-                    BinVal = term_to_binary(#cache{etag = ETag,
-                                                   mtime = leo_date:now(),
-                                                   content_type = Mime,
-                                                   body = Bin}),
-                    _ = ecache_api:put(Key, BinVal);
+                    Val  = term_to_binary(#cache{etag = ETag,
+                                                 mtime = leo_date:now(),
+                                                 content_type = Mime,
+                                                 body = Bin}),
+                    _ = ecache_api:put(Key, Val);
                 false -> void
             end,
-            ?reply_ok([?SERVER_HEADER,
-                       {?HTTP_HEAD_ETAG4AWS,
-                        lists:append(["\"",
-                                      leo_hex:integer_to_hex(ETag, 32),
-                                      "\""])}
-                      ], Req);
+
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_ETAG4AWS, ?http_etag(ETag)}],
+            ?reply_ok(Header, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
@@ -697,12 +674,9 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) -
                     case leo_gateway_rpc_handler:put(
                            Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
                         {ok, _ETag} ->
-                            ?reply_ok([?SERVER_HEADER,
-                                       {?HTTP_HEAD_ETAG4AWS,
-                                        lists:append(["\"",
-                                                      leo_hex:integer_to_hex(Digest1, 32),
-                                                      "\""])}
-                                      ], Req);
+                            Header = [?SERVER_HEADER,
+                                      {?HTTP_HEAD_ETAG4AWS, ?http_etag(Digest1)}],
+                            ?reply_ok(Header, Req);
                         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                             ?reply_internal_error([?SERVER_HEADER], Req);
                         {error, timeout} ->
@@ -719,18 +693,6 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) -
 
 %% An error occurred while reading the body, connection is gone.
 put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, Counter, Pid) ->
-    ?error("handle_cast/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    ?error("put_large_object/7", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
     ok = leo_gateway_large_object_handler:rollback(Pid, Counter).
-
-
-%% @doc Generate copy-obj's xml
-%% @private
-resp_copy_obj_xml(Req, Meta) ->
-    XML = io_lib:format(?XML_COPY_OBJ_RESULT,
-                        [leo_http:web_date(Meta#metadata.timestamp),
-                         leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
-    Req2 = cowboy_req:set_resp_body(XML, Req),
-    ?reply_ok([?SERVER_HEADER,
-               {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
-              ], Req2).
 
