@@ -232,7 +232,7 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
 
 
 %% Compile Options:
--compile({inline, [invoke/4, get_obj/4,
+-compile({inline, [invoke/4, get_obj/3,
                    put_small_object/3, put_large_object/4]}).
 
 
@@ -389,7 +389,7 @@ invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
             invoke(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj} ->
             Cached = binary_to_term(CachedObj),
-            get_obj(Req, Key, Params, Cached)
+            get_obj(Req, Key, Cached)
     end;
 
 
@@ -569,7 +569,9 @@ is_cachable_req3(_Key, #cache_condition{content_types = ContentTypeList}, Header
 
 %% @doc GET an object with Etag
 %% @private
-get_obj(Req, Key, #req_params{is_dir = false, has_inner_cache = true}, Cached) ->
+-spec(get_obj(any(), binary(), #cache{}) ->
+             {ok, any()}).
+get_obj(Req, Key, Cached) ->
     case leo_gateway_rpc_handler:get(Key, Cached#cache.etag) of
         {ok, match} ->
             Req2 = cowboy_req:set_resp_body(Cached#cache.body, Req),
