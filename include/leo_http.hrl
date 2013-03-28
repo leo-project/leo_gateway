@@ -191,15 +191,16 @@
          }).
 
 -record(invoker, {
-          fun_bucket_put   :: function(),
-          fun_bucket_get   :: function(),
-          fun_bucket_del   :: function(),
-          fun_bucket_head  :: function(),
-          fun_object_put   :: function(),
-          fun_object_get   :: function(),
-          fun_object_range :: function(),
-          fun_object_del   :: function(),
-          fun_object_head  :: function()}).
+          fun_put_bucket   :: function(),
+          fun_get_bucket   :: function(),
+          fun_del_bucket   :: function(),
+          fun_head_bucket  :: function(),
+          fun_put_object   :: function(),
+          fun_get_object   :: function(),
+          fun_del_object   :: function(),
+          fun_head_object  :: function(),
+          fun_range_object :: function()
+         }).
 
 -record(req_params, {
           %% basic info

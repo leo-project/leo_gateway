@@ -88,11 +88,11 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
                                             max_len_for_obj   = Props#http_options.max_len_for_obj,
                                             chunked_obj_len   = Props#http_options.chunked_obj_len,
                                             threshold_obj_len = Props#http_options.threshold_obj_len,
-                                            invoker = #invoker{fun_bucket_get  = fun get_bucket/3,
-                                                               fun_bucket_put  = fun put_bucket/3,
-                                                               fun_bucket_del  = fun delete_bucket/3,
-                                                               fun_bucket_head = fun head_bucket/3,
-                                                               fun_object_put  = fun put_obj/3}}),
+                                            invoker = #invoker{fun_get_bucket  = fun get_bucket/3,
+                                                               fun_put_bucket  = fun put_bucket/3,
+                                                               fun_del_bucket  = fun delete_bucket/3,
+                                                               fun_head_bucket = fun head_bucket/3,
+                                                               fun_put_object  = fun put_obj/3}}),
             AuthRet = auth1(Req2, HTTPMethod0, Path2, TokenLen),
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->

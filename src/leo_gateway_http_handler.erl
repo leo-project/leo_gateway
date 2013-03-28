@@ -249,39 +249,39 @@ invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
 %% ---------------------------------------------------------------------
 %% @doc GET operation on buckets & Dirs.
 invoke(?HTTP_GET, Req,_Key, #req_params{is_dir  = true,
-                                        invoker = #invoker{fun_bucket_get = undefined}}) ->
+                                        invoker = #invoker{fun_get_bucket = undefined}}) ->
     ?reply_bad_request([?SERVER_HEADER], Req);
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir  = true,
-                                        invoker = #invoker{fun_bucket_get = Fun}} = Params) ->
+                                        invoker = #invoker{fun_get_bucket = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc PUT operation on buckets.
 invoke(?HTTP_PUT, Req,_Key, #req_params{token_length = 1,
-                                        invoker = #invoker{fun_bucket_put = undefined}}) ->
+                                        invoker = #invoker{fun_put_bucket = undefined}}) ->
     ?reply_bad_request([?SERVER_HEADER], Req);
 invoke(?HTTP_PUT, Req, Key, #req_params{token_length = 1,
-                                        invoker = #invoker{fun_bucket_put = Fun}} = Params) ->
+                                        invoker = #invoker{fun_put_bucket = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc DELETE operation on buckets.
 %% @private
 invoke(?HTTP_DELETE, Req,_Key, #req_params{token_length = 1,
-                                           invoker = #invoker{fun_bucket_del = undefined}}) ->
+                                           invoker = #invoker{fun_del_bucket = undefined}}) ->
     ?reply_bad_request([?SERVER_HEADER], Req);
 invoke(?HTTP_DELETE, Req, Key, #req_params{token_length = 1,
-                                           invoker = #invoker{fun_bucket_del = Fun}} = Params) ->
+                                           invoker = #invoker{fun_del_bucket = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc HEAD operation on buckets.
 %% @private
 invoke(?HTTP_HEAD, Req,_Key, #req_params{token_length = 1,
-                                         invoker = #invoker{fun_bucket_del = undefined}}) ->
+                                         invoker = #invoker{fun_del_bucket = undefined}}) ->
     ?reply_bad_request([?SERVER_HEADER], Req);
 invoke(?HTTP_HEAD, Req, Key, #req_params{token_length = 1,
-                                         invoker = #invoker{fun_bucket_del = Fun}} = Params) ->
+                                         invoker = #invoker{fun_del_bucket = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
@@ -292,7 +292,7 @@ invoke(?HTTP_HEAD, Req, Key, #req_params{token_length = 1,
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                                         range_header = RangeHeader,
                                         invoker = #invoker{
-                                          fun_object_range = undefined}}) when RangeHeader /= undefined ->
+                                          fun_range_object = undefined}}) when RangeHeader /= undefined ->
     [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
     ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
     {Start, End} = case length(ByteRangeSet) of
@@ -327,7 +327,7 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                                         range_header = RangeHeader,
                                         invoker = #invoker{
-                                          fun_object_range = Fun}} = Params) when RangeHeader /= undefined ->
+                                          fun_range_object = Fun}} = Params) when RangeHeader /= undefined ->
     Fun(Req, Key, Params);
 
 
@@ -350,7 +350,7 @@ invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                                         has_inner_cache = HasInnerCache,
                                         invoker = #invoker{
-                                          fun_object_get = undefined}}) ->
+                                          fun_get_object = undefined}}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
@@ -398,14 +398,14 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
     end;
 invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
                                         invoker = #invoker{
-                                          fun_object_get = Fun}} = Params) ->
+                                          fun_get_object = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc HEAD operation on Object.
 %% @private
 invoke(?HTTP_HEAD, Req, Key, #req_params{invoker = #invoker{
-                                           fun_object_head = undefined}}) ->
+                                           fun_head_object = undefined}}) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
@@ -425,14 +425,14 @@ invoke(?HTTP_HEAD, Req, Key, #req_params{invoker = #invoker{
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
 invoke(?HTTP_HEAD, Req, Key, #req_params{invoker = #invoker{
-                                           fun_object_head = Fun}} = Params) ->
+                                           fun_head_object = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc DELETE operation on Object.
 %% @private
 invoke(?HTTP_DELETE, Req, Key, #req_params{invoker = #invoker{
-                                             fun_object_del = undefined}}) ->
+                                             fun_del_object = undefined}}) ->
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -444,14 +444,14 @@ invoke(?HTTP_DELETE, Req, Key, #req_params{invoker = #invoker{
             ?reply_timeout([?SERVER_HEADER], Req)
     end;
 invoke(?HTTP_DELETE, Req, Key, #req_params{invoker = #invoker{
-                                             fun_object_del = Fun}} = Params) ->
+                                             fun_del_object = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
 %% @doc POST/PUT operation on Objects.
 %% @private
 invoke(?HTTP_PUT, Req, Key, #req_params{invoker = #invoker{
-                                          fun_object_put = undefined}} = Params) ->
+                                          fun_put_object = undefined}} = Params) ->
     {Size0, _} = cowboy_req:body_length(Req),
 
     case (Size0 >= Params#req_params.threshold_obj_len) of
@@ -474,7 +474,7 @@ invoke(?HTTP_PUT, Req, Key, #req_params{invoker = #invoker{
             put_small_object(Ret, Key, Params)
     end;
 invoke(?HTTP_PUT, Req, Key, #req_params{invoker = #invoker{
-                                          fun_object_put = Fun}} = Params) ->
+                                          fun_put_object = Fun}} = Params) ->
     Fun(Req, Key, Params);
 
 
