@@ -19,21 +19,26 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo S3 Handler
+%% Leo Gateway S3-API
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_s3_handler).
+-module(leo_gateway_s3_api).
 
 -author('Yosuke Hara').
 -author('Yoshiyuki Kanno').
 
--export([init/3, handle/2, terminate/3]).
+-behaviour(leo_gateway_http_behaviour).
+
+-export([start/2, stop/0,
+         init/3, handle/2, terminate/3]).
 -export([onrequest/1, onresponse/1]).
+-export([get_bucket/3, put_bucket/3, delete_bucket/3, head_bucket/3,
+         get_object/3, put_object/3, delete_object/3, head_object/3,
+         get_object_with_cache/4, range_object/3]).
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
-
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
@@ -43,6 +48,14 @@
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
+start(Sup, HttpOptions) ->
+    leo_gateway_http_commons:start(Sup, HttpOptions).
+
+stop() ->
+    cowboy:stop_listener(?MODULE),
+    cowboy:stop_listener(list_to_atom(lists:append([?MODULE_STRING, "_ssl"]))),
+    ok.
+
 %% @doc Initializer
 init({_Any, http}, Req, Opts) ->
     {ok, Req, Opts}.
@@ -75,7 +88,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
     case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
             ReqParams = request_params(
-                          Req2, #req_params{handler           = Props#http_options.handler,
+                          Req2, #req_params{handler           = ?MODULE,
                                             path              = Path2,
                                             token_length      = TokenLen,
                                             min_layers        = NumOfMinLayers,
@@ -87,12 +100,7 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
                                             max_chunked_objs  = Props#http_options.max_chunked_objs,
                                             max_len_for_obj   = Props#http_options.max_len_for_obj,
                                             chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                            threshold_obj_len = Props#http_options.threshold_obj_len,
-                                            invoker = #invoker{fun_get_bucket  = fun get_bucket/3,
-                                                               fun_put_bucket  = fun put_bucket/3,
-                                                               fun_del_bucket  = fun delete_bucket/3,
-                                                               fun_head_bucket = fun head_bucket/3,
-                                                               fun_put_object  = fun put_obj/3}}),
+                                            threshold_obj_len = Props#http_options.threshold_obj_len}),
             AuthRet = auth1(Req2, HTTPMethod0, Path2, TokenLen),
             handle1(AuthRet, Req2, HTTPMethod0, Path2, ReqParams, State);
         _ ->
@@ -156,7 +164,7 @@ handle1({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
     {ok, Req1} =
         case leo_gateway_rpc_handler:head(Key0) of
             {ok, _Metadata} ->
-                put_obj(?BIN_EMPTY, Req0, Key1, Params);
+                put_object(?BIN_EMPTY, Req0, Key1, Params);
             {error, not_found} ->
                 ?reply_not_found([?SERVER_HEADER], Req0);
             {error, timeout} ->
@@ -281,59 +289,17 @@ terminate(_Reason, _Req, _State) ->
 
 
 %%--------------------------------------------------------------------
-%% Callbacks
+%% Callbacks from Cowboy
 %%--------------------------------------------------------------------
 %% @doc Handle request
 %%
 onrequest(CacheCondition) ->
-    leo_gateway_http_handler:onrequest(CacheCondition, fun gen_key/1).
-
+    leo_gateway_http_commons:onrequest(CacheCondition, fun gen_key/1).
 
 %% @doc Handle response
 %%
 onresponse(CacheCondition) ->
-    leo_gateway_http_handler:onresponse(CacheCondition, fun gen_key/1).
-
-
-%%--------------------------------------------------------------------
-%% Internal Functions
-%%--------------------------------------------------------------------
-%% @doc Retrieve header values from a request
-%%      Set request params
-%% @private
-request_params(Req, Params) ->
-    IsUpload = case cowboy_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req) of
-                   {undefined, _} -> false;
-                   _ -> true
-               end,
-    UploadId = case cowboy_req:qs_val(?HTTP_QS_BIN_UPLOAD_ID, Req) of
-                   {undefined, _} -> <<>>;
-                   {Val0,      _} -> Val0
-               end,
-    PartNum  = case cowboy_req:qs_val(?HTTP_QS_BIN_PART_NUMBER, Req) of
-                   {undefined, _} -> 0;
-                   {Val1,      _} -> list_to_integer(binary_to_list(Val1))
-               end,
-    Range    = element(1, cowboy_req:header(?HTTP_HEAD_RANGE, Req)),
-
-    Params#req_params{is_upload       = IsUpload,
-                      upload_id       = UploadId,
-                      upload_part_num = PartNum,
-                      range_header    = Range}.
-
-
-%% @doc Create a key
-%% @private
-gen_key(Req) ->
-    EndPoints1 = case leo_s3_endpoint:get_endpoints() of
-                     {ok, EndPoints0} ->
-                         lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
-                     _ -> []
-                 end,
-    {Host,    _} = cowboy_req:host(Req),
-    {RawPath, _} = cowboy_req:path(Req),
-    Path = cowboy_http:urldecode(RawPath),
-    leo_http:key(EndPoints1, Host, Path).
+    leo_gateway_http_commons:onresponse(CacheCondition, fun gen_key/1).
 
 
 %% ---------------------------------------------------------------------
@@ -447,10 +413,15 @@ gen_upload_key(Path) ->
 
 
 %% ---------------------------------------------------------------------
+%% Callbacks from HTTP-Handler
+%% ---------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %% For BUCKET-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET buckets and dirs
 %% @private
+-spec(get_bucket(any(), binary(), #req_params{}) ->
+             {ok, any()}).
 get_bucket(Req0, Key, #req_params{access_key_id = AccessKeyId,
                                   qs_prefix     = Prefix}) ->
     case leo_gateway_s3_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
@@ -469,6 +440,8 @@ get_bucket(Req0, Key, #req_params{access_key_id = AccessKeyId,
 
 %% @doc Put a bucket
 %% @private
+-spec(put_bucket(any(), binary(), #req_params{}) ->
+             {ok, any()}).
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
                  true ->
@@ -488,6 +461,8 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 
 %% @doc Remove a bucket
 %% @private
+-spec(delete_bucket(any(), binary(), #req_params{}) ->
+             {ok, any()}).
 delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     case leo_gateway_s3_bucket:delete_bucket(AccessKeyId, Key) of
         ok ->
@@ -503,6 +478,8 @@ delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 
 %% @doc Retrieve a bucket-info
 %% @private
+-spec(head_bucket(any(), binary(), #req_params{}) ->
+             {ok, any()}).
 head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     case leo_gateway_s3_bucket:head_bucket(AccessKeyId, Key) of
         ok ->
@@ -519,19 +496,34 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 %% ---------------------------------------------------------------------
 %% For OBJECT-OPERATION
 %% ---------------------------------------------------------------------
-%% @doc POST/PUT operation on Objects. NORMAL
-%% @private
-put_obj(Req, Key, Params) ->
-    put_obj(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params).
+%% @doc GET operation on Objects
+-spec(get_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+get_object(Req, Key, Params) ->
+    leo_gateway_http_commons:get_object(Req, Key, Params).
 
-put_obj(?BIN_EMPTY, Req, Key, Params) ->
+
+%% @doc GET operation on Objects
+-spec(get_object_with_cache(any(), binary(), #cache{}, #req_params{}) ->
+             {ok, any()}).
+get_object_with_cache(Req, Key, CacheObj, Params) ->
+    leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj,  Params).
+
+
+%% @doc POST/PUT operation on Objects
+-spec(put_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+put_object(Req, Key, Params) ->
+    put_object(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params).
+
+put_object(?BIN_EMPTY, Req, Key, Params) ->
     {Size0, _} = cowboy_req:body_length(Req),
 
     case (Size0 >= Params#req_params.threshold_obj_len) of
         true when Size0 >= Params#req_params.max_len_for_obj ->
             ?reply_bad_request([?SERVER_HEADER], Req);
         true when Params#req_params.is_upload == false ->
-            leo_gateway_http_handler:put_large_object(Req, Key, Size0, Params);
+            leo_gateway_http_commons:put_large_object(Req, Key, Size0, Params);
         false ->
             Ret = case cowboy_req:has_body(Req) of
                       true ->
@@ -544,12 +536,12 @@ put_obj(?BIN_EMPTY, Req, Key, Params) ->
                       false ->
                           {ok, {0, ?BIN_EMPTY, Req}}
                   end,
-            leo_gateway_http_handler:put_small_object(Ret, Key, Params)
+            leo_gateway_http_commons:put_small_object(Ret, Key, Params)
     end;
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
-put_obj(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
+put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
     CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
@@ -562,7 +554,7 @@ put_obj(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
 
     case leo_gateway_rpc_handler:get(CS2) of
         {ok, Meta, RespObject} ->
-            put_obj_1(Directive, Req, Key, Meta, RespObject);
+            put_object_1(Directive, Req, Key, Meta, RespObject);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -573,31 +565,30 @@ put_obj(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
 
 %% @doc POST/PUT operation on Objects. COPY
 %% @private
-put_obj_1(Directive, Req, Key, Meta, Bin) ->
+put_object_1(Directive, Req, Key, Meta, Bin) ->
     Size = size(Bin),
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
             resp_copy_obj_xml(Req, Meta);
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
-            put_obj_2(Req, Key, Meta);
+            put_object_2(Req, Key, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end.
 
-
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
-put_obj_2(Req, Key, Meta) ->
+put_object_2(Req, Key, Meta) ->
     KeyList = binary_to_list(Key),
     case KeyList == Meta#metadata.key of
         true  -> resp_copy_obj_xml(Req, Meta);
-        false -> put_obj_3(Req, Meta)
+        false -> put_object_3(Req, Meta)
     end.
 
-put_obj_3(Req, Meta) ->
+put_object_3(Req, Meta) ->
     KeyBin = list_to_binary(Meta#metadata.key),
     case leo_gateway_rpc_handler:delete(KeyBin) of
         ok ->
@@ -609,6 +600,68 @@ put_obj_3(Req, Meta) ->
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end.
+
+
+%% @doc DELETE operation on Objects
+-spec(delete_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+delete_object(Req, Key, Params) ->
+    leo_gateway_http_commons:delete_object(Req, Key, Params).
+
+
+%% @doc HEAD operation on Objects
+-spec(head_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+head_object(Req, Key, Params) ->
+    leo_gateway_http_commons:head_object(Req, Key, Params).
+
+
+%% @doc RANGE-Query operation on Objects
+-spec(range_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+range_object(Req, Key, Params) ->
+    leo_gateway_http_commons:range_object(Req, Key, Params).
+
+
+%% ---------------------------------------------------------------------
+%% Inner Functions
+%% ---------------------------------------------------------------------
+%% @doc Retrieve header values from a request
+%%      Set request params
+%% @private
+request_params(Req, Params) ->
+    IsUpload = case cowboy_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req) of
+                   {undefined, _} -> false;
+                   _ -> true
+               end,
+    UploadId = case cowboy_req:qs_val(?HTTP_QS_BIN_UPLOAD_ID, Req) of
+                   {undefined, _} -> <<>>;
+                   {Val0,      _} -> Val0
+               end,
+    PartNum  = case cowboy_req:qs_val(?HTTP_QS_BIN_PART_NUMBER, Req) of
+                   {undefined, _} -> 0;
+                   {Val1,      _} -> list_to_integer(binary_to_list(Val1))
+               end,
+    Range    = element(1, cowboy_req:header(?HTTP_HEAD_RANGE, Req)),
+
+    Params#req_params{is_upload       = IsUpload,
+                      upload_id       = UploadId,
+                      upload_part_num = PartNum,
+                      range_header    = Range}.
+
+
+%% @doc Create a key
+%% @private
+gen_key(Req) ->
+    EndPoints1 = case leo_s3_endpoint:get_endpoints() of
+                     {ok, EndPoints0} ->
+                         lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints0);
+                     _ -> []
+                 end,
+    {Host,    _} = cowboy_req:host(Req),
+    {RawPath, _} = cowboy_req:path(Req),
+    Path = cowboy_http:urldecode(RawPath),
+    leo_http:key(EndPoints1, Host, Path).
 
 
 %% @doc Generate copy-obj's xml

@@ -86,7 +86,7 @@
 -define(CACHE_INNER, 'inner').
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
 
--define(HTTP_HANDLER_S3,    'leo_gateway_s3_handler').
+-define(HTTP_HANDLER_S3,    'leo_gateway_s3_api').
 -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_handler').
 -define(HTTP_HANDLER_REST,  'leo_gateway_rest_handler').
 -type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST).
@@ -190,18 +190,6 @@
           threshold_obj_len = 0        :: pos_integer()   %% threshold object length for large object (byte)
          }).
 
--record(invoker, {
-          fun_put_bucket   :: function(),
-          fun_get_bucket   :: function(),
-          fun_del_bucket   :: function(),
-          fun_head_bucket  :: function(),
-          fun_put_object   :: function(),
-          fun_get_object   :: function(),
-          fun_del_object   :: function(),
-          fun_head_object  :: function(),
-          fun_range_object :: function()
-         }).
-
 -record(req_params, {
           %% basic info
           handler                    :: http_handler(), %% http-handler
@@ -223,8 +211,7 @@
           max_len_for_multipart = 0  :: pos_integer(),  %% max length a multipart object (byte)
           max_len_for_obj = 0        :: pos_integer(),  %% max length a object (byte)
           chunked_obj_len = 0        :: pos_integer(),  %% chunked object length for large-object (byte)
-          threshold_obj_len = 0      :: pos_integer(),  %% threshold object length for large-object (byte)
-          invoker = #invoker{}       :: #invoker{}
+          threshold_obj_len = 0      :: pos_integer()   %% threshold object length for large-object (byte)
          }).
 
 -record(cache, {

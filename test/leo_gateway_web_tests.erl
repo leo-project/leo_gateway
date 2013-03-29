@@ -40,15 +40,15 @@
 %% TEST
 %%--------------------------------------------------------------------
 -ifdef(EUNIT).
-s3_handler_test_() ->
+s3_api_test_() ->
     {setup,
-     fun setup_s3_handler/0,
+     fun setup_s3_api/0,
      fun teardown/1,
      fun gen_tests_1/1}.
 
-rest_handler_test_() ->
+rest_api_test_() ->
     {setup,
-     fun setup_rest_handler/0,
+     fun setup_rest_api/0,
      fun teardown/1,
      fun gen_tests_2/1}.
 
@@ -167,27 +167,27 @@ setup(InitFun, TermFun) ->
     InitFun(),
     [TermFun, Node0, Node1].
 
-setup_s3_handler() ->
+setup_s3_api() ->
     application:start(ecache),
     application:start(crypto),
     application:start(ranch),
     application:start(cowboy),
 
     {ok, Options} = leo_gateway_app:get_options(),
-    InitFun = fun() -> leo_gateway_http_handler:start(Options) end,
-    TermFun = fun() -> leo_gateway_http_handler:stop() end,
+    InitFun = fun() -> leo_gateway_http_commons:start(Options) end,
+    TermFun = fun() -> leo_gateway_http_commons:stop() end,
     setup(InitFun, TermFun).
 
-setup_rest_handler() ->
+setup_rest_api() ->
     application:start(ecache),
     application:start(crypto),
     application:start(ranch),
     application:start(cowboy),
 
     {ok, Options} = leo_gateway_app:get_options(),
-    InitFun = fun() -> leo_gateway_http_handler:start(
-                         Options#http_options{handler = leo_gateway_rest_handler}) end,
-    TermFun = fun() -> leo_gateway_http_handler:stop() end,
+    InitFun = fun() -> leo_gateway_http_commons:start(
+                         Options#http_options{handler = leo_gateway_rest_api}) end,
+    TermFun = fun() -> leo_gateway_http_commons:stop() end,
     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->
@@ -199,8 +199,8 @@ teardown([TermFun, Node0, Node1]) ->
     meck:unload(),
     TermFun(),
 
-    cowboy:stop_listener(leo_gateway_s3_handler),
-    cowboy:stop_listener(leo_gateway_s3_handler_ssl),
+    cowboy:stop_listener(leo_gateway_s3_api),
+    cowboy:stop_listener(leo_gateway_s3_api_ssl),
 
     application:stop(ecache),
     application:stop(crypto),

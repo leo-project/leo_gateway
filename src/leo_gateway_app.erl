@@ -198,7 +198,9 @@ after_process_1(SystemConf, Members) ->
 
     %% Launch http-handler(s)
     {ok, HttpOptions} = get_options(),
-    ok = leo_gateway_http_handler:start(leo_gateway_sup, HttpOptions),
+    Handler = HttpOptions#http_options.handler,
+    ok = Handler:start(leo_gateway_sup, HttpOptions),
+    %% ok = leo_gateway_http_handler:start(leo_gateway_sup, HttpOptions),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),

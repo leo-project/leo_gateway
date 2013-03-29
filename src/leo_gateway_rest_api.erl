@@ -19,26 +19,40 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo Gateway Rest Handler
+%% Leo Gateway Rest-API
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_rest_handler).
+-module(leo_gateway_rest_api).
 
 -author('Yosuke Hara').
 
--export([init/3, handle/2, terminate/3]).
+-behaviour(leo_gateway_http_behaviour).
+
+-export([start/2, stop/0,
+         init/3, handle/2, terminate/3]).
 -export([onrequest/1, onresponse/1]).
+-export([get_bucket/3, put_bucket/3, delete_bucket/3, head_bucket/3,
+         get_object/3, put_object/3, delete_object/3, head_object/3,
+         get_object_with_cache/4, range_object/3]).
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
-
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
+start(Sup, HttpOptions) ->
+    leo_gateway_http_commons:start(Sup, HttpOptions).
+
+stop() ->
+    cowboy:stop_listener(?MODULE),
+    cowboy:stop_listener(list_to_atom(lists:append([?MODULE_STRING, "_ssl"]))),
+    ok.
+
+
 %% @doc Initializer
 init({_Any, http}, Req, Opts) ->
     {ok, Req, Opts}.
@@ -54,7 +68,8 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
     TokenLen = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod0 = cowboy_req:get(method, Req),
 
-    ReqParams = #req_params{path              = Path,
+    ReqParams = #req_params{handler           = ?MODULE,
+                            path              = Path,
                             token_length      = TokenLen,
                             min_layers        = NumOfMinLayers,
                             max_layers        = NumOfMaxLayers,
@@ -66,9 +81,6 @@ handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Pa
                             threshold_obj_len = Props#http_options.threshold_obj_len},
     handle1(Req, HTTPMethod0, Path, ReqParams, State).
 
-
-%% For Regular cases
-%%
 handle1(Req0, HTTPMethod0, Path, Params, State) ->
     HTTPMethod1 = case HTTPMethod0 of
                       ?HTTP_POST -> ?HTTP_PUT;
@@ -92,18 +104,84 @@ terminate(_Reason, _Req, _State) ->
 
 
 %%--------------------------------------------------------------------
-%% Callbacks
+%% Callbacks from Cowboy
 %%--------------------------------------------------------------------
 %% @doc Handle request
 %%
 onrequest(CacheCondition) ->
-    leo_gateway_http_handler:onrequest(CacheCondition, fun gen_key/1).
-
+    leo_gateway_http_commons:onrequest(CacheCondition, fun gen_key/1).
 
 %% @doc Handle response
 %%
 onresponse(CacheCondition) ->
-    leo_gateway_http_handler:onresponse(CacheCondition, fun gen_key/1).
+    leo_gateway_http_commons:onrequest(CacheCondition, fun gen_key/1).
+
+
+%%--------------------------------------------------------------------
+%% Callbacks from HTTP-Handler
+%%--------------------------------------------------------------------
+%% @doc GET buckets and dirs
+get_bucket(Req,_Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], Req).
+
+
+%% @doc PUT buckets and dirs
+put_bucket(Req,_Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], Req).
+
+
+%% @doc DELETE buckets and dirs
+delete_bucket(Req,_Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], Req).
+
+%% @doc HEAD buckets and dirs
+head_bucket(Req,_Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], Req).
+
+
+%% ---------------------------------------------------------------------
+%% For OBJECT-OPERATION
+%% ---------------------------------------------------------------------
+%% @doc GET operation on Objects
+-spec(get_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+get_object(Req, Key, Params) ->
+    leo_gateway_http_commons:get_object(Req, Key, Params).
+
+
+%% @doc GET operation on Objects
+-spec(get_object_with_cache(any(), binary(), #cache{}, #req_params{}) ->
+             {ok, any()}).
+get_object_with_cache(Req, Key, CacheObj, Params) ->
+    leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj, Params).
+
+
+%% @doc POST/PUT operation on Objects
+-spec(put_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+put_object(Req, Key, Params) ->
+    leo_gateway_http_commons:put_object(Req, Key, Params).
+
+
+%% @doc DELETE operation on Objects
+-spec(delete_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+delete_object(Req, Key, Params) ->
+    leo_gateway_http_commons:delete_object(Req, Key, Params).
+
+
+%% @doc HEAD operation on Objects
+-spec(head_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+head_object(Req, Key, Params) ->
+    leo_gateway_http_commons:head_object(Req, Key, Params).
+
+
+%% @doc RANGE-Query operation on Objects
+-spec(range_object(any(), binary(), #req_params{}) ->
+             {ok, any()}).
+range_object(Req,_Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], Req).
 
 
 %%--------------------------------------------------------------------
