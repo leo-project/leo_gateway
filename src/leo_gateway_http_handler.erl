@@ -88,7 +88,7 @@ invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
             invoke(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj0} ->
             CachedObj1 = binary_to_term(CachedObj0),
-            Handler:get_object_with_cache(Req, Key, CachedObj1)
+            Handler:get_object_with_cache(Req, Key, CachedObj1, Params)
     end;
 
 %% @doc GET operation on Object.
