@@ -190,6 +190,12 @@ range_object(Req,_Key,_Params) ->
 %% @doc Create a key
 %% @private
 gen_key(Req) ->
-    {RawPath, _} = cowboy_req:path(Req),
-    cowboy_http:urldecode(RawPath).
+    {Path0, _} = cowboy_req:path(Req),
+    Path2 = case Path0 of
+                << "/", Path1/binary >> ->
+                    Path1;
+                _ ->
+                    Path0
+            end,
+    cowboy_http:urldecode(Path2).
 
