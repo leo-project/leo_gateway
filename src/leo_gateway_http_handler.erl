@@ -52,19 +52,22 @@ invoke(?HTTP_GET, Req, Key, #req_params{is_dir = true,
     Handler:get_bucket(Req, Key, Params);
 
 %% @doc PUT operation on buckets.
-invoke(?HTTP_PUT, Req, Key, #req_params{token_length = 1,
+invoke(?HTTP_PUT, Req, Key, #req_params{is_dir = true,
+                                        token_length = 1,
                                         handler = Handler} = Params) ->
     Handler:put_bucket(Req, Key, Params);
 
 %% @doc DELETE operation on buckets.
 %% @private
-invoke(?HTTP_DELETE, Req, Key, #req_params{token_length = 1,
+invoke(?HTTP_DELETE, Req, Key, #req_params{is_dir = true,
+                                           token_length = 1,
                                            handler = Handler} = Params) ->
     Handler:delete_bucket(Req, Key, Params);
 
 %% @doc HEAD operation on buckets.
 %% @private
-invoke(?HTTP_HEAD, Req, Key, #req_params{token_length = 1,
+invoke(?HTTP_HEAD, Req, Key, #req_params{is_dir = true,
+                                         token_length = 1,
                                          handler = Handler} = Params) ->
     Handler:head_bucket(Req, Key, Params);
 
@@ -72,15 +75,13 @@ invoke(?HTTP_HEAD, Req, Key, #req_params{token_length = 1,
 %% For OBJECT-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Object with Range Header.
-invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
-                                        range_header = RangeHeader,
+invoke(?HTTP_GET, Req, Key, #req_params{range_header = RangeHeader,
                                         handler = Handler} = Params) when RangeHeader /= undefined ->
     Handler:head_bucket(Req, Key, Params);
 
 %% @doc GET operation on Object if inner cache is enabled.
 %% @private
-invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
-                                                     is_cached = true,
+invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
                                                      has_inner_cache = true,
                                                      handler = Handler} = Params) ->
     case ecache_api:get(Key) of
@@ -93,8 +94,7 @@ invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_dir = false,
 
 %% @doc GET operation on Object.
 %% @private
-invoke(?HTTP_GET, Req, Key, #req_params{is_dir = false,
-                                        handler = Handler} = Params) ->
+invoke(?HTTP_GET, Req, Key, #req_params{handler = Handler} = Params) ->
     Handler:get_object(Req, Key, Params);
 
 %% @doc POST/PUT operation on Objects.
