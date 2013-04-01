@@ -35,20 +35,26 @@
 -export([onrequest/1, onresponse/1]).
 -export([get_bucket/3, put_bucket/3, delete_bucket/3, head_bucket/3,
          get_object/3, put_object/3, delete_object/3, head_object/3,
-         get_object_with_cache/4, range_object/3]).
+         get_object_with_cache/4, range_object/3
+        ]).
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -compile({inline, [handle/2, handle_1/3, handle_2/6,
                    handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/3,
-                   resp_copy_obj_xml/2, request_params/2, auth/4, auth/5]}).
+                   resp_copy_obj_xml/2, request_params/2, auth/4, auth/5,
+                   get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2,
+                   generate_bucket_xml/3
+                  ]}).
 
 %%--------------------------------------------------------------------
 %% API
@@ -98,12 +104,11 @@ onresponse(CacheCondition) ->
 %% For BUCKET-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET buckets and dirs
-%% @private
 -spec(get_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 get_bucket(Req0, Key, #req_params{access_key_id = AccessKeyId,
                                   qs_prefix     = Prefix}) ->
-    case leo_gateway_s3_bucket:get_bucket_list(AccessKeyId, Key, none, none, 1000, Prefix) of
+    case get_bucket_1(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Req1 = cowboy_req:set_resp_body(XML, Req0),
             Header = [?SERVER_HEADER,
@@ -118,7 +123,6 @@ get_bucket(Req0, Key, #req_params{access_key_id = AccessKeyId,
     end.
 
 %% @doc Put a bucket
-%% @private
 -spec(put_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
@@ -128,7 +132,7 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
                  false ->
                      Key
              end,
-    case leo_gateway_s3_bucket:put_bucket(AccessKeyId, Bucket) of
+    case put_bucket_1(AccessKeyId, Bucket) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -139,11 +143,10 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 
 
 %% @doc Remove a bucket
-%% @private
 -spec(delete_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
-    case leo_gateway_s3_bucket:delete_bucket(AccessKeyId, Key) of
+    case delete_bucket_1(AccessKeyId, Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
         not_found ->
@@ -156,11 +159,10 @@ delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 
 
 %% @doc Retrieve a bucket-info
-%% @private
 -spec(head_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
-    case leo_gateway_s3_bucket:head_bucket(AccessKeyId, Key) of
+    case head_bucket_1(AccessKeyId, Key) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         not_found ->
@@ -672,4 +674,154 @@ auth(next, Req, HTTPMethod, Path, TokenLen) ->
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
     end.
+
+
+%% @doc Get bucket list
+%% @private
+%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
+-spec(get_bucket_1(string(), none, char()|none, string()|none, integer(), string()|none) ->
+             {ok, list(), string()}|{error, any()}).
+get_bucket_1(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
+    get_bucket_1(AccessKeyId, <<"/">>, Delimiter, Marker, MaxKeys, none);
+
+get_bucket_1(AccessKeyId, <<"/">>, _Delimiter, _Marker, _MaxKeys, none) ->
+    case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
+        {ok, Meta} when is_list(Meta) =:= true ->
+            {ok, Meta, generate_bucket_xml(Meta)};
+        not_found ->
+            {ok, [], generate_bucket_xml([])};
+        Error ->
+            Error
+    end;
+
+get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix0) ->
+    Prefix1 = case Prefix0 of
+                  none -> <<>>;
+                  _    -> Prefix0
+              end,
+
+    {ok, #redundancies{nodes = Redundancies}} =
+        leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
+    Key = << Bucket/binary, Prefix1/binary >>,
+
+    case leo_gateway_rpc_handler:invoke(Redundancies,
+                                        leo_storage_handler_directory,
+                                        find_by_parent_dir,
+                                        [Key, Delimiter, Marker, MaxKeys],
+                                        []) of
+        {ok, Meta} when is_list(Meta) =:= true ->
+            {ok, Meta, generate_bucket_xml(Key, Prefix1, Meta)};
+        {ok, _} ->
+            {error, invalid_format};
+        Error ->
+            Error
+    end.
+
+
+%% @doc Put a bucket
+%% @private
+%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketPUT.html
+-spec(put_bucket_1(string(), string()|none) ->
+             ok|{error, any()}).
+put_bucket_1(AccessKeyId, Bucket) ->
+    leo_s3_bucket:put(AccessKeyId, Bucket).
+
+
+%% @doc Delete a bucket
+%% @private
+%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketDELETE.html
+-spec(delete_bucket_1(string(), string()|none) ->
+             ok|{error, any()}).
+delete_bucket_1(AccessKeyId, Bucket0) ->
+    Bucket1 = case (binary:last(Bucket0) == $/) of
+                  true  -> binary:part(Bucket0, {0, byte_size(Bucket0) - 1});
+                  false -> Bucket0
+              end,
+
+    case leo_redundant_manager_api:get_members_by_status(?STATE_RUNNING) of
+        {ok, Members} ->
+            Nodes = lists:map(fun(#member{node = Node}) ->
+                                      Node
+                              end, Members),
+            spawn(fun() ->
+                          _ = rpc:multicall(Nodes, leo_storage_handler_directory, delete_objects_in_parent_dir,
+                                            [Bucket1], ?DEF_REQ_TIMEOUT),
+                          ok
+                  end),
+            leo_s3_bucket:delete(AccessKeyId, Bucket1);
+        {error, Cause} ->
+            {error, Cause}
+    end.
+
+
+%% @doc Head a bucket
+%% @private
+%% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketHEAD.html
+-spec(head_bucket_1(string(), string()|none) ->
+             ok|{error, any()}).
+head_bucket_1(AccessKeyId, Bucket) ->
+    leo_s3_bucket:head(AccessKeyId, Bucket).
+
+
+%% @doc Generate XML from matadata-list
+%% @private
+generate_bucket_xml(Key, Prefix, MetadataList) ->
+    Len = byte_size(Key),
+    KeyStr    = binary_to_list(Key),
+    PrefixStr = binary_to_list(Prefix),
+
+    Fun = fun(#metadata{key       = EntryKey,
+                        dsize     = Length,
+                        timestamp = TS,
+                        checksum  = CS,
+                        del       = 0} , Acc) ->
+                  EntryKeyStr = binary_to_list(EntryKey),
+
+                  case string:equal(KeyStr, EntryKeyStr) of
+                      true ->
+                          Acc;
+                      false ->
+                          Entry = string:sub_string(EntryKeyStr, Len + 1),
+
+                          case Length of
+                              -1 ->
+                                  %% directory.
+                                  lists:append([Acc,
+                                                "<CommonPrefixes><Prefix>",
+                                                PrefixStr,
+                                                Entry,
+                                                "</Prefix></CommonPrefixes>"]);
+                              _ ->
+                                  %% file.
+                                  lists:append([Acc,
+                                                "<Contents>",
+                                                "<Key>", PrefixStr, Entry, "</Key>",
+                                                "<LastModified>", leo_http:web_date(TS), "</LastModified>",
+                                                "<ETag>", leo_hex:integer_to_hex(CS, 32), "</ETag>",
+                                                "<Size>", integer_to_list(Length), "</Size>",
+                                                "<StorageClass>STANDARD</StorageClass>",
+                                                "<Owner>",
+                                                "<ID>leofs</ID>",
+                                                "<DisplayName>leofs</DisplayName>",
+                                                "</Owner>","</Contents>"])
+                          end
+                  end
+          end,
+    io_lib:format(?XML_OBJ_LIST, [PrefixStr, lists:foldl(Fun, [], MetadataList)]).
+
+generate_bucket_xml(MetadataList) ->
+    Fun = fun(#bucket{name = Name,
+                      created_at = CreatedAt} , Acc) ->
+                  BucketStr = binary_to_list(Name),
+                  case string:equal(?STR_SLASH, BucketStr) of
+                      true ->
+                          Acc;
+                      false ->
+                          lists:append([Acc,
+                                        "<Bucket><Name>", BucketStr, "</Name>",
+                                        "<CreationDate>", leo_http:web_date(CreatedAt),
+                                        "</CreationDate></Bucket>"])
+                  end
+          end,
+    io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).
 
