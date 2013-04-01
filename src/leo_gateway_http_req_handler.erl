@@ -19,11 +19,11 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo Gateway - HTTP Commons Handler
+%% Leo Gateway - HTTP Request Handler
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_http_handler).
+-module(leo_gateway_http_req_handler).
 
 -author('Yosuke Hara').
 
@@ -33,13 +33,13 @@
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([invoke/4]).
+-export([handle/4]).
 
 %%--------------------------------------------------------------------
 %% INVALID OPERATION
 %%--------------------------------------------------------------------
 %% @doc Constraint violation.
-invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
+handle(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
                                           max_layers   = Max}) when Len > Max ->
     ?reply_not_found([?SERVER_HEADER], Req);
 
@@ -47,26 +47,26 @@ invoke(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
 %% For BUCKET-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET operation on buckets & Dirs.
-invoke(?HTTP_GET, Req, Key, #req_params{is_dir = true,
+handle(?HTTP_GET, Req, Key, #req_params{is_dir = true,
                                         handler = Handler} = Params) ->
     Handler:get_bucket(Req, Key, Params);
 
 %% @doc PUT operation on buckets.
-invoke(?HTTP_PUT, Req, Key, #req_params{is_dir = true,
+handle(?HTTP_PUT, Req, Key, #req_params{is_dir = true,
                                         token_length = 1,
                                         handler = Handler} = Params) ->
     Handler:put_bucket(Req, Key, Params);
 
 %% @doc DELETE operation on buckets.
 %% @private
-invoke(?HTTP_DELETE, Req, Key, #req_params{is_dir = true,
+handle(?HTTP_DELETE, Req, Key, #req_params{is_dir = true,
                                            token_length = 1,
                                            handler = Handler} = Params) ->
     Handler:delete_bucket(Req, Key, Params);
 
 %% @doc HEAD operation on buckets.
 %% @private
-invoke(?HTTP_HEAD, Req, Key, #req_params{is_dir = true,
+handle(?HTTP_HEAD, Req, Key, #req_params{is_dir = true,
                                          token_length = 1,
                                          handler = Handler} = Params) ->
     Handler:head_bucket(Req, Key, Params);
@@ -75,18 +75,18 @@ invoke(?HTTP_HEAD, Req, Key, #req_params{is_dir = true,
 %% For OBJECT-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Object with Range Header.
-invoke(?HTTP_GET, Req, Key, #req_params{range_header = RangeHeader,
+handle(?HTTP_GET, Req, Key, #req_params{range_header = RangeHeader,
                                         handler = Handler} = Params) when RangeHeader /= undefined ->
     Handler:head_bucket(Req, Key, Params);
 
 %% @doc GET operation on Object if inner cache is enabled.
 %% @private
-invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
+handle(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
                                                      has_inner_cache = true,
                                                      handler = Handler} = Params) ->
     case ecache_api:get(Key) of
         not_found ->
-            invoke(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
+            handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj0} ->
             CachedObj1 = binary_to_term(CachedObj0),
             Handler:get_object_with_cache(Req, Key, CachedObj1, Params)
@@ -94,26 +94,26 @@ invoke(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
 
 %% @doc GET operation on Object.
 %% @private
-invoke(?HTTP_GET, Req, Key, #req_params{handler = Handler} = Params) ->
+handle(?HTTP_GET, Req, Key, #req_params{handler = Handler} = Params) ->
     Handler:get_object(Req, Key, Params);
 
 %% @doc POST/PUT operation on Objects.
 %% @private
-invoke(?HTTP_PUT, Req, Key, #req_params{handler = Handler} = Params) ->
+handle(?HTTP_PUT, Req, Key, #req_params{handler = Handler} = Params) ->
     Handler:put_object(Req, Key, Params);
 
 %% @doc DELETE operation on Object.
 %% @private
-invoke(?HTTP_DELETE, Req, Key, #req_params{handler = Handler} = Params) ->
+handle(?HTTP_DELETE, Req, Key, #req_params{handler = Handler} = Params) ->
     Handler:delete_object(Req, Key, Params);
 
 %% @doc HEAD operation on Object.
 %% @private
-invoke(?HTTP_HEAD, Req, Key, #req_params{handler = Handler} = Params) ->
+handle(?HTTP_HEAD, Req, Key, #req_params{handler = Handler} = Params) ->
     Handler:head_object(Req, Key, Params);
 
 %% @doc invalid request.
 %% @private
-invoke(_, Req, _, _) ->
+handle(_, Req, _, _) ->
     ?reply_bad_request([?SERVER_HEADER], Req).
 

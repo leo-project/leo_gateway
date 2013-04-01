@@ -41,6 +41,8 @@
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-compile({inline, [handle/2, handle_1/3]}).
+
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
@@ -62,40 +64,7 @@ init({_Any, http}, Req, Opts) ->
 %% @callback
 handle(Req, State) ->
     Key = gen_key(Req),
-    handle(Req, State, Key).
-
-handle(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Path) ->
-    TokenLen = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
-    HTTPMethod0 = cowboy_req:get(method, Req),
-
-    ReqParams = #req_params{handler           = ?MODULE,
-                            path              = Path,
-                            token_length      = TokenLen,
-                            min_layers        = NumOfMinLayers,
-                            max_layers        = NumOfMaxLayers,
-                            has_inner_cache   = HasInnerCache,
-                            is_cached         = true,
-                            max_chunked_objs  = Props#http_options.max_chunked_objs,
-                            max_len_for_obj   = Props#http_options.max_len_for_obj,
-                            chunked_obj_len   = Props#http_options.chunked_obj_len,
-                            threshold_obj_len = Props#http_options.threshold_obj_len},
-    handle1(Req, HTTPMethod0, Path, ReqParams, State).
-
-handle1(Req0, HTTPMethod0, Path, Params, State) ->
-    HTTPMethod1 = case HTTPMethod0 of
-                      ?HTTP_POST -> ?HTTP_PUT;
-                      Other      -> Other
-                  end,
-
-    case catch leo_gateway_http_handler:invoke(HTTPMethod1, Req0, Path, Params) of
-        {'EXIT', Cause} ->
-            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req1} = ?reply_internal_error([?SERVER_HEADER], Req0),
-            {ok, Req1, State};
-        {ok, Req1} ->
-            Req2 = cowboy_req:compact(Req1),
-            {ok, Req2, State}
-    end.
+    handle_1(Req, State, Key).
 
 
 %% @doc Terminater
@@ -198,4 +167,39 @@ gen_key(Req) ->
                     Path0
             end,
     cowboy_http:urldecode(Path2).
+
+
+%% @doc Hande an http-request
+%% @private
+handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Path) ->
+    TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
+    HTTPMethod = cowboy_req:get(method, Req),
+    ReqParams  = #req_params{handler           = ?MODULE,
+                             path              = Path,
+                             token_length      = TokenLen,
+                             min_layers        = NumOfMinLayers,
+                             max_layers        = NumOfMaxLayers,
+                             has_inner_cache   = HasInnerCache,
+                             is_cached         = true,
+                             max_chunked_objs  = Props#http_options.max_chunked_objs,
+                             max_len_for_obj   = Props#http_options.max_len_for_obj,
+                             chunked_obj_len   = Props#http_options.chunked_obj_len,
+                             threshold_obj_len = Props#http_options.threshold_obj_len},
+    handle_2(Req, HTTPMethod, Path, ReqParams, State).
+
+handle_2(Req0, HTTPMethod0, Path, Params, State) ->
+    HTTPMethod1 = case HTTPMethod0 of
+                      ?HTTP_POST -> ?HTTP_PUT;
+                      Other      -> Other
+                  end,
+
+    case catch leo_gateway_http_req_handler:handle(HTTPMethod1, Req0, Path, Params) of
+        {'EXIT', Cause} ->
+            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            {ok, Req1} = ?reply_internal_error([?SERVER_HEADER], Req0),
+            {ok, Req1, State};
+        {ok, Req1} ->
+            Req2 = cowboy_req:compact(Req1),
+            {ok, Req2, State}
+    end.
 
