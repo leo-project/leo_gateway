@@ -200,7 +200,6 @@ after_process_1(SystemConf, Members) ->
     {ok, HttpOptions} = get_options(),
     Handler = HttpOptions#http_options.handler,
     ok = Handler:start(leo_gateway_sup, HttpOptions),
-    %% ok = leo_gateway_http_handler:start(leo_gateway_sup, HttpOptions),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
@@ -299,7 +298,7 @@ log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
 get_options() ->
     %% Retrieve http-related properties:
     HttpProp = ?env_http_properties(),
-    HttpHandler          = leo_misc:get_value('handler',          HttpProp, ?HTTP_HANDLER_S3),
+    HttpHandler          = leo_misc:get_value('handler',          HttpProp, 's3'),
     Port                 = leo_misc:get_value('port',             HttpProp, 8080),
     SSLPort              = leo_misc:get_value('ssl_port',         HttpProp, 8443),
     SSLCertFile          = leo_misc:get_value('ssl_certfile',     HttpProp, "./server_cert.pem"),
@@ -349,7 +348,7 @@ get_options() ->
                           leo_misc:set_env(leo_gateway, K, T)
                   end, ?env_timeout()),
 
-    HttpOptions = #http_options{handler                  = HttpHandler,
+    HttpOptions = #http_options{handler                  = ?convert_to_handler(HttpHandler),
                                 port                     = Port,
                                 ssl_port                 = SSLPort,
                                 ssl_certfile             = SSLCertFile,

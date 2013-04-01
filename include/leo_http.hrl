@@ -86,11 +86,18 @@
 -define(CACHE_INNER, 'inner').
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
 
+
 -define(HTTP_HANDLER_S3,    'leo_gateway_s3_api').
--define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_handler').
--define(HTTP_HANDLER_REST,  'leo_gateway_rest_handler').
+-define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
+-define(HTTP_HANDLER_REST,  'leo_gateway_rest_api').
 -type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST).
 
+-define(convert_to_handler(_V), case _V of
+                                     'rest'  -> ?HTTP_HANDLER_REST;
+                                     'swift' -> ?HTTP_HANDLER_SWIFT;
+                                     's3'    -> ?HTTP_HANDLER_S3;
+                                     _       -> ?HTTP_HANDLER_S3
+                                 end).
 
 %% Macros
 -define(reply_ok(_H, _R),              cowboy_req:reply(?HTTP_ST_OK,              _H, _R)). %% 200
