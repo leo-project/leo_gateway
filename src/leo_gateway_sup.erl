@@ -30,11 +30,6 @@
 
 -behaviour(supervisor).
 
--include("leo_gateway.hrl").
--include_lib("leo_commons/include/leo_commons.hrl").
--include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
--include_lib("eunit/include/eunit.hrl").
-
 
 %% External exports
 -export([start_link/0, upgrade/0]).

@@ -27,7 +27,7 @@
 -author('Yoshiyuki Kanno').
 
 -include("leo_gateway.hrl").
--include("leo_s3_http.hrl").
+-include("leo_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
@@ -40,11 +40,19 @@
 %% TEST
 %%--------------------------------------------------------------------
 -ifdef(EUNIT).
-api_cowboy_test_() ->
-    {setup, fun setup_cowboy/0, fun teardown/1,
-     fun gen_tests/1}.
+s3_api_test_() ->
+    {setup,
+     fun setup_s3_api/0,
+     fun teardown/1,
+     fun gen_tests_1/1}.
 
-gen_tests(Arg) ->
+rest_api_test_() ->
+    {setup,
+     fun setup_rest_api/0,
+     fun teardown/1,
+     fun gen_tests_2/1}.
+
+gen_tests_1(Arg) ->
     lists:map(fun(Test) -> Test(Arg) end,
               [fun get_bucket_list_error_/1,
                fun get_bucket_list_empty_/1,
@@ -60,9 +68,22 @@ gen_tests(Arg) ->
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
                fun put_object_normal1_/1
-               %% fun proper_/1
-              ]
-             ).
+              ]).
+
+gen_tests_2(Arg) ->
+    lists:map(fun(Test) -> Test(Arg) end,
+              [fun head_object_error_/1,
+               fun head_object_notfound_/1,
+               fun head_object_normal1_/1,
+               fun get_object_error_/1,
+               fun get_object_notfound_/1,
+               fun get_object_normal1_/1,
+               fun delete_object_error_/1,
+               fun delete_object_notfound_/1,
+               fun delete_object_normal1_/1,
+               fun put_object_error_/1,
+               fun put_object_normal1_/1
+              ]).
 
 -define(SSL_CERT_DATA,
         "-----BEGIN CERTIFICATE-----\n" ++
@@ -146,18 +167,27 @@ setup(InitFun, TermFun) ->
     InitFun(),
     [TermFun, Node0, Node1].
 
-setup_cowboy() ->
+setup_s3_api() ->
     application:start(ecache),
     application:start(crypto),
     application:start(ranch),
     application:start(cowboy),
-    %% {ok, Options} = leo_s3_http_api:get_options(cowboy, [{port,8080},{num_of_acceptors,32},
-    %%                                                      {ssl_port,8443},
-    %%                                                      {ssl_certfile,"./server_cert.pem"},
-    %%                                                      {ssl_keyfile, "./server_key.pem"}]),
-    {ok, Options} = leo_s3_http_api:get_options(),
-    InitFun = fun() -> leo_s3_http_cowboy:start(Options) end,
-    TermFun = fun() -> leo_s3_http_cowboy:stop() end,
+
+    {ok, Options} = leo_gateway_app:get_options(),
+    InitFun = fun() -> leo_gateway_http_commons:start(Options) end,
+    TermFun = fun() -> leo_gateway_http_commons:stop() end,
+    setup(InitFun, TermFun).
+
+setup_rest_api() ->
+    application:start(ecache),
+    application:start(crypto),
+    application:start(ranch),
+    application:start(cowboy),
+
+    {ok, Options} = leo_gateway_app:get_options(),
+    InitFun = fun() -> leo_gateway_http_commons:start(
+                         Options#http_options{handler = leo_gateway_rest_api}) end,
+    TermFun = fun() -> leo_gateway_http_commons:stop() end,
     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->
@@ -168,6 +198,14 @@ teardown([TermFun, Node0, Node1]) ->
 
     meck:unload(),
     TermFun(),
+
+    cowboy:stop_listener(leo_gateway_s3_api),
+    cowboy:stop_listener(leo_gateway_s3_api_ssl),
+
+    application:stop(ecache),
+    application:stop(crypto),
+    application:stop(ranch),
+    application:stop(cowboy),
     timer:sleep(250),
     ok.
 
@@ -175,13 +213,16 @@ get_bucket_list_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
             timer:sleep(150),
 
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir, 1, {error, some_error}]),
-
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_directory, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_directory,
+                           find_by_parent_dir, 1, {error, some_error}]),
             try
-                {ok, {SC, _Body}} = httpc:request(get, {lists:append(["http://",
-                                                                      ?TARGET_HOST,
-                                                                      ":8080/a/b?prefix=pre"]), []}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(get, {lists:append(
+                                          ["http://", ?TARGET_HOST, ":8080/a/b?prefix=pre"]), []},
+                                  [], [{full_result, false}]),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
@@ -196,14 +237,17 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
     fun() ->
             timer:sleep(150),
 
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir, 4, {ok, []}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_directory, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_directory, find_by_parent_dir, 4, {ok, []}]),
 
             try
-                {ok, {SC, Body}} = httpc:request(get, {lists:append(["http://",
-                                                                     ?TARGET_HOST,
-                                                                     ":8080/a/b?prefix=pre"]), []},
-                                                 [], [{full_result, false}]),
+                {ok, {SC, Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b?prefix=pre"]), []},
+                                  [], [{full_result, false}]),
                 ?assertEqual(200, SC),
                 Xml = io_lib:format(?XML_OBJ_LIST, ["pre", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body))
@@ -220,18 +264,20 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             timer:sleep(150),
 
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
-                                                4, {ok,
-                                                    [{metadata, <<"localhost/a/b/pre/test.png">>,
-                                                      0, 8, 0, 0,
-                                                      0, 0, 0,
-                                                      0, 0, 63511805822, 19740926, 0, 0}]}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_directory, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_directory, find_by_parent_dir,
+                           4, {ok,
+                               [{metadata, <<"localhost/a/b/pre/test.png">>,
+                                 0, 8, 0, 0,
+                                 0, 0, 0,
+                                 0, 0, 63511805822, 19740926, 0, 0}]}]),
             try
-                %% TODO
-                {ok, {SC,Body}} = httpc:request(get, {lists:append(["http://",
-                                                                    ?TARGET_HOST, ":8080/a/b?prefix=pre"]), []},
-                                                [], [{full_result, false}]),
+                {ok, {SC,Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST, ":8080/a/b?prefix=pre"]), []},
+                                  [], [{full_result, false}]),
                 ?assertEqual(200, SC),
 
                 {_XmlDoc, Rest} = xmerl_scan:string(Body),
@@ -247,15 +293,19 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
 
 head_object_notfound_([_TermFun, Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node0, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node0, meck, expect, [leo_storage_handler_object, head, 2, {error, not_found}]),
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head, 2, {error, not_found}]),
-
+            ok = rpc:call(Node0, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node0, meck, expect,
+                          [leo_storage_handler_object, head, 2, {error, not_found}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, head, 2, {error, not_found}]),
             try
-                {ok, {SC, _Body}} = httpc:request(head, {lists:append(["http://",
-                                                                       ?TARGET_HOST,
-                                                                       ":8080/a/b"]), []}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(head, {lists:append(["http://",
+                                                       ?TARGET_HOST,
+                                                       ":8080/a/b"]), []}, [], [{full_result, false}]),
                 ?assertEqual(404, SC)
             catch
                 throw:Reason ->
@@ -288,15 +338,15 @@ head_object_error_([_TermFun, _Node0, Node1]) ->
 
 head_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head, 2,
-                                                {ok, {metadata, <<"a/b.png">>,
-                                                      0, 4, 16384, 0,
-                                                      0, 0, 0,
-                                                      0, 1, 63505750315, 19740926, 0, 0}}]),
-
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, head, 2,
+                           {ok, {metadata, <<"a/b.png">>,
+                                 0, 4, 16384, 0,
+                                 0, 0, 0,
+                                 0, 1, 63505750315, 19740926, 0, 0}}]),
             try
-                %% TODO
                 {ok, {{_, SC, _}, Headers, _Body}} =
                     httpc:request(head, {lists:append(["http://",
                                                        ?TARGET_HOST,
@@ -314,13 +364,15 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
 
 get_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get, 3, {error, foobar}]),
-
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, get, 3, {error, foobar}]),
             try
-                {ok, {SC, _Body}} = httpc:request(get, {lists:append(["http://",
-                                                                      ?TARGET_HOST,
-                                                                      ":8080/a/b.png"]), []}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]), []}, [], [{full_result, false}]),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
@@ -333,15 +385,19 @@ get_object_error_([_TermFun, _Node0, Node1]) ->
 
 get_object_notfound_([_TermFun, Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node0, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node0, meck, expect, [leo_storage_handler_object, get, 3, {error, not_found}]),
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get, 3, {error, not_found}]),
-
+            ok = rpc:call(Node0, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node0, meck, expect,
+                          [leo_storage_handler_object, get, 3, {error, not_found}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, get, 3, {error, not_found}]),
             try
-                {ok, {SC, _Body}} = httpc:request(get, {lists:append(["http://",
-                                                                      ?TARGET_HOST,
-                                                                      ":8080/a/b/c.png"]), []}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b/c.png"]), []}, [], [{full_result, false}]),
                 ?assertEqual(404, SC)
             catch
                 throw:Reason ->
@@ -355,17 +411,17 @@ get_object_notfound_([_TermFun, Node0, Node1]) ->
 
 get_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3,
-                           {ok, {metadata, "", 
-                                 0, 4, 4, 0, 
+                           {ok, {metadata, "",
+                                 0, 4, 4, 0,
                                  0, 0, 0, 0, 1,
                                  calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
                                  19740926, 0, 0}, <<"body">>}]),
 
             try
-                %% TODO
                 {ok, {{_, SC, _}, Headers, Body}} =
                     httpc:request(get, {lists:append(["http://",
                                                       ?TARGET_HOST,
@@ -384,19 +440,24 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
 
 delete_object_notfound_([_TermFun, Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node0, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node0, meck, expect, [leo_storage_handler_object, delete, 2, {error, not_found}]),
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 2, {error, not_found}]),
+            ok = rpc:call(Node0, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node0, meck, expect,
+                          [leo_storage_handler_object, delete, 2, {error, not_found}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, delete, 2, {error, not_found}]),
 
             meck:new(leo_s3_auth),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
-                {ok, {SC, _Body}} = httpc:request(delete, {lists:append(["http://",
-                                                                         ?TARGET_HOST,
-                                                                         ":8080/a/b.png"]),
-                                                           [{"Authorization","auth"}]}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(delete, {lists:append(["http://",
+                                                         ?TARGET_HOST,
+                                                         ":8080/a/b.png"]),
+                                           [{"Authorization","auth"}]}, [], [{full_result, false}]),
                 ?assertEqual(404, SC)
             catch
                 throw:Reason ->
@@ -411,17 +472,20 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
 
 delete_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 2, {error, foobar}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, delete, 2, {error, foobar}]),
 
             meck:new(leo_s3_auth),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
-                {ok, {SC, _Body}} = httpc:request(delete, {lists:append(["http://",
-                                                                         ?TARGET_HOST,
-                                                                         ":8080/a/b.png"]),
-                                                           [{"Authorization","auth"}]}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(delete, {lists:append(["http://",
+                                                         ?TARGET_HOST,
+                                                         ":8080/a/b.png"]),
+                                           [{"Authorization","auth"}]}, [], [{full_result, false}]),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
@@ -435,17 +499,20 @@ delete_object_error_([_TermFun, _Node0, Node1]) ->
 
 delete_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete, 2, ok]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, delete, 2, ok]),
 
             meck:new(leo_s3_auth),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
-                {ok, {SC, _Body}} = httpc:request(delete, {lists:append(["http://",
-                                                                         ?TARGET_HOST,
-                                                                         ":8080/a/b.png"]),
-                                                           [{"Authorization","auth"}]}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(delete, {lists:append(["http://",
+                                                         ?TARGET_HOST,
+                                                         ":8080/a/b.png"]),
+                                           [{"Authorization","auth"}]}, [], [{full_result, false}]),
                 ?assertEqual(204, SC)
             catch
                 throw:Reason ->
@@ -459,18 +526,21 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
 
 put_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 2, {error, foobar}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, put, 2, {error, foobar}]),
 
             meck:new(leo_s3_auth),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
-                {ok, {SC, _Body}} = httpc:request(put, {lists:append(["http://",
-                                                                      ?TARGET_HOST,
-                                                                      ":8080/a/b.png"]),
-                                                        [{"Authorization","auth"}], "image/png", "body"},
-                                                  [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(put, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]),
+                                        [{"Authorization","auth"}], "image/png", "body"},
+                                  [], [{full_result, false}]),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
@@ -484,18 +554,21 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
 
 put_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
-            ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put, 2, {ok, 1}]),
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, put, 2, {ok, 1}]),
 
             meck:new(leo_s3_auth),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
-                {ok, {SC, _Body}} = httpc:request(put, {lists:append(["http://",
-                                                                      ?TARGET_HOST,
-                                                                      ":8080/a/b.png"]),
-                                                        [{"Authorization","auth"}], "image/png", "body"},
-                                                  [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(put, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]),
+                                        [{"Authorization","auth"}], "image/png", "body"},
+                                  [], [{full_result, false}]),
                 ?assertEqual(200, SC)
             catch
                 throw:Reason ->

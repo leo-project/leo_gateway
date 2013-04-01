@@ -31,7 +31,7 @@
 -export([prop_http_req/0]).
 
 -include("leo_gateway.hrl").
--include("leo_s3_http.hrl").
+-include("leo_http.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("proper/include/proper.hrl").
 

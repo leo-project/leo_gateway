@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo S3 HTTP
+%% Leo Gateway
 %%
 %% Copyright (c) 2012 Rakuten, Inc.
 %%
@@ -19,11 +19,11 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo S3 HTTP - Cache Statistics
+%% Leo Gateway - Cache Statistics
 %% @doc
 %% @end
 %%======================================================================
--module(leo_s3_http_cache_statistics).
+-module(leo_gateway_cache_statistics).
 
 -author('Yosuke Hara').
 

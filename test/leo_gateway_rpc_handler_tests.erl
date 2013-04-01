@@ -27,7 +27,7 @@
 -author('Yoshiyuki Kanno').
 
 -include("leo_gateway.hrl").
--include("leo_s3_http.hrl").
+-include("leo_http.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
@@ -44,9 +44,6 @@
 api_test_() ->
     {setup, fun setup/0, fun teardown/1,
      {with, [
-             fun get_bucket_list_error_/1,
-             fun get_bucket_list_empty_/1,
-             fun get_bucket_list_normal1_/1,
              fun head_object_error_/1,
              fun head_object_notfound_/1,
              fun head_object_normal1_/1,
@@ -93,49 +90,6 @@ teardown([_, Node1]) ->
     meck:unload(),
     net_kernel:stop(),
     slave:stop(Node1),
-    ok.
-
-get_bucket_list_error_([_Node0, Node1]) ->
-    ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-    ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
-                                        fun(_Key,_,_,_) ->
-                                                {error, some_error}
-                                        end]),
-    Res = leo_s3_http_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
-    ?assertEqual({error, internal_server_error}, Res),
-    ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),
-    ok.
-
-get_bucket_list_empty_([_Node0, Node1]) ->
-    ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-    ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
-                                        fun(_Key,_,_,_) ->
-                                                {ok, []}
-                                        end]),
-    _Res = leo_s3_http_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
-    _Xml = io_lib:format(?XML_OBJ_LIST, [[], []]),
-
-    %% @TODO
-    %% ?assertEqual({ok, [], Xml}, Res),
-    ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),
-    ok.
-
-get_bucket_list_normal1_([_Node0, Node1]) ->
-    ok = rpc:call(Node1, meck, new,    [leo_storage_handler_directory, [no_link]]),
-    ok = rpc:call(Node1, meck, expect, [leo_storage_handler_directory, find_by_parent_dir,
-                                        fun(Key,_,_,_) ->
-                                                {ok, [
-                                                      #metadata{
-                                                         key = Key,
-                                                         dsize = 10,
-                                                         del = 0
-                                                        }
-                                                     ]}
-                                        end]),
-    {ok, [Head|Tail], _Xml} = leo_s3_http_bucket:get_bucket_list(<<"accesskeyid">>, <<"bucket/">>, none, none, 1000, <<"dir">>),
-    ?assertEqual(10, Head#metadata.dsize),
-    ?assertEqual([], Tail),
-    ok = rpc:call(Node1, meck, unload, [leo_storage_handler_directory]),
     ok.
 
 head_object_notfound_([Node0, Node1]) ->

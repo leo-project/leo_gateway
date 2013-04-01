@@ -28,6 +28,7 @@
 -author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
+-include("leo_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
@@ -35,7 +36,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
--export([start/2, stop/1, inspect_cluster_status/2, profile_output/0]).
+-export([start/2, stop/1,
+         inspect_cluster_status/2, profile_output/0, get_options/0]).
 
 -define(CHECK_INTERVAL, 3000).
 
@@ -57,6 +59,10 @@
                                             get_members_from_manager(X)}).
 -endif.
 
+
+%%--------------------------------------------------------------------
+%% API
+%%--------------------------------------------------------------------
 %% @spec start(_Type, _StartArgs) -> ServerRet
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
@@ -179,8 +185,8 @@ after_process_1(SystemConf, Members) ->
     ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
     ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
     ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
-    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_s3_http_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
     {ok,_,_} = leo_redundant_manager_api:create(
                  Members, [{n, SystemConf#system_conf.n},
@@ -190,8 +196,10 @@ after_process_1(SystemConf, Members) ->
                            {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
     ok = leo_membership:set_proc_auditor(leo_gateway_api),
 
-    %% Launch a listener - [s3_http]
-    ok = leo_s3_http_api:start(leo_gateway_sup),
+    %% Launch http-handler(s)
+    {ok, HttpOptions} = get_options(),
+    Handler = HttpOptions#http_options.handler,
+    ok = Handler:start(leo_gateway_sup, HttpOptions),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
@@ -282,3 +290,117 @@ log_file_appender([{Type, _}|T], Acc) when Type == file ->
 log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
     log_file_appender(T, [{?LOG_ID_ZMQ, ?LOG_APPENDER_ZMQ}|Acc]).
 
+
+%% @doc Retrieve properties
+%%
+-spec(get_options() ->
+             {ok, #http_options{}}).
+get_options() ->
+    %% Retrieve http-related properties:
+    HttpProp = ?env_http_properties(),
+    HttpHandler          = leo_misc:get_value('handler',          HttpProp, 's3'),
+    Port                 = leo_misc:get_value('port',             HttpProp, 8080),
+    SSLPort              = leo_misc:get_value('ssl_port',         HttpProp, 8443),
+    SSLCertFile          = leo_misc:get_value('ssl_certfile',     HttpProp, "./server_cert.pem"),
+    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',      HttpProp, "./server_key.pem"),
+    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors', HttpProp,   32),
+
+    %% Retrieve cache-related properties:
+    CacheProp = ?env_cache_properties(),
+    UserHttpCache         = leo_misc:get_value('http_cache',               CacheProp, false),
+    CacheWorkers          = leo_misc:get_value('cache_workers',            CacheProp, 64),
+    CacheRAMCapacity      = leo_misc:get_value('cache_ram_capacity',       CacheProp, 64000000),  %% about 64MB
+    CacheDiscCapacity     = leo_misc:get_value('cache_disc_capacity',      CacheProp, 64000000),  %% about 64MB
+    CacheDiscThresholdLen = leo_misc:get_value('cache_disc_threshold_len', CacheProp, 1048576),   %% 1MB
+    CacheDiscDirData      = leo_misc:get_value('cache_disc_dir_data',      CacheProp, "./cache/data"),
+    CacheDiscDirJournal   = leo_misc:get_value('cache_disc_dir_journal',   CacheProp, "./cache/journal"),
+    CacheExpire           = leo_misc:get_value('cache_expire',             CacheProp, 300),       %% 300sec
+    CacheMaxContentLen    = leo_misc:get_value('cache_max_content_len',    CacheProp, 1000000),   %% about 1MB
+    CachableContentTypes  = leo_misc:get_value('cachable_content_type',    CacheProp, []),
+    CachablePathPatterns  = leo_misc:get_value('cachable_path_pattern',    CacheProp, []),
+
+    CacheMethod = case UserHttpCache of
+                      true  -> ?CACHE_HTTP;
+                      false -> ?CACHE_INNER
+                  end,
+    CachableContentTypes1 = cast_type_list_to_binary(CachableContentTypes),
+    CachablePathPatterns1 = case cast_type_list_to_binary(CachablePathPatterns) of
+                                [] -> [];
+                                List ->
+                                    lists:foldl(
+                                      fun(P, Acc) ->
+                                              case re:compile(P) of
+                                                  {ok, MP} -> [MP|Acc];
+                                                  _        -> Acc
+                                              end
+                                      end, [], List)
+                            end,
+
+    %% Retrieve large-object-related properties:
+    LargeObjectProp = ?env_large_object_properties(),
+    MaxChunkedObjs       = leo_misc:get_value('max_chunked_objs',  LargeObjectProp, [1000]),      %% 1000
+    MaxObjLen            = leo_misc:get_value('max_len_for_obj',   LargeObjectProp, [524288000]), %% 500.0MB
+    ChunkedObjLen        = leo_misc:get_value('chunked_obj_len',   LargeObjectProp, [5242880]),   %%   5.0MB
+    ThresholdObjLen      = leo_misc:get_value('threshold_obj_len', LargeObjectProp, [5767168]),   %%   5.5MB
+
+    %% Retrieve timeout-values
+    lists:foreach(fun({K, T}) ->
+                          leo_misc:set_env(leo_gateway, K, T)
+                  end, ?env_timeout()),
+
+    HttpOptions = #http_options{handler                  = ?convert_to_handler(HttpHandler),
+                                port                     = Port,
+                                ssl_port                 = SSLPort,
+                                ssl_certfile             = SSLCertFile,
+                                ssl_keyfile              = SSLKeyFile,
+                                num_of_acceptors         = NumOfAcceptors,
+                                cache_method             = CacheMethod,
+                                cache_workers            = CacheWorkers,
+                                cache_ram_capacity       = CacheRAMCapacity,
+                                cache_disc_capacity      = CacheDiscCapacity,
+                                cache_disc_threshold_len = CacheDiscThresholdLen,
+                                cache_disc_dir_data      = CacheDiscDirData,
+                                cache_disc_dir_journal   = CacheDiscDirJournal,
+                                cache_expire             = CacheExpire,
+                                cache_max_content_len    = CacheMaxContentLen,
+                                cachable_content_type    = CachableContentTypes1,
+                                cachable_path_pattern    = CachablePathPatterns1,
+                                max_chunked_objs         = MaxChunkedObjs,
+                                max_len_for_obj          = MaxObjLen,
+                                chunked_obj_len          = ChunkedObjLen,
+                                threshold_obj_len        = ThresholdObjLen},
+    ?info("start/3", "handler: ~p",                  [HttpHandler]),
+    ?info("start/3", "port: ~p",                     [Port]),
+    ?info("start/3", "ssl port: ~p",                 [SSLPort]),
+    ?info("start/3", "ssl certfile: ~p",             [SSLCertFile]),
+    ?info("start/3", "ssl keyfile: ~p",              [SSLKeyFile]),
+    ?info("start/3", "num of acceptors: ~p",         [NumOfAcceptors]),
+    ?info("start/3", "cache_method: ~p",             [CacheMethod]),
+    ?info("start/3", "cache workers: ~p",            [CacheWorkers]),
+    ?info("start/3", "cache ram capacity: ~p",       [CacheRAMCapacity]),
+    ?info("start/3", "cache disc capacity: ~p",      [CacheDiscCapacity]),
+    ?info("start/3", "cache disc threshold len: ~p", [CacheDiscThresholdLen]),
+    ?info("start/3", "cache disc data-dir: ~p",      [CacheDiscDirData]),
+    ?info("start/3", "cache disc journal-dir: ~p",   [CacheDiscDirJournal]),
+    ?info("start/3", "cache expire: ~p",             [CacheExpire]),
+    ?info("start/3", "cache_max_content_len: ~p",    [CacheMaxContentLen]),
+    ?info("start/3", "cacheable_content_types: ~p",  [CachableContentTypes]),
+    ?info("start/3", "cacheable_path_patterns: ~p",  [CachablePathPatterns]),
+    ?info("start/3", "max_chunked_obj: ~p",          [MaxChunkedObjs]),
+    ?info("start/3", "max_len_for_obj: ~p",          [MaxObjLen]),
+    ?info("start/3", "chunked_obj_len: ~p",          [ChunkedObjLen]),
+    ?info("start/3", "threshold_obj_len: ~p",        [ThresholdObjLen]),
+    {ok, HttpOptions}.
+
+
+%% @doc Data-type transmit from list to binary
+%% @private
+cast_type_list_to_binary([]) ->
+    [];
+cast_type_list_to_binary(List) ->
+    lists:map(fun(I) ->
+                      case catch list_to_binary(I) of
+                          {'EXIT', _} -> I;
+                          Bin         -> Bin
+                      end
+              end, List).
