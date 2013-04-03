@@ -305,7 +305,8 @@ head_object_notfound_([_TermFun, Node0, Node1]) ->
                 {ok, {SC, _Body}} =
                     httpc:request(head, {lists:append(["http://",
                                                        ?TARGET_HOST,
-                                                       ":8080/a/b"]), []}, [], [{full_result, false}]),
+                                                       ":8080/a/b"]), []},
+                                  [], [{full_result, false}]),
                 ?assertEqual(404, SC)
             catch
                 throw:Reason ->
@@ -323,9 +324,11 @@ head_object_error_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head, 2, {error, foobar}]),
 
             try
-                {ok, {SC, _Body}} = httpc:request(head, {lists:append(["http://",
-                                                                       ?TARGET_HOST,
-                                                                       ":8080/a/b"]), []}, [], [{full_result, false}]),
+                {ok, {SC, _Body}} =
+                    httpc:request(head, {lists:append(["http://",
+                                                       ?TARGET_HOST,
+                                                       ":8080/a/b"]), []},
+                                  [], [{full_result, false}]),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
