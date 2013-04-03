@@ -389,8 +389,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
 
-    Ret2 = case catch put_large_object(
-                        cowboy_req:stream_body(Req, ChunkedSize), Key, Size, ChunkedSize, 0, 1, Pid) of
+    Ret2 = case catch put_large_object(cowboy_req:stream_body(Req, ChunkedSize),
+                                       Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
                    {error, Cause};
                Ret1 ->
@@ -399,45 +399,39 @@ put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     catch leo_gateway_large_object_handler:stop(Pid),
     Ret2.
 
-put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
+put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
     DataSize = byte_size(Data),
 
-    catch leo_gateway_large_object_handler:put(Pid, ChunkedSize, Data),
-    put_large_object(cowboy_req:stream_body(Req, ChunkedSize), Key, Size, ChunkedSize,
-                     TotalSize + DataSize, Counter + 1, Pid);
+    catch leo_gateway_large_object_handler:put(Pid, TotalChunks, DataSize, Data),
+    put_large_object(cowboy_req:stream_body(Req, ChunkedSize),
+                     Key, Size, ChunkedSize, TotalSize + DataSize, TotalChunks + 1, Pid);
 
-put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
-    case catch leo_gateway_large_object_handler:put(Pid, done) of
-        {ok, TotalChunks} ->
-            case catch leo_gateway_large_object_handler:result(Pid) of
-                {ok, Digest0} when Size == TotalSize ->
-                    Digest1 = leo_hex:raw_binary_to_integer(Digest0),
+put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
+    case catch leo_gateway_large_object_handler:result(Pid) of
+        {ok, Digest0} when Size == TotalSize ->
+            Digest1 = leo_hex:raw_binary_to_integer(Digest0),
 
-                    case leo_gateway_rpc_handler:put(
-                           Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
-                        {ok, _ETag} ->
-                            Header = [?SERVER_HEADER,
-                                      {?HTTP_HEAD_ETAG4AWS, ?http_etag(Digest1)}],
-                            ?reply_ok(Header, Req);
-                        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                            ?reply_internal_error([?SERVER_HEADER], Req);
-                        {error, timeout} ->
-                            ?reply_timeout([?SERVER_HEADER], Req)
-                    end;
-                {_, _Cause} ->
-                    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
-                    ?reply_internal_error([?SERVER_HEADER], Req)
+            case leo_gateway_rpc_handler:put(
+                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
+                {ok, _ETag} ->
+                    Header = [?SERVER_HEADER,
+                              {?HTTP_HEAD_ETAG4AWS, ?http_etag(Digest1)}],
+                    ?reply_ok(Header, Req);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    ?reply_internal_error([?SERVER_HEADER], Req);
+                {error, timeout} ->
+                    ?reply_timeout([?SERVER_HEADER], Req)
             end;
-        {error, _Cause} ->
-            ok = leo_gateway_large_object_handler:rollback(Pid, Counter),
+        {_, _Cause} ->
+            ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
             ?reply_internal_error([?SERVER_HEADER], Req)
     end;
 
 
 %% An error occurred while reading the body, connection is gone.
-put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, Counter, Pid) ->
+put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, TotalChunks, Pid) ->
     ?error("put_large_object/7", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-    ok = leo_gateway_large_object_handler:rollback(Pid, Counter).
+    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks).
 
 
 %% @doc DELETE an object
