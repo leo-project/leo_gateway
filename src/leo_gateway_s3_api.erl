@@ -110,10 +110,9 @@ get_bucket(Req0, Key, #req_params{access_key_id = AccessKeyId,
                                   qs_prefix     = Prefix}) ->
     case get_bucket_1(AccessKeyId, Key, none, none, 1000, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
-            Req1 = cowboy_req:set_resp_body(XML, Req0),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
-            ?reply_ok(Header, Req1);
+            ?reply_ok(Header, XML, Req0);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req0);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -386,8 +385,7 @@ handle_2({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
                 [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
                 XML = gen_upload_initiate_xml(Bucket, Path1, UploadId),
 
-                Req1 = cowboy_req:set_resp_body(XML, Req0),
-                ?reply_ok([?SERVER_HEADER], Req1);
+                ?reply_ok([?SERVER_HEADER], XML, Req0);
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Req0);
             {error, Cause} ->
@@ -497,8 +495,7 @@ handle_multi_upload_2({ok, Bin, Req0}, _Req, Path0) ->
                     [Bucket|Path1] = leo_misc:binary_tokens(Path0, ?BIN_SLASH),
                     ETag1 = leo_hex:integer_to_hex(ETag0, 32),
                     XML   = gen_upload_completion_xml(Bucket, Path1, ETag1),
-                    Req1  = cowboy_req:set_resp_body(XML, Req0),
-                    ?reply_ok([?SERVER_HEADER], Req1);
+                    ?reply_ok([?SERVER_HEADER], XML, Req0);
                 {error, Cause} ->
                     ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path0), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Req0)
@@ -571,10 +568,9 @@ resp_copy_obj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
                         [leo_http:web_date(Meta#metadata.timestamp),
                          leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
-    Req1 = cowboy_req:set_resp_body(XML, Req),
     ?reply_ok([?SERVER_HEADER,
                {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
-              ], Req1).
+              ], XML, Req).
 
 
 %% @doc Retrieve header values from a request

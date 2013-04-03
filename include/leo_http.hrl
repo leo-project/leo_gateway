@@ -111,6 +111,9 @@
 -define(reply_internal_error(_H, _R),  cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR,  _H, _R)). %% 500
 -define(reply_timeout(_H, _R),         cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H, _R)). %% 504
 
+-define(reply_ok(_H, _B, _R),              cowboy_req:reply(?HTTP_ST_OK,              _H, _B, _R)). %% 200 with body
+-define(reply_partial_content(_H, _B, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _B, _R)). %% 206 with body
+
 -define(http_header(_R, _K), case cowboy_req:header(_K, _R) of
                                  {undefined, _} -> ?BIN_EMPTY;
                                  {Bin, _}       -> Bin

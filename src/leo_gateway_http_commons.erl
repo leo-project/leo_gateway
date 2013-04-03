@@ -175,9 +175,8 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
                     {ok, Req2} = ?reply_not_modified(Header, Req),
                     Req2;
                 _ ->
-                    Req2 = cowboy_req:set_resp_body(Body, Req),
-                    {ok, Req3} = ?reply_ok([?SERVER_HEADER], Req2),
-                    Req3
+                    {ok, Req2} = ?reply_ok([?SERVER_HEADER], Body, Req),
+                    Req2
             end
     end.
 
@@ -250,12 +249,11 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
                     void
             end,
 
-            Req2 = cowboy_req:set_resp_body(RespObject, Req),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
                       {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
-            ?reply_ok(Header, Req2);
+            ?reply_ok(Header, RespObject, Req);
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
@@ -287,13 +285,12 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
 get_object_with_cache(Req, Key, CacheObj,_Params) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         {ok, match} ->
-            Req2 = cowboy_req:set_resp_body(CacheObj#cache.body, Req),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                       {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
-            ?reply_ok(Header, Req2);
+            ?reply_ok(Header, CacheObj#cache.body, Req);
         {ok, Meta, Body} ->
             Mime = leo_mime:guess_mime(Key),
             Val = term_to_binary(#cache{etag = Meta#metadata.checksum,
@@ -303,12 +300,11 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
 
             _ = ecache_api:put(Key, Val),
 
-            Req2 = cowboy_req:set_resp_body(Body, Req),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
                       {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
-            ?reply_ok(Header, Req2);
+            ?reply_ok(Header, Body, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -394,7 +390,7 @@ put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
 
     Ret2 = case catch put_large_object(
-                        cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 1, Pid) of
+                        cowboy_req:stream_body(Req, ChunkedSize), Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
                    {error, Cause};
                Ret1 ->
@@ -407,7 +403,7 @@ put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pi
     DataSize = byte_size(Data),
 
     catch leo_gateway_large_object_handler:put(Pid, ChunkedSize, Data),
-    put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize,
+    put_large_object(cowboy_req:stream_body(Req, ChunkedSize), Key, Size, ChunkedSize,
                      TotalSize + DataSize, Counter + 1, Pid);
 
 put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
@@ -507,10 +503,9 @@ range_object(Req, Key, #req_params{range_header = RangeHeader}) ->
             case leo_gateway_rpc_handler:get(Key, Start, End) of
                 {ok, _Meta, RespObject} ->
                     Mime = leo_mime:guess_mime(Key),
-                    Req2 = cowboy_req:set_resp_body(RespObject, Req),
                     Header = [?SERVER_HEADER,
                               {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
-                    ?reply_partial_content(Header, Req2);
+                    ?reply_partial_content(Header, RespObject, Req);
                 {error, not_found} ->
                     ?reply_not_found([?SERVER_HEADER], Req);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
