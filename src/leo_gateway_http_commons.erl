@@ -394,7 +394,7 @@ put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
 
     Ret2 = case catch put_large_object(
-                        cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 1, Pid) of
+                        cowboy_req:stream_body(Req, ChunkedSize), Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
                    {error, Cause};
                Ret1 ->
@@ -407,7 +407,7 @@ put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pi
     DataSize = byte_size(Data),
 
     catch leo_gateway_large_object_handler:put(Pid, ChunkedSize, Data),
-    put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize,
+    put_large_object(cowboy_req:stream_body(Req, ChunkedSize), Key, Size, ChunkedSize,
                      TotalSize + DataSize, Counter + 1, Pid);
 
 put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
