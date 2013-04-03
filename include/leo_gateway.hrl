@@ -26,7 +26,7 @@
 
 -define(SHUTDOWN_WAITING_TIME, 2000).
 -define(S3_HTTP, leo_s3_http).
--define(DEF_LAYERS_OF_DIRS, {3, 12}).
+-define(DEF_LAYERS_OF_DIRS, {1, 12}).
 
 -ifdef(TEST).
 -define(DEF_TIMEOUT,     1000).

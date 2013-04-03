@@ -80,6 +80,7 @@ terminate(_Reason, _Req, _State) ->
 onrequest(CacheCondition) ->
     leo_gateway_http_commons:onrequest(CacheCondition, fun gen_key/1).
 
+
 %% @doc Handle response
 %%
 onresponse(CacheCondition) ->
@@ -174,18 +175,26 @@ gen_key(Req) ->
 handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Path) ->
     TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod = cowboy_req:get(method, Req),
-    ReqParams  = #req_params{handler           = ?MODULE,
-                             path              = Path,
-                             token_length      = TokenLen,
-                             min_layers        = NumOfMinLayers,
-                             max_layers        = NumOfMaxLayers,
-                             has_inner_cache   = HasInnerCache,
-                             is_cached         = true,
-                             max_chunked_objs  = Props#http_options.max_chunked_objs,
-                             max_len_for_obj   = Props#http_options.max_len_for_obj,
-                             chunked_obj_len   = Props#http_options.chunked_obj_len,
-                             threshold_obj_len = Props#http_options.threshold_obj_len},
-    handle_2(Req, HTTPMethod, Path, ReqParams, State).
+
+    case (TokenLen >= NumOfMinLayers) of
+        true ->
+            ReqParams  = #req_params{handler           = ?MODULE,
+                                     path              = Path,
+                                     token_length      = TokenLen,
+                                     min_layers        = NumOfMinLayers,
+                                     max_layers        = NumOfMaxLayers,
+                                     has_inner_cache   = HasInnerCache,
+                                     is_cached         = true,
+                                     max_chunked_objs  = Props#http_options.max_chunked_objs,
+                                     max_len_for_obj   = Props#http_options.max_len_for_obj,
+                                     chunked_obj_len   = Props#http_options.chunked_obj_len,
+                                     threshold_obj_len = Props#http_options.threshold_obj_len},
+            handle_2(Req, HTTPMethod, Path, ReqParams, State);
+        false when HTTPMethod == ?HTTP_GET ->
+            ?reply_not_found([?SERVER_HEADER], Req);
+        false  ->
+            ?reply_bad_request([?SERVER_HEADER], Req)
+    end.
 
 handle_2(Req0, HTTPMethod0, Path, Params, State) ->
     HTTPMethod1 = case HTTPMethod0 of
