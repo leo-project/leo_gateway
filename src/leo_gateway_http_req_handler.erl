@@ -74,7 +74,7 @@ handle(?HTTP_HEAD, Req, Key, #req_params{is_dir = true,
 %% @doc GET operation on Object with Range Header.
 handle(?HTTP_GET, Req, Key, #req_params{range_header = RangeHeader,
                                         handler = Handler} = Params) when RangeHeader /= undefined ->
-    Handler:head_bucket(Req, Key, Params);
+    Handler:range_object(Req, Key, Params);
 
 %% @doc GET operation on Object if inner cache is enabled.
 %% @private
