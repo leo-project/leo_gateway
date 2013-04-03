@@ -324,11 +324,14 @@ gen_key(Req) ->
 %% @doc Handle an http-request
 %% @private
 handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Path) ->
-    BinPart = binary:part(Path, {byte_size(Path)-1, 1}),
+    BinPart    = binary:part(Path, {byte_size(Path)-1, 1}),
+    TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
+    HTTPMethod = cowboy_req:get(method, Req),
+
     {Prefix, IsDir, Path2, Req2} =
         case cowboy_req:qs_val(?HTTP_HEAD_PREFIX, Req) of
             {undefined, Req1} ->
-                {none, (?BIN_SLASH == BinPart), Path, Req1};
+                {none, (TokenLen == 1 orelse ?BIN_SLASH == BinPart), Path, Req1};
             {BinParam, Req1} ->
                 NewPath = case BinPart of
                               ?BIN_SLASH -> Path;
@@ -336,9 +339,6 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                           end,
                 {BinParam, true, NewPath, Req1}
         end,
-
-    TokenLen   = length(binary:split(Path2, [?BIN_SLASH], [global, trim])),
-    HTTPMethod = cowboy_req:get(method, Req),
 
     case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
@@ -373,7 +373,7 @@ handle_2({error, _Cause}, Req0,_,_,_,State) ->
 %% For Multipart Upload - Initiation
 %%
 handle_2({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
-                                                            is_upload = true}, State) ->
+                                                             is_upload = true}, State) ->
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
     UploadId    = leo_hex:binary_to_hex(crypto:md5(<< Path0/binary, NowBin/binary >>)),
@@ -399,19 +399,19 @@ handle_2({ok,_AccessKeyId}, Req0, ?HTTP_POST, _, #req_params{path = Path0,
 %% For Multipart Upload - Upload a part of an object
 %%
 handle_2({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
-        #req_params{upload_id = UploadId,
-                    upload_part_num  = PartNum0,
-                    max_chunked_objs = MaxChunkedObjs}, State) when UploadId /= <<>>,
-                                                                    PartNum0 > MaxChunkedObjs ->
+         #req_params{upload_id = UploadId,
+                     upload_part_num  = PartNum0,
+                     max_chunked_objs = MaxChunkedObjs}, State) when UploadId /= <<>>,
+                                                                     PartNum0 > MaxChunkedObjs ->
     {ok, Req1} = ?reply_bad_request([?SERVER_HEADER], Req0),
     {ok, Req1, State};
 
 handle_2({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
-        #req_params{path = Path0,
-                    is_upload = false,
-                    upload_id = UploadId,
-                    upload_part_num = PartNum0} = Params, State) when UploadId /= <<>>,
-                                                                      PartNum0 /= 0 ->
+         #req_params{path = Path0,
+                     is_upload = false,
+                     upload_id = UploadId,
+                     upload_part_num = PartNum0} = Params, State) when UploadId /= <<>>,
+                                                                       PartNum0 /= 0 ->
     PartNum1 = list_to_binary(integer_to_list(PartNum0)),
     Key0 = << Path0/binary, ?STR_NEWLINE, UploadId/binary >>, %% for confirmation
     Key1 = << Path0/binary, ?STR_NEWLINE, PartNum1/binary >>, %% for put a part of an object
@@ -430,8 +430,8 @@ handle_2({ok,_AccessKeyId}, Req0, ?HTTP_PUT, _,
     {ok, Req1, State};
 
 handle_2({ok,_AccessKeyId}, Req0, ?HTTP_DELETE, _,
-        #req_params{path = Path0,
-                    upload_id = UploadId}, State) when UploadId /= <<>> ->
+         #req_params{path = Path0,
+                     upload_id = UploadId}, State) when UploadId /= <<>> ->
     _ = leo_gateway_rpc_handler:put(Path0, <<>>, 0),
     _ = leo_gateway_rpc_handler:delete(Path0),
     {ok, Req1} = ?reply_no_content([?SERVER_HEADER], Req0),
@@ -440,11 +440,11 @@ handle_2({ok,_AccessKeyId}, Req0, ?HTTP_DELETE, _,
 %% For Multipart Upload - Completion
 %%
 handle_2({ok,_AccessKeyId}, Req0, ?HTTP_POST, _,
-        #req_params{path = Path,
-                    is_upload = false,
-                    upload_id = UploadId,
-                    upload_part_num = PartNum}, State) when UploadId /= <<>>,
-                                                            PartNum  == 0 ->
+         #req_params{path = Path,
+                     is_upload = false,
+                     upload_id = UploadId,
+                     upload_part_num = PartNum}, State) when UploadId /= <<>>,
+                                                             PartNum  == 0 ->
     Res = cowboy_req:has_body(Req0),
     {ok, Req1} = handle_multi_upload_1(Res, Req0, Path, UploadId),
     {ok, Req1, State};
