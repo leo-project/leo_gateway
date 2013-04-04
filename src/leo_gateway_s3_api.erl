@@ -623,37 +623,36 @@ auth(next, Req, HTTPMethod, Path, TokenLen) ->
                      end,
 
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
-            {RawUri,       _} = cowboy_req:path(Req),
-            {QueryString0, _} = cowboy_req:qs(Req),
-            {Headers,      _} = cowboy_req:headers(Req),
+            {RawUri,  _} = cowboy_req:path(Req),
+            {QStr0,   _} = cowboy_req:qs(Req),
+            {Headers, _} = cowboy_req:headers(Req),
 
-            Len = byte_size(QueryString0),
-            QueryString1 =
-                case (Len > 0 andalso binary:last(QueryString0) == $=) of
-                    true ->
-                        binary:part(QueryString0, 0, Len-1);
-                    false ->
-                        QueryString0
-                end,
+            Len = byte_size(QStr0),
+            QStr1 =  case (Len > 0 andalso binary:last(QStr0) == $=) of
+                         true ->
+                             binary:part(QStr0, 0, Len-1);
+                         false ->
+                             QStr0
+                     end,
 
-            QueryString2 = case binary:match(QueryString1, <<"&">>) of
-                               nomatch -> QueryString1;
-                               _ ->
-                                   Ret = lists:foldl(
-                                           fun(Q, []) ->
-                                                   Q;
-                                              (Q, Acc) ->
-                                                   lists:append([Acc, "&", Q])
-                                           end, [], lists:sort(string:tokens(binary_to_list(QueryString1), "&"))),
-                                   list_to_binary(Ret)
-                           end,
+            QList = lists:sort(string:tokens(binary_to_list(QStr1), "&")),
+            QStr2 = case binary:match(QStr1, <<"&">>) of
+                        nomatch -> QStr1;
+                        _ ->
+                            Ret = lists:foldl(fun(Q, []) ->
+                                                      Q;
+                                                 (Q, Acc) ->
+                                                      lists:append([Acc, "&", Q])
+                                              end, [], QList),
+                            list_to_binary(Ret)
+                    end,
 
             URI = case (Len > 0) of
-                      true when  QueryString2 == ?HTTP_QS_BIN_UPLOADS ->
-                          << RawUri/binary, "?", QueryString2/binary >>;
+                      true when  QStr2 == ?HTTP_QS_BIN_UPLOADS ->
+                          << RawUri/binary, "?", QStr2/binary >>;
                       true ->
-                          case (nomatch /= binary:match(QueryString2, ?HTTP_QS_BIN_UPLOAD_ID)) of
-                              true  -> << RawUri/binary, "?", QueryString2/binary >>;
+                          case (nomatch /= binary:match(QStr2, ?HTTP_QS_BIN_UPLOAD_ID)) of
+                              true  -> << RawUri/binary, "?", QStr2/binary >>;
                               false -> RawUri
                           end;
                       _ ->
@@ -666,7 +665,7 @@ auth(next, Req, HTTPMethod, Path, TokenLen) ->
                                       date         = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket       = Bucket,
                                       uri          = URI,
-                                      query_str    = QueryString2,
+                                      query_str    = QStr2,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
     end.
@@ -740,7 +739,8 @@ delete_bucket_1(AccessKeyId, Bucket0) ->
                                       Node
                               end, Members),
             spawn(fun() ->
-                          _ = rpc:multicall(Nodes, leo_storage_handler_directory, delete_objects_in_parent_dir,
+                          _ = rpc:multicall(Nodes, leo_storage_handler_directory,
+                                            delete_objects_in_parent_dir,
                                             [Bucket1], ?DEF_REQ_TIMEOUT),
                           ok
                   end),
@@ -792,14 +792,18 @@ generate_bucket_xml(Key, Prefix, MetadataList) ->
                                   lists:append([Acc,
                                                 "<Contents>",
                                                 "<Key>", PrefixStr, Entry, "</Key>",
-                                                "<LastModified>", leo_http:web_date(TS), "</LastModified>",
-                                                "<ETag>", leo_hex:integer_to_hex(CS, 32), "</ETag>",
-                                                "<Size>", integer_to_list(Length), "</Size>",
+                                                "<LastModified>", leo_http:web_date(TS),
+                                                "</LastModified>",
+                                                "<ETag>", leo_hex:integer_to_hex(CS, 32),
+                                                "</ETag>",
+                                                "<Size>", integer_to_list(Length),
+                                                "</Size>",
                                                 "<StorageClass>STANDARD</StorageClass>",
                                                 "<Owner>",
                                                 "<ID>leofs</ID>",
                                                 "<DisplayName>leofs</DisplayName>",
-                                                "</Owner>","</Contents>"])
+                                                "</Owner>",
+                                                "</Contents>"])
                           end
                   end
           end,
