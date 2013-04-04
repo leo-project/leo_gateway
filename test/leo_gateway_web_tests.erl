@@ -175,7 +175,7 @@ setup_s3_api() ->
 
     {ok, Options} = leo_gateway_app:get_options(),
     InitFun = fun() -> leo_gateway_http_commons:start(Options) end,
-    TermFun = fun() -> leo_gateway_http_commons:stop() end,
+    TermFun = fun() -> leo_gateway_s3_api:stop() end,
     setup(InitFun, TermFun).
 
 setup_rest_api() ->
@@ -187,7 +187,7 @@ setup_rest_api() ->
     {ok, Options} = leo_gateway_app:get_options(),
     InitFun = fun() -> leo_gateway_http_commons:start(
                          Options#http_options{handler = leo_gateway_rest_api}) end,
-    TermFun = fun() -> leo_gateway_http_commons:stop() end,
+    TermFun = fun() -> leo_gateway_rest_api:stop() end,
     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->

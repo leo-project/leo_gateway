@@ -33,7 +33,7 @@
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start/1, start/2, stop/0]).
+-export([start/1, start/2]).
 -export([onrequest/2, onresponse/2]).
 -export([get_object/3, get_object_with_cache/4,
          put_object/3, put_small_object/3, put_large_object/4,
@@ -112,16 +112,6 @@ start(Sup, Options) ->
 
     %% launch http-handler(s)
     start(Options).
-
-
-%% @doc Stop proc(s)
-%%
--spec(stop() ->
-             ok).
-stop() ->
-    {ok, HttpOption} = leo_gateway_app:get_options(),
-    Handler = HttpOption#http_options.handler,
-    Handler:stop().
 
 
 %% @doc Handle request
