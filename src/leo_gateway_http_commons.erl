@@ -406,12 +406,13 @@ put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks
                      Key, Size, ChunkedSize, TotalSize + DataSize, TotalChunks + 1, Pid);
 
 put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
+    TotalChunks1 = TotalChunks -1,
     case catch leo_gateway_large_object_handler:result(Pid) of
         {ok, Digest0} when Size == TotalSize ->
             Digest1 = leo_hex:raw_binary_to_integer(Digest0),
 
             case leo_gateway_rpc_handler:put(
-                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks -1, Digest1) of
+                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
                 {ok, _ETag} ->
                     Header = [?SERVER_HEADER,
                               {?HTTP_HEAD_ETAG4AWS, ?http_etag(Digest1)}],
@@ -422,7 +423,7 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
                     ?reply_timeout([?SERVER_HEADER], Req)
             end;
         {_, _Cause} ->
-            ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
+            ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks1),
             ?reply_internal_error([?SERVER_HEADER], Req)
     end;
 
