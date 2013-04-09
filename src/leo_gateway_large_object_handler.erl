@@ -269,7 +269,7 @@ delete_chunked_objects(_, 0) ->
 delete_chunked_objects(Key1, Index1) ->
     Index2 = list_to_binary(integer_to_list(Index1)),
     Key2   = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
-    catch ecache_api:get(Key2),
+    catch ecache_api:delete(Key2),
     case leo_gateway_rpc_handler:delete(Key2) of
         ok ->
             void;
