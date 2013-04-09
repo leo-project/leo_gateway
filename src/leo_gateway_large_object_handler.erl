@@ -25,6 +25,7 @@
 
 -behaviour(gen_server).
 
+-include("leo_http.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -40,6 +41,7 @@
          terminate/2,
          code_change/3]).
 
+-undef(DEF_SEPARATOR).
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
@@ -135,19 +137,25 @@ handle_call(result, _From, #state{md5_context = Context,
     {reply, Reply, State};
 
 
-handle_call({put, Index, Size, Bin}, _From, #state{key = Key,
-                                                   md5_context = Context,
-                                                   errors = Errors} = State) ->
-    IndexBin = list_to_binary(integer_to_list(Index)),
+handle_call({put, Index1, Size, Bin}, _From, #state{key = Key1,
+                                                    md5_context = Context1,
+                                                    errors = Errors} = State) ->
+    Index2 = list_to_binary(integer_to_list(Index1)),
+    Key2  = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
+
     {Ret, NewState} =
-        case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-                                         Bin, Size, Index) of
+        case leo_gateway_rpc_handler:put(Key2, Bin, Size, Index1) of
             {ok, _ETag} ->
-                NewContext = crypto:md5_update(Context, Bin),
-                {ok, State#state{md5_context = NewContext}};
+                Context2 = crypto:md5_update(Context1, Bin),
+                Cache    = term_to_binary(#cache{mtime = leo_date:now(),
+                                                 etag  = Context2,
+                                                 body  = Bin,
+                                                 content_type = ?HTTP_CTYPE_OCTET_STREAM}),
+                catch ecache_api:put(Key2, Cache),
+                {ok, State#state{md5_context = Context2}};
             {error, Cause} ->
-                ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-                {{error, Cause}, State#state{errors = [{Index, Cause}|Errors]}}
+                ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key1), Cause]),
+                {{error, Cause}, State#state{errors = [{Index1, Cause}|Errors]}}
         end,
     {reply, Ret, NewState};
 
@@ -201,10 +209,26 @@ handle_loop(Key, Total, Req) ->
 handle_loop(_Key, Total, Total, Req) ->
     {ok, Req};
 
-handle_loop(Key1, Total, Index, Req) ->
-    IndexBin = list_to_binary(integer_to_list(Index + 1)),
-    Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+handle_loop(Key1, Total, Index1, Req) ->
+    Index2 = list_to_binary(integer_to_list(Index1 + 1)),
+    Key2   = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
 
+    case catch ecache_api:get(Key2) of
+        {ok, Cache} ->
+            #cache{body  = Bin} = binary_to_term(Cache),
+            case cowboy_req:chunk(Bin, Req) of
+                ok ->
+                    handle_loop(Key1, Total, Index1 + 1, Req);
+                {error, Cause} ->
+                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                           [binary_to_list(Key1), Index1, Cause]),
+                    {error, Cause}
+            end;
+        _ ->
+            handle_loop(Key1, Key2, Total, Index1, Req)
+    end.
+
+handle_loop(Key1, Key2, Total, Index, Req) ->
     case leo_gateway_rpc_handler:get(Key2) of
         %% only children
         {ok, #metadata{cnumber = 0}, Bin} ->
@@ -212,7 +236,7 @@ handle_loop(Key1, Total, Index, Req) ->
                 ok ->
                     handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
-                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/5", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key1), Index, Cause]),
                     {error, Cause}
             end;
@@ -225,12 +249,12 @@ handle_loop(Key1, Total, Index, Req) ->
                     %% children
                     handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
-                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/5", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key1), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
-            ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+            ?error("handle_loop/5", "key:~s, index:~p, cause:~p",
                    [binary_to_list(Key1), Index, Cause]),
             {error, Cause}
     end.
@@ -242,15 +266,15 @@ handle_loop(Key1, Total, Index, Req) ->
              ok).
 delete_chunked_objects(_, 0) ->
     ok;
-delete_chunked_objects(Key1, Index) ->
-    IndexBin = list_to_binary(integer_to_list(Index)),
-    Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-
+delete_chunked_objects(Key1, Index1) ->
+    Index2 = list_to_binary(integer_to_list(Index1)),
+    Key2   = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
+    catch ecache_api:get(Key2),
     case leo_gateway_rpc_handler:delete(Key2) of
         ok ->
             void;
         {error, Cause} ->
             ?error("delete_chunked_objects/2", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key1), Index, Cause])
+                   [binary_to_list(Key1), Index1, Cause])
     end,
-    delete_chunked_objects(Key1, Index - 1).
+    delete_chunked_objects(Key1, Index1 - 1).
