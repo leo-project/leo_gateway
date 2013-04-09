@@ -100,27 +100,31 @@
                                  end).
 
 %% Macros
--define(reply_ok(_H, _R),              cowboy_req:reply(?HTTP_ST_OK,              _H, _R)). %% 200
--define(reply_no_content(_H, _R),      cowboy_req:reply(?HTTP_ST_NO_CONTENT,      _H, _R)). %% 204
--define(reply_partial_content(_H, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _R)). %% 206
--define(reply_not_modified(_H, _R),    cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,    _H, _R)). %% 304
--define(reply_bad_request(_H, _R),     cowboy_req:reply(?HTTP_ST_BAD_REQ,         _H, _R)). %% 400
--define(reply_forbidden(_H, _R),       cowboy_req:reply(?HTTP_ST_FORBIDDEN,       _H, _R)). %% 403
--define(reply_not_found(_H, _R),       cowboy_req:reply(?HTTP_ST_NOT_FOUND,       _H, _R)). %% 404
--define(reply_bad_range(_H, _R),       cowboy_req:reply(?HTTP_ST_BAD_RANGE,       _H, _R)). %% 416
--define(reply_internal_error(_H, _R),  cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR,  _H, _R)). %% 500
--define(reply_timeout(_H, _R),         cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H, _R)). %% 504
+-define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
+-define(reply_ok(_H,_B,_R),              cowboy_req:reply(?HTTP_ST_OK,              _H,_B,_R)). %% 200 with body
+-define(reply_no_content(_H,_R),         cowboy_req:reply(?HTTP_ST_NO_CONTENT,      _H,_R)).    %% 204
+-define(reply_partial_content(_H,_R),    cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_R)).    %% 206
+-define(reply_partial_content(_H,_B,_R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_B,_R)). %% 206 with body
+-define(reply_not_modified(_H,_R),       cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,    _H,_R)). %% 304
+-define(reply_bad_request(_H,_R),        cowboy_req:reply(?HTTP_ST_BAD_REQ,         _H,_R)). %% 400
+-define(reply_forbidden(_H,_R),          cowboy_req:reply(?HTTP_ST_FORBIDDEN,       _H,_R)). %% 403
+-define(reply_not_found(_H,_R),          cowboy_req:reply(?HTTP_ST_NOT_FOUND,       _H,_R)). %% 404
+-define(reply_bad_range(_H,_R),          cowboy_req:reply(?HTTP_ST_BAD_RANGE,       _H,_R)). %% 416
+-define(reply_internal_error(_H,_R),     cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR,  _H,_R)). %% 500
+-define(reply_timeout(_H,_R),            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H,_R)). %% 504
 
--define(reply_ok(_H, _B, _R),              cowboy_req:reply(?HTTP_ST_OK,              _H, _B, _R)). %% 200 with body
--define(reply_partial_content(_H, _B, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _B, _R)). %% 206 with body
 
--define(http_header(_R, _K), case cowboy_req:header(_K, _R) of
-                                 {undefined, _} -> ?BIN_EMPTY;
-                                 {Bin, _}       -> Bin
-                             end).
--define(http_etag(_E),       lists:append(["\"", leo_hex:integer_to_hex(_E, 32), "\""])).
--define(http_date(_D),       leo_http:rfc1123_date(_D)).
--define(httP_cache_ctl(_C),  lists:append(["max-age=",integer_to_list(_C)])).
+-define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
+                                   {undefined, _} -> ?BIN_EMPTY;
+                                   {Bin, _}       -> Bin
+                               end).
+-define(http_etag(_E),         lists:append(["\"", leo_hex:integer_to_hex(_E,32), "\""])).
+-define(http_date(_D),         leo_http:rfc1123_date(_D)).
+-define(httP_cache_ctl(_C),    lists:append(["max-age=",integer_to_list(_C)])).
+-define(http_content_type(_H), case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE,1,_H) of
+                                  false     -> ?HTTP_CTYPE_OCTET_STREAM;
+                                   {_, Val} -> Val
+                               end).
 
 
 %% S3 Response XML

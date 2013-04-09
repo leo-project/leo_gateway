@@ -188,17 +188,10 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                                          fun is_cachable_req3/4]) of
                         true ->
                             Now = leo_date:now(),
-                            ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Header1) of
-                                              false ->
-                                                  ?HTTP_CTYPE_OCTET_STREAM;
-                                              {_, Val} ->
-                                                  Val
-                                          end,
-
                             Bin = term_to_binary(
                                     #cache{mtime        = Now,
                                            etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
-                                           content_type = ContentType,
+                                           content_type = ?http_content_type(Header1),
                                            body         = Body}),
                             _ = ecache_api:put(Key, Bin),
 
