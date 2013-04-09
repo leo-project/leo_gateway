@@ -32,7 +32,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([get_node_status/0,
-         register_in_monitor/1,
+         register_in_monitor/1, register_in_monitor/2,
          purge/1, set_endpoint/1
         ]).
 
@@ -88,39 +88,44 @@ get_node_status() ->
 %%
 -spec(register_in_monitor(first|again) -> ok).
 register_in_monitor(RequestedTimes) ->
-    ManagerNodes = ?env_manager_nodes(leo_gateway),
-
     case whereis(leo_gateway_sup) of
         undefined ->
             {error, not_found};
         Pid ->
-            Fun = fun(Node, false) ->
-                          NodeAtom = list_to_atom(Node),
-                          case leo_misc:node_existence(NodeAtom) of
-                              true ->
-                                  case rpc:call(NodeAtom, leo_manager_api, register,
-                                                [RequestedTimes, Pid, erlang:node(), gateway], ?DEF_TIMEOUT) of
-                                      ok ->
-                                          true;
-                                      {error, Cause} ->
-                                          ?error("register_in_monitor/1", "manager:~w, cause:~p", [NodeAtom, Cause]),
-                                          false;
-                                      {badrpc, Cause} ->
-                                          ?error("register_in_monitor/1", "manager:~w, cause:~p", [NodeAtom, Cause]),
-                                          false
-                                  end;
-                              false ->
-                                  false
-                          end;
-                     (_Node, true) ->
-                          true
-                  end,
-            case lists:foldl(Fun, false,  ManagerNodes) of
-                true ->
-                    ok;
-                false ->
-                    {error, ?ERROR_COULD_NOT_CONNECT}
-            end
+            register_in_monitor(Pid, RequestedTimes)
+    end.
+
+register_in_monitor(Pid, RequestedTimes) ->
+    ManagerNodes = ?env_manager_nodes(leo_gateway),
+    register_in_monitor(ManagerNodes, Pid, RequestedTimes).
+
+register_in_monitor([],_,_) ->
+    {error, ?ERROR_COULD_NOT_CONNECT};
+register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
+    Node2 = list_to_atom(Node1),
+    Ret = case leo_misc:node_existence(Node2) of
+              true ->
+                  case rpc:call(Node2, leo_manager_api, register,
+                                [RequestedTimes, Pid, erlang:node(), gateway], ?DEF_TIMEOUT) of
+                      ok ->
+                          true;
+                      {error, Cause} ->
+                          ?warn("register_in_monitor/3",
+                                 "manager:~w, cause:~p", [Node2, Cause]),
+                          false;
+                      {badrpc, Cause} ->
+                          ?warn("register_in_monitor/3",
+                                 "manager:~w, cause:~p", [Node2, Cause]),
+                          false
+                  end;
+              false ->
+                  false
+          end,
+    case Ret of
+        true ->
+            ok;
+        false ->
+            register_in_monitor(Rest, Pid, RequestedTimes)
     end.
 
 

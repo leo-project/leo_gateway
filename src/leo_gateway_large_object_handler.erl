@@ -201,37 +201,37 @@ handle_loop(Key, Total, Req) ->
 handle_loop(_Key, Total, Total, Req) ->
     {ok, Req};
 
-handle_loop(Key0, Total, Index, Req) ->
+handle_loop(Key1, Total, Index, Req) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
-    Key1 = << Key0/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
-    case leo_gateway_rpc_handler:get(Key1) of
+    case leo_gateway_rpc_handler:get(Key2) of
         %% only children
         {ok, #metadata{cnumber = 0}, Bin} ->
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
-                    handle_loop(Key0, Total, Index + 1, Req);
+                    handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key0), Index, Cause]),
+                           [binary_to_list(Key1), Index, Cause]),
                     {error, Cause}
             end;
 
         %% both children and grand-children
         {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
-            case handle_loop(Key1, TotalChunkedObjs, Req) of
+            case handle_loop(Key2, TotalChunkedObjs, Req) of
                 {ok, Req} ->
                     %% children
-                    handle_loop(Key0, Total, Index + 1, Req);
+                    handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key0), Index, Cause]),
+                           [binary_to_list(Key1), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
             ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key0), Index, Cause]),
+                   [binary_to_list(Key1), Index, Cause]),
             {error, Cause}
     end.
 
@@ -242,15 +242,15 @@ handle_loop(Key0, Total, Index, Req) ->
              ok).
 delete_chunked_objects(_, 0) ->
     ok;
-delete_chunked_objects(Key0, Index) ->
+delete_chunked_objects(Key1, Index) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
-    Key1 = << Key0/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
-    case leo_gateway_rpc_handler:delete(Key1) of
+    case leo_gateway_rpc_handler:delete(Key2) of
         ok ->
             void;
         {error, Cause} ->
             ?error("delete_chunked_objects/2", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key0), Index, Cause])
+                   [binary_to_list(Key1), Index, Cause])
     end,
-    delete_chunked_objects(Key0, Index - 1).
+    delete_chunked_objects(Key1, Index - 1).
