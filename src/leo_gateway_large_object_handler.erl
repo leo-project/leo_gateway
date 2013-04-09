@@ -146,19 +146,14 @@ handle_call({put, Index1, Size, Bin}, _From, #state{key = Key1,
     {Ret, NewState} =
         case leo_gateway_rpc_handler:put(Key2, Bin, Size, Index1) of
             {ok, _ETag} ->
+                ok = put_object_into_cache(Key2, Bin),
                 Context2 = crypto:md5_update(Context1, Bin),
-                Cache    = term_to_binary(#cache{mtime = leo_date:now(),
-                                                 etag  = Context2,
-                                                 body  = Bin,
-                                                 content_type = ?HTTP_CTYPE_OCTET_STREAM}),
-                catch ecache_api:put(Key2, Cache),
                 {ok, State#state{md5_context = Context2}};
             {error, Cause} ->
                 ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key1), Cause]),
                 {{error, Cause}, State#state{errors = [{Index1, Cause}|Errors]}}
         end,
     {reply, Ret, NewState};
-
 
 
 handle_call({rollback, TotalOfChunkedObjs}, _From, #state{key = Key} = State) ->
@@ -215,8 +210,17 @@ handle_loop(Key1, Total, Index1, Req) ->
 
     case catch ecache_api:get(Key2) of
         {ok, Cache} ->
-            #cache{body  = Bin} = binary_to_term(Cache),
-            case cowboy_req:chunk(Bin, Req) of
+            #cache{body = Bin1,
+                   etag = Etag} = binary_to_term(Cache),
+            Ret = case leo_gateway_rpc_handler:get(Key2, Etag) of
+                      {ok, match} ->
+                          cowboy_req:chunk(Bin1, Req);
+                      {ok, _, Bin2} ->
+                          ok = put_object_into_cache(Key2, Bin2),
+                          cowboy_req:chunk(Bin2, Req)
+                  end,
+
+            case Ret of
                 ok ->
                     handle_loop(Key1, Total, Index1 + 1, Req);
                 {error, Cause} ->
@@ -234,11 +238,7 @@ handle_loop(Key1, Key2, Total, Index, Req) ->
         {ok, #metadata{cnumber = 0}, Bin} ->
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
-                    Cache = term_to_binary(#cache{mtime = leo_date:now(),
-                                                  etag  = crypto:md5(Bin),
-                                                  body  = Bin,
-                                                  content_type = ?HTTP_CTYPE_OCTET_STREAM}),
-                    catch ecache_api:put(Key2, Cache),
+                    ok = put_object_into_cache(Key2, Bin),
                     handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
                     ?error("handle_loop/5", "key:~s, index:~p, cause:~p",
@@ -283,3 +283,16 @@ delete_chunked_objects(Key1, Index1) ->
                    [binary_to_list(Key1), Index1, Cause])
     end,
     delete_chunked_objects(Key1, Index1 - 1).
+
+
+%% @doc Insert an object into the cache
+%% @private
+-spec(put_object_into_cache(binary(), binary()) ->
+             ok).
+put_object_into_cache(Key, Bin) ->
+    Cache = term_to_binary(#cache{mtime = leo_date:now(),
+                                  etag  = leo_hex:raw_binary_to_integer(crypto:md5(Bin)),
+                                  body  = Bin,
+                                  content_type = ?HTTP_CTYPE_OCTET_STREAM}),
+    catch ecache_api:put(Key, Cache),
+    ok.
