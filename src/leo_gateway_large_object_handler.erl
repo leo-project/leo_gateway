@@ -234,6 +234,11 @@ handle_loop(Key1, Key2, Total, Index, Req) ->
         {ok, #metadata{cnumber = 0}, Bin} ->
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
+                    Cache = term_to_binary(#cache{mtime = leo_date:now(),
+                                                  etag  = crypto:md5(Bin),
+                                                  body  = Bin,
+                                                  content_type = ?HTTP_CTYPE_OCTET_STREAM}),
+                    catch ecache_api:put(Key2, Cache),
                     handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
                     ?error("handle_loop/5", "key:~s, index:~p, cause:~p",
