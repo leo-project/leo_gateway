@@ -41,7 +41,7 @@
 -spec(purge(string()) -> ok).
 purge(Path) ->
     BinPath = list_to_binary(Path),
-    _ = ecache_api:delete(BinPath),
+    _ = leo_cache_api:delete(BinPath),
     ok.
 
 %% @doc Get node status (gateway).

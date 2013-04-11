@@ -81,7 +81,7 @@ handle(?HTTP_GET, Req, Key, #req_params{range_header = RangeHeader,
 handle(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
                                                      has_inner_cache = true,
                                                      handler = Handler} = Params) ->
-    case ecache_api:get(Key) of
+    case leo_cache_api:get(Key) of
         not_found ->
             handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
         {ok, CachedObj0} ->

@@ -29,6 +29,7 @@
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
+-include_lib("leo_cache/include/leo_cache.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -91,18 +92,23 @@ start(#http_options{handler                = Handler,
 -spec(start(atom(), #http_options{}) ->
              ok).
 start(Sup, Options) ->
-    %% launch ECache/DCerl
-    NumOfECacheWorkers    = Options#http_options.cache_workers,
+    %% launch LeoCache
+    NumOfCacheWorkers     = Options#http_options.cache_workers,
     CacheRAMCapacity      = Options#http_options.cache_ram_capacity,
     CacheDiscCapacity     = Options#http_options.cache_disc_capacity,
     CacheDiscThresholdLen = Options#http_options.cache_disc_threshold_len,
     CacheDiscDirData      = Options#http_options.cache_disc_dir_data,
     CacheDiscDirJournal   = Options#http_options.cache_disc_dir_journal,
-    ChildSpec0 = {ecache_sup,
-                  {ecache_sup, start_link, [NumOfECacheWorkers, CacheRAMCapacity, CacheDiscCapacity,
-                                            CacheDiscThresholdLen, CacheDiscDirData, CacheDiscDirJournal]},
-                  permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [ecache_sup]},
-    {ok, _} = supervisor:start_child(Sup, ChildSpec0),
+    leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
+                         {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
+                         {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
+                         {?PROP_DISC_CACHE_NAME,          ?DEF_PROP_DISC_CACHE},
+                         {?PROP_DISC_CACHE_WORKERS,       NumOfCacheWorkers},
+                         {?PROP_DISC_CACHE_SIZE,          CacheDiscCapacity},
+                         {?PROP_DISC_CACHE_THRESHOLD_LEN, CacheDiscThresholdLen},
+                         {?PROP_DISC_CACHE_DATA_DIR,      CacheDiscDirData},
+                         {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
+                        ]),
 
     %% launch Cowboy
     ChildSpec1 = {cowboy_sup,
@@ -126,7 +132,7 @@ onrequest(#cache_condition{expire = Expire}, FunGenKey) ->
 
 onrequest_1(?HTTP_GET, Req, Expire, FunGenKey) ->
     Key = FunGenKey(Req),
-    Ret = ecache_api:get(Key),
+    Ret = leo_cache_api:get(Key),
     onrequest_2(Req, Expire, Key, Ret);
 onrequest_1(_, Req,_,_) ->
     Req.
@@ -144,7 +150,7 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
 
     case (Diff > Expire) of
         true ->
-            _ = ecache_api:delete(Key),
+            _ = leo_cache_api:delete(Key),
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
@@ -193,7 +199,7 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                                            etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
                                            content_type = ?http_content_type(Header1),
                                            body         = Body}),
-                            _ = ecache_api:put(Key, Bin),
+                            _ = leo_cache_api:put(Key, Bin),
 
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
                             Header3 = [{?HTTP_HEAD_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
@@ -227,7 +233,7 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
                                                 mtime = Meta#metadata.timestamp,
                                                 content_type = Mime,
                                                 body = RespObject}),
-                    ecache_api:put(Key, Val);
+                    leo_cache_api:put(Key, Val);
                 false ->
                     void
             end,
@@ -281,7 +287,7 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
                                         content_type = Mime,
                                         body = Body}),
 
-            _ = ecache_api:put(Key, Val),
+            _ = leo_cache_api:put(Key, Val),
 
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
@@ -351,7 +357,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
                                                  mtime = leo_date:now(),
                                                  content_type = Mime,
                                                  body = Bin}),
-                    _ = ecache_api:put(Key, Val);
+                    _ = leo_cache_api:put(Key, Val);
                 false -> void
             end,
 
