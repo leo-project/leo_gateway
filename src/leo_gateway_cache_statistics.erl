@@ -30,7 +30,7 @@
 -behaviour(leo_statistics_behaviour).
 
 -include_lib("leo_statistics/include/leo_statistics.hrl").
--include_lib("ecache/include/ecache.hrl").
+-include_lib("leo_cache/include/leo_cache.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_link/1]).
@@ -70,15 +70,15 @@ init() ->
 -spec(handle_call({sync, ?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M}) ->
              ok).
 handle_call({sync, ?STAT_INTERVAL_1M}) ->
-    Stats = case catch ecache_api:stats() of
+    Stats = case catch leo_cache_api:stats() of
                 {ok, Value} -> Value;
                 {_, _Cause} -> #stats{}
             end,
 
-    #stats{gets    = NumOfRead,
+    #stats{get     = NumOfRead,
            hits    = HitCount,
            records = NumOfObjects,
-           total_cache_used = TotalOfSize0} = Stats,
+           size    = TotalOfSize0} = Stats,
     TotalOfSize1 = erlang:round(TotalOfSize0 / (1024*1024)),
 
     catch snmp_generic:variable_set(?SNMP_CACHE_HIT_COUNT,  HitCount),

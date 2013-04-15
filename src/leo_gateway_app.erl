@@ -148,6 +148,11 @@ after_process_0({ok, _Pid} = Res) ->
     ok = leo_s3_libs:start(slave, [{'provider', ManagerNodes1}]),
     _ = leo_s3_endpoint:get_endpoints(),
 
+    %% Launch http-handler(s)
+    {ok, HttpOptions} = get_options(),
+    Handler = HttpOptions#http_options.handler,
+    ok = Handler:start(leo_gateway_sup, HttpOptions),
+
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);
 
@@ -195,11 +200,6 @@ after_process_1(SystemConf, Members) ->
                            {d, SystemConf#system_conf.d},
                            {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
     ok = leo_membership:set_proc_auditor(leo_gateway_api),
-
-    %% Launch http-handler(s)
-    {ok, HttpOptions} = get_options(),
-    Handler = HttpOptions#http_options.handler,
-    ok = Handler:start(leo_gateway_sup, HttpOptions),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
@@ -298,24 +298,24 @@ log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
 get_options() ->
     %% Retrieve http-related properties:
     HttpProp = ?env_http_properties(),
-    HttpHandler          = leo_misc:get_value('handler',          HttpProp, 's3'),
-    Port                 = leo_misc:get_value('port',             HttpProp, 8080),
-    SSLPort              = leo_misc:get_value('ssl_port',         HttpProp, 8443),
-    SSLCertFile          = leo_misc:get_value('ssl_certfile',     HttpProp, "./server_cert.pem"),
-    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',      HttpProp, "./server_key.pem"),
-    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors', HttpProp,   32),
+    HttpHandler          = leo_misc:get_value('handler',          HttpProp, ?DEF_HTTTP_HANDLER),
+    Port                 = leo_misc:get_value('port',             HttpProp, ?DEF_HTTP_PORT),
+    SSLPort              = leo_misc:get_value('ssl_port',         HttpProp, ?DEF_HTTP_SSL_PORT),
+    SSLCertFile          = leo_misc:get_value('ssl_certfile',     HttpProp, ?DEF_HTTP_SSL_C_FILE),
+    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',      HttpProp, ?DEF_HTTP_SSL_K_FILE),
+    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors', HttpProp, ?DEF_HTTP_NUM_OF_ACCEPTORS),
 
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
-    UserHttpCache         = leo_misc:get_value('http_cache',               CacheProp, false),
-    CacheWorkers          = leo_misc:get_value('cache_workers',            CacheProp, 64),
-    CacheRAMCapacity      = leo_misc:get_value('cache_ram_capacity',       CacheProp, 64000000),  %% about 64MB
-    CacheDiscCapacity     = leo_misc:get_value('cache_disc_capacity',      CacheProp, 64000000),  %% about 64MB
-    CacheDiscThresholdLen = leo_misc:get_value('cache_disc_threshold_len', CacheProp, 1048576),   %% 1MB
-    CacheDiscDirData      = leo_misc:get_value('cache_disc_dir_data',      CacheProp, "./cache/data"),
-    CacheDiscDirJournal   = leo_misc:get_value('cache_disc_dir_journal',   CacheProp, "./cache/journal"),
-    CacheExpire           = leo_misc:get_value('cache_expire',             CacheProp, 300),       %% 300sec
-    CacheMaxContentLen    = leo_misc:get_value('cache_max_content_len',    CacheProp, 1000000),   %% about 1MB
+    UserHttpCache         = leo_misc:get_value('http_cache',               CacheProp, ?DEF_HTTP_CACHE),
+    CacheWorkers          = leo_misc:get_value('cache_workers',            CacheProp, ?DEF_CACHE_WORKERS),
+    CacheRAMCapacity      = leo_misc:get_value('cache_ram_capacity',       CacheProp, ?DEF_CACHE_RAM_CAPACITY),
+    CacheDiscCapacity     = leo_misc:get_value('cache_disc_capacity',      CacheProp, ?DEF_CACHE_DISC_CAPACITY),
+    CacheDiscThresholdLen = leo_misc:get_value('cache_disc_threshold_len', CacheProp, ?DEF_CACHE_DISC_THRESHOLD_LEN),
+    CacheDiscDirData      = leo_misc:get_value('cache_disc_dir_data',      CacheProp, ?DEF_CACHE_DISC_DIR_DATA),
+    CacheDiscDirJournal   = leo_misc:get_value('cache_disc_dir_journal',   CacheProp, ?DEF_CACHE_DISC_DIR_JOURNAL),
+    CacheExpire           = leo_misc:get_value('cache_expire',             CacheProp, ?DEF_CACHE_EXPIRE),
+    CacheMaxContentLen    = leo_misc:get_value('cache_max_content_len',    CacheProp, ?DEF_CACHE_MAX_CONTENT_LEN),
     CachableContentTypes  = leo_misc:get_value('cachable_content_type',    CacheProp, []),
     CachablePathPatterns  = leo_misc:get_value('cachable_path_pattern',    CacheProp, []),
 
@@ -338,10 +338,10 @@ get_options() ->
 
     %% Retrieve large-object-related properties:
     LargeObjectProp = ?env_large_object_properties(),
-    MaxChunkedObjs       = leo_misc:get_value('max_chunked_objs',  LargeObjectProp, [1000]),      %% 1000
-    MaxObjLen            = leo_misc:get_value('max_len_for_obj',   LargeObjectProp, [524288000]), %% 500.0MB
-    ChunkedObjLen        = leo_misc:get_value('chunked_obj_len',   LargeObjectProp, [5242880]),   %%   5.0MB
-    ThresholdObjLen      = leo_misc:get_value('threshold_obj_len', LargeObjectProp, [5767168]),   %%   5.5MB
+    MaxChunkedObjs  = leo_misc:get_value('max_chunked_objs',  LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
+    MaxObjLen       = leo_misc:get_value('max_len_for_obj',   LargeObjectProp, ?DEF_LOBJ_MAX_LEN_FOR_OBJ),
+    ChunkedObjLen   = leo_misc:get_value('chunked_obj_len',   LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    ThresholdObjLen = leo_misc:get_value('threshold_obj_len', LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OBJ_LEN),
 
     %% Retrieve timeout-values
     lists:foreach(fun({K, T}) ->

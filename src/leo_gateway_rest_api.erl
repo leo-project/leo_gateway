@@ -160,14 +160,14 @@ range_object(Req,_Key,_Params) ->
 %% @doc Create a key
 %% @private
 gen_key(Req) ->
-    {Path0, _} = cowboy_req:path(Req),
-    Path2 = case Path0 of
-                << "/", Path1/binary >> ->
-                    Path1;
+    {Path1, _} = cowboy_req:path(Req),
+    Path3 = case Path1 of
+                << "/", Path2/binary >> ->
+                    Path2;
                 _ ->
-                    Path0
+                    Path1
             end,
-    cowboy_http:urldecode(Path2).
+    cowboy_http:urldecode(Path3).
 
 
 %% @doc Hande an http-request
@@ -196,19 +196,17 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
             ?reply_bad_request([?SERVER_HEADER], Req)
     end.
 
-handle_2(Req0, HTTPMethod0, Path, Params, State) ->
-    HTTPMethod1 = case HTTPMethod0 of
-                      ?HTTP_POST -> ?HTTP_PUT;
-                      Other      -> Other
-                  end,
 
-    case catch leo_gateway_http_req_handler:handle(HTTPMethod1, Req0, Path, Params) of
+handle_2(Req, ?HTTP_POST, Path, Params, State) ->
+    handle_2(Req, ?HTTP_PUT, Path, Params, State);
+handle_2(Req1, HTTPMethod, Path, Params, State) ->
+    case catch leo_gateway_http_req_handler:handle(HTTPMethod, Req1, Path, Params) of
         {'EXIT', Cause} ->
             ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req1} = ?reply_internal_error([?SERVER_HEADER], Req0),
-            {ok, Req1, State};
-        {ok, Req1} ->
-            Req2 = cowboy_req:compact(Req1),
-            {ok, Req2, State}
+            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Req1),
+            {ok, Req2, State};
+        {ok, Req2} ->
+            Req3 = cowboy_req:compact(Req2),
+            {ok, Req3, State}
     end.
 

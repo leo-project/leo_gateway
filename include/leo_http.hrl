@@ -99,25 +99,54 @@
                                      _       -> ?HTTP_HANDLER_S3
                                  end).
 
-%% Macros
--define(reply_ok(_H, _R),              cowboy_req:reply(?HTTP_ST_OK,              _H, _R)). %% 200
--define(reply_no_content(_H, _R),      cowboy_req:reply(?HTTP_ST_NO_CONTENT,      _H, _R)). %% 204
--define(reply_partial_content(_H, _R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H, _R)). %% 206
--define(reply_not_modified(_H, _R),    cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,    _H, _R)). %% 304
--define(reply_bad_request(_H, _R),     cowboy_req:reply(?HTTP_ST_BAD_REQ,         _H, _R)). %% 400
--define(reply_forbidden(_H, _R),       cowboy_req:reply(?HTTP_ST_FORBIDDEN,       _H, _R)). %% 403
--define(reply_not_found(_H, _R),       cowboy_req:reply(?HTTP_ST_NOT_FOUND,       _H, _R)). %% 404
--define(reply_bad_range(_H, _R),       cowboy_req:reply(?HTTP_ST_BAD_RANGE,       _H, _R)). %% 416
--define(reply_internal_error(_H, _R),  cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR,  _H, _R)). %% 500
--define(reply_timeout(_H, _R),         cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H, _R)). %% 504
+%% Default values
+-define(DEF_HTTTP_HANDLER,            's3').
+-define(DEF_HTTP_PORT,                8080).
+-define(DEF_HTTP_SSL_PORT,            8443).
+-define(DEF_HTTP_SSL_C_FILE,          "./server_cert.pem").
+-define(DEF_HTTP_SSL_K_FILE,          "./server_key.pem").
+-define(DEF_HTTP_NUM_OF_ACCEPTORS,    32).
+-define(DEF_HTTP_CACHE,               false).
+-define(DEF_CACHE_WORKERS,            64).
+-define(DEF_CACHE_RAM_CAPACITY,       64000000).
+-define(DEF_CACHE_DISC_CAPACITY,      64000000).
+-define(DEF_CACHE_DISC_THRESHOLD_LEN, 1000000).
+-define(DEF_CACHE_DISC_DIR_DATA,      "./cache/data").
+-define(DEF_CACHE_DISC_DIR_JOURNAL,   "./cache/journal").
+-define(DEF_CACHE_EXPIRE,             300).
+-define(DEF_CACHE_MAX_CONTENT_LEN,    1000000).
+-define(DEF_LOBJ_MAX_CHUNKED_OBJS,    1000).
+-define(DEF_LOBJ_MAX_LEN_FOR_OBJ,     524288000).
+-define(DEF_LOBJ_CHUNK_OBJ_LEN,       5242880).
+-define(DEF_LOBJ_THRESHOLD_OBJ_LEN,   5767168).
 
--define(http_header(_R, _K), case cowboy_req:header(_K, _R) of
-                                 {undefined, _} -> ?BIN_EMPTY;
-                                 {Bin, _}       -> Bin
-                             end).
--define(http_etag(_E),       lists:append(["\"", leo_hex:integer_to_hex(_E, 32), "\""])).
--define(http_date(_D),       leo_http:rfc1123_date(_D)).
--define(httP_cache_ctl(_C),  lists:append(["max-age=",integer_to_list(_C)])).
+
+%% Macros
+-define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
+-define(reply_ok(_H,_B,_R),              cowboy_req:reply(?HTTP_ST_OK,              _H,_B,_R)). %% 200 with body
+-define(reply_no_content(_H,_R),         cowboy_req:reply(?HTTP_ST_NO_CONTENT,      _H,_R)).    %% 204
+-define(reply_partial_content(_H,_R),    cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_R)).    %% 206
+-define(reply_partial_content(_H,_B,_R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_B,_R)). %% 206 with body
+-define(reply_not_modified(_H,_R),       cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,    _H,_R)). %% 304
+-define(reply_bad_request(_H,_R),        cowboy_req:reply(?HTTP_ST_BAD_REQ,         _H,_R)). %% 400
+-define(reply_forbidden(_H,_R),          cowboy_req:reply(?HTTP_ST_FORBIDDEN,       _H,_R)). %% 403
+-define(reply_not_found(_H,_R),          cowboy_req:reply(?HTTP_ST_NOT_FOUND,       _H,_R)). %% 404
+-define(reply_bad_range(_H,_R),          cowboy_req:reply(?HTTP_ST_BAD_RANGE,       _H,_R)). %% 416
+-define(reply_internal_error(_H,_R),     cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR,  _H,_R)). %% 500
+-define(reply_timeout(_H,_R),            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H,_R)). %% 504
+
+
+-define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
+                                   {undefined, _} -> ?BIN_EMPTY;
+                                   {Bin, _}       -> Bin
+                               end).
+-define(http_etag(_E),         lists:append(["\"", leo_hex:integer_to_hex(_E,32), "\""])).
+-define(http_date(_D),         leo_http:rfc1123_date(_D)).
+-define(httP_cache_ctl(_C),    lists:append(["max-age=",integer_to_list(_C)])).
+-define(http_content_type(_H), case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE,1,_H) of
+                                  false     -> ?HTTP_CTYPE_OCTET_STREAM;
+                                   {_, Val} -> Val
+                               end).
 
 
 %% S3 Response XML

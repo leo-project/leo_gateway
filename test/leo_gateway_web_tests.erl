@@ -164,22 +164,22 @@ setup(InitFun, TermFun) ->
     ok = file:write_file("./server_cert.pem", ?SSL_CERT_DATA),
     ok = file:write_file("./server_key.pem",  ?SSL_KEY_DATA),
 
+    leo_cache_api:start(),
+
     InitFun(),
     [TermFun, Node0, Node1].
 
 setup_s3_api() ->
-    application:start(ecache),
     application:start(crypto),
     application:start(ranch),
     application:start(cowboy),
 
     {ok, Options} = leo_gateway_app:get_options(),
     InitFun = fun() -> leo_gateway_http_commons:start(Options) end,
-    TermFun = fun() -> leo_gateway_http_commons:stop() end,
+    TermFun = fun() -> leo_gateway_s3_api:stop() end,
     setup(InitFun, TermFun).
 
 setup_rest_api() ->
-    application:start(ecache),
     application:start(crypto),
     application:start(ranch),
     application:start(cowboy),
@@ -187,7 +187,7 @@ setup_rest_api() ->
     {ok, Options} = leo_gateway_app:get_options(),
     InitFun = fun() -> leo_gateway_http_commons:start(
                          Options#http_options{handler = leo_gateway_rest_api}) end,
-    TermFun = fun() -> leo_gateway_http_commons:stop() end,
+    TermFun = fun() -> leo_gateway_rest_api:stop() end,
     setup(InitFun, TermFun).
 
 teardown([TermFun, Node0, Node1]) ->
@@ -202,10 +202,10 @@ teardown([TermFun, Node0, Node1]) ->
     cowboy:stop_listener(leo_gateway_s3_api),
     cowboy:stop_listener(leo_gateway_s3_api_ssl),
 
-    application:stop(ecache),
     application:stop(crypto),
     application:stop(ranch),
     application:stop(cowboy),
+    leo_cache_api:stop(),
     timer:sleep(250),
     ok.
 

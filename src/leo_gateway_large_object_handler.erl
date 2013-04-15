@@ -25,6 +25,7 @@
 
 -behaviour(gen_server).
 
+-include("leo_http.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -32,7 +33,7 @@
 
 %% Application callbacks
 -export([start_link/1, stop/1]).
--export([put/2, put/3, get/3, rollback/2, result/1]).
+-export([put/4, get/3, rollback/2, result/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -41,16 +42,15 @@
          code_change/3]).
 
 -undef(DEF_SEPARATOR).
+-undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
 -undef(DEF_TIMEOUT).
 -define(DEF_TIMEOUT, 30000).
 
--record(state, {key = <<>>       :: binary(),
-                chunk_bin = <<>> :: binary(),
-                chunk_num = 0    :: pos_integer(),
-                md5_context      :: binary(),
-                errors = []      :: list()
+-record(state, {key = <<>>  :: binary(),
+                md5_context :: binary(),
+                errors = [] :: list()
                }).
 
 
@@ -73,13 +73,10 @@ stop(Pid) ->
 
 %% @doc Insert a chunked object into the storage cluster
 %%
--spec(put(pid(), integer(), binary()) ->
+-spec(put(pid(), pos_integer(), pos_integer(), binary()) ->
              ok | {error, any()}).
-put(Pid, ChunkSize, Bin) ->
-    gen_server:call(Pid, {put, ChunkSize, Bin}, ?DEF_TIMEOUT).
-
-put(Pid, done) ->
-    gen_server:call(Pid, {put, done}, ?DEF_TIMEOUT).
+put(Pid, Index, Size, Bin) ->
+    gen_server:call(Pid, {put, Index, Size, Bin}, ?DEF_TIMEOUT).
 
 
 %% @doc Retrieve a chunked object from the storage cluster
@@ -140,34 +137,21 @@ handle_call(result, _From, #state{md5_context = Context,
     {reply, Reply, State};
 
 
-handle_call({put, ChunkSize, Bin0}, _From, State) ->
-    {Ret, NewState} = chunk_and_put(ChunkSize, Bin0, State),
+handle_call({put, Index, Size, Bin}, _From, #state{key = Key,
+                                                   md5_context = Context,
+                                                   errors = Errors} = State) ->
+    IndexBin = list_to_binary(integer_to_list(Index)),
+    {Ret, NewState} =
+        case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+                                         Bin, Size, Index) of
+            {ok, _ETag} ->
+                NewContext = crypto:md5_update(Context, Bin),
+                {ok, State#state{md5_context = NewContext}};
+            {error, Cause} ->
+                ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+                {{error, Cause}, State#state{errors = [{Index, Cause}|Errors]}}
+        end,
     {reply, Ret, NewState};
-
-
-handle_call({put, done}, _From, #state{chunk_bin = <<>>,
-                                       chunk_num = ChunkNum0} = State) ->
-    {reply, {ok, ChunkNum0}, State};
-handle_call({put, done}, _From, #state{key = Key,
-                                       chunk_bin = Bin,
-                                       chunk_num = ChunkNum0,
-                                       md5_context = Context,
-                                       errors = Errors} = State) ->
-    Size = byte_size(Bin),
-    ChunkNum1 = ChunkNum0 + 1,
-    IndexBin = list_to_binary(integer_to_list(ChunkNum1)),
-
-    case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-                                     Bin, Size, ChunkNum1) of
-        {ok, _ETag} ->
-            NewContext = crypto:md5_update(Context, Bin),
-            {reply, {ok, ChunkNum1}, State#state{chunk_num = ChunkNum1,
-                                                 md5_context = NewContext,
-                                                 errors = Errors}};
-        {error, Cause} ->
-            ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-            {reply, {error, Cause}, State#state{errors = [{ChunkNum1, Cause}|Errors]}}
-    end;
 
 
 handle_call({rollback, TotalOfChunkedObjs}, _From, #state{key = Key} = State) ->
@@ -206,45 +190,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% INNTERNAL FUNCTION
 %%====================================================================
-%% @doc Put chunked objects
-%% @private
-chunk_and_put(ChunkSize, Bin0, #state{chunk_bin = ChunkBin,
-                                      chunk_num = ChunkNum0} = State) ->
-    Bin1  = << ChunkBin/binary, Bin0/binary >>,
-    Size1 = byte_size(Bin1),
-
-    Ret = case (ChunkSize =< Size1) of
-              true ->
-                  <<Acc1:ChunkSize/binary, Acc2/binary>> = Bin1,
-                  {true, {ChunkNum0 + 1, Acc1, Acc2}};
-              false ->
-                  {false, {ChunkNum0, <<>>, Bin1}}
-          end,
-    chunk_and_put(Ret, State).
-
-chunk_and_put({true, {ChunkNum, Bin, Acc}}, #state{key = Key,
-                                                   md5_context = Context,
-                                                   errors = Errors} = State) ->
-    Size = byte_size(Bin),
-    IndexBin = list_to_binary(integer_to_list(ChunkNum)),
-
-    case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-                                     Bin, Size, ChunkNum) of
-        {ok, _ETag} ->
-            NewContext = crypto:md5_update(Context, Bin),
-            {ok, State#state{chunk_bin = Acc,
-                             chunk_num = ChunkNum,
-                             md5_context = NewContext,
-                             errors = Errors}};
-        {error, Cause} ->
-            ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-            {{error, Cause}, State#state{errors = [{ChunkNum, Cause}|Errors]}}
-    end;
-
-chunk_and_put({false, {_, _, Acc}}, State) ->
-    {ok, State#state{chunk_bin = Acc}}.
-
-
 %% @doc Retrieve chunked objects
 %% @private
 -spec(handle_loop(binary(), integer(), any()) ->
@@ -257,37 +202,40 @@ handle_loop(Key, Total, Req) ->
 handle_loop(_Key, Total, Total, Req) ->
     {ok, Req};
 
-handle_loop(Key0, Total, Index, Req) ->
-    IndexBin = list_to_binary(integer_to_list(Index + 1)),
-    Key1 = << Key0/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
-    case leo_gateway_rpc_handler:get(Key1) of
+handle_loop(Key1, Total, Index, Req) ->
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
+    Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+
+    case leo_gateway_rpc_handler:get(Key2) of
         %% only children
         {ok, #metadata{cnumber = 0}, Bin} ->
+
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
-                    handle_loop(Key0, Total, Index + 1, Req);
+
+                    handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key0), Index, Cause]),
+                           [binary_to_list(Key1), Index, Cause]),
                     {error, Cause}
             end;
 
         %% both children and grand-children
         {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
-            case handle_loop(Key1, TotalChunkedObjs, Req) of
+            case handle_loop(Key2, TotalChunkedObjs, Req) of
                 {ok, Req} ->
                     %% children
-                    handle_loop(Key0, Total, Index + 1, Req);
+                    handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key0), Index, Cause]),
+                           [binary_to_list(Key1), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
             ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key0), Index, Cause]),
+                   [binary_to_list(Key1), Index, Cause]),
             {error, Cause}
     end.
 
@@ -298,15 +246,16 @@ handle_loop(Key0, Total, Index, Req) ->
              ok).
 delete_chunked_objects(_, 0) ->
     ok;
-delete_chunked_objects(Key0, Index) ->
-    IndexBin = list_to_binary(integer_to_list(Index)),
-    Key1 = << Key0/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+delete_chunked_objects(Key1, Index1) ->
+    Index2 = list_to_binary(integer_to_list(Index1)),
+    Key2   = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
 
-    case leo_gateway_rpc_handler:delete(Key1) of
+    case leo_gateway_rpc_handler:delete(Key2) of
         ok ->
             void;
         {error, Cause} ->
             ?error("delete_chunked_objects/2", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key0), Index, Cause])
+                   [binary_to_list(Key1), Index1, Cause])
     end,
-    delete_chunked_objects(Key0, Index - 1).
+    delete_chunked_objects(Key1, Index1 - 1).
+

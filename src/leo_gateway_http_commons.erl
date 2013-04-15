@@ -29,11 +29,14 @@
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
+-include_lib("leo_cache/include/leo_cache.hrl").
+-undef(error).
+-undef(warn).
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start/1, start/2, stop/0]).
+-export([start/1, start/2]).
 -export([onrequest/2, onresponse/2]).
 -export([get_object/3, get_object_with_cache/4,
          put_object/3, put_small_object/3, put_large_object/4,
@@ -91,18 +94,23 @@ start(#http_options{handler                = Handler,
 -spec(start(atom(), #http_options{}) ->
              ok).
 start(Sup, Options) ->
-    %% launch ECache/DCerl
-    NumOfECacheWorkers    = Options#http_options.cache_workers,
+    %% launch LeoCache
+    NumOfCacheWorkers     = Options#http_options.cache_workers,
     CacheRAMCapacity      = Options#http_options.cache_ram_capacity,
     CacheDiscCapacity     = Options#http_options.cache_disc_capacity,
     CacheDiscThresholdLen = Options#http_options.cache_disc_threshold_len,
     CacheDiscDirData      = Options#http_options.cache_disc_dir_data,
     CacheDiscDirJournal   = Options#http_options.cache_disc_dir_journal,
-    ChildSpec0 = {ecache_sup,
-                  {ecache_sup, start_link, [NumOfECacheWorkers, CacheRAMCapacity, CacheDiscCapacity,
-                                            CacheDiscThresholdLen, CacheDiscDirData, CacheDiscDirJournal]},
-                  permanent, ?SHUTDOWN_WAITING_TIME, supervisor, [ecache_sup]},
-    {ok, _} = supervisor:start_child(Sup, ChildSpec0),
+    leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
+                         {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
+                         {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
+                         {?PROP_DISC_CACHE_NAME,          ?DEF_PROP_DISC_CACHE},
+                         {?PROP_DISC_CACHE_WORKERS,       NumOfCacheWorkers},
+                         {?PROP_DISC_CACHE_SIZE,          CacheDiscCapacity},
+                         {?PROP_DISC_CACHE_THRESHOLD_LEN, CacheDiscThresholdLen},
+                         {?PROP_DISC_CACHE_DATA_DIR,      CacheDiscDirData},
+                         {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
+                        ]),
 
     %% launch Cowboy
     ChildSpec1 = {cowboy_sup,
@@ -112,16 +120,6 @@ start(Sup, Options) ->
 
     %% launch http-handler(s)
     start(Options).
-
-
-%% @doc Stop proc(s)
-%%
--spec(stop() ->
-             ok).
-stop() ->
-    {ok, HttpOption} = leo_gateway_app:get_options(),
-    Handler = HttpOption#http_options.handler,
-    Handler:stop().
 
 
 %% @doc Handle request
@@ -136,7 +134,7 @@ onrequest(#cache_condition{expire = Expire}, FunGenKey) ->
 
 onrequest_1(?HTTP_GET, Req, Expire, FunGenKey) ->
     Key = FunGenKey(Req),
-    Ret = ecache_api:get(Key),
+    Ret = leo_cache_api:get(Key),
     onrequest_2(Req, Expire, Key, Ret);
 onrequest_1(_, Req,_,_) ->
     Req.
@@ -154,7 +152,7 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
 
     case (Diff > Expire) of
         true ->
-            _ = ecache_api:delete(Key),
+            _ = leo_cache_api:delete(Key),
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
@@ -175,9 +173,8 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
                     {ok, Req2} = ?reply_not_modified(Header, Req),
                     Req2;
                 _ ->
-                    Req2 = cowboy_req:set_resp_body(Body, Req),
-                    {ok, Req3} = ?reply_ok([?SERVER_HEADER], Req2),
-                    Req3
+                    {ok, Req2} = ?reply_ok([?SERVER_HEADER], Body, Req),
+                    Req2
             end
     end.
 
@@ -199,19 +196,12 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                                          fun is_cachable_req3/4]) of
                         true ->
                             Now = leo_date:now(),
-                            ContentType = case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE, 1, Header1) of
-                                              false ->
-                                                  ?HTTP_CTYPE_OCTET_STREAM;
-                                              {_, Val} ->
-                                                  Val
-                                          end,
-
                             Bin = term_to_binary(
                                     #cache{mtime        = Now,
                                            etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
-                                           content_type = ContentType,
+                                           content_type = ?http_content_type(Header1),
                                            body         = Body}),
-                            _ = ecache_api:put(Key, Bin),
+                            _ = leo_cache_api:put(Key, Bin),
 
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
                             Header3 = [{?HTTP_HEAD_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
@@ -245,17 +235,16 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
                                                 mtime = Meta#metadata.timestamp,
                                                 content_type = Mime,
                                                 body = RespObject}),
-                    ecache_api:put(Key, Val);
+                    leo_cache_api:put(Key, Val);
                 false ->
                     void
             end,
 
-            Req2 = cowboy_req:set_resp_body(RespObject, Req),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
                       {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
-            ?reply_ok(Header, Req2);
+            ?reply_ok(Header, RespObject, Req);
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
@@ -287,13 +276,12 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
 get_object_with_cache(Req, Key, CacheObj,_Params) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         {ok, match} ->
-            Req2 = cowboy_req:set_resp_body(CacheObj#cache.body, Req),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                       {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
-            ?reply_ok(Header, Req2);
+            ?reply_ok(Header, CacheObj#cache.body, Req);
         {ok, Meta, Body} ->
             Mime = leo_mime:guess_mime(Key),
             Val = term_to_binary(#cache{etag = Meta#metadata.checksum,
@@ -301,14 +289,13 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
                                         content_type = Mime,
                                         body = Body}),
 
-            _ = ecache_api:put(Key, Val),
+            _ = leo_cache_api:put(Key, Val),
 
-            Req2 = cowboy_req:set_resp_body(Body, Req),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
                       {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
-            ?reply_ok(Header, Req2);
+            ?reply_ok(Header, Body, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -372,7 +359,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
                                                  mtime = leo_date:now(),
                                                  content_type = Mime,
                                                  body = Bin}),
-                    _ = ecache_api:put(Key, Val);
+                    _ = leo_cache_api:put(Key, Val);
                 false -> void
             end,
 
@@ -393,8 +380,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
 
-    Ret2 = case catch put_large_object(
-                        cowboy_req:stream_body(Req), Key, Size, ChunkedSize, 0, 1, Pid) of
+    Ret2 = case catch put_large_object(cowboy_req:stream_body(Req, ChunkedSize),
+                                       Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
                    {error, Cause};
                Ret1 ->
@@ -403,45 +390,39 @@ put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     catch leo_gateway_large_object_handler:stop(Pid),
     Ret2.
 
-put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
+put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
     DataSize = byte_size(Data),
+    catch leo_gateway_large_object_handler:put(Pid, TotalChunks, DataSize, Data),
+    put_large_object(cowboy_req:stream_body(Req, ChunkedSize),
+                     Key, Size, ChunkedSize, TotalSize + DataSize, TotalChunks + 1, Pid);
 
-    catch leo_gateway_large_object_handler:put(Pid, ChunkedSize, Data),
-    put_large_object(cowboy_req:stream_body(Req), Key, Size, ChunkedSize,
-                     TotalSize + DataSize, Counter + 1, Pid);
+put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
+    TotalChunks1 = TotalChunks -1,
+    case catch leo_gateway_large_object_handler:result(Pid) of
+        {ok, Digest0} when Size == TotalSize ->
+            Digest1 = leo_hex:raw_binary_to_integer(Digest0),
 
-put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, Counter, Pid) ->
-    case catch leo_gateway_large_object_handler:put(Pid, done) of
-        {ok, TotalChunks} ->
-            case catch leo_gateway_large_object_handler:result(Pid) of
-                {ok, Digest0} when Size == TotalSize ->
-                    Digest1 = leo_hex:raw_binary_to_integer(Digest0),
-
-                    case leo_gateway_rpc_handler:put(
-                           Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks, Digest1) of
-                        {ok, _ETag} ->
-                            Header = [?SERVER_HEADER,
-                                      {?HTTP_HEAD_ETAG4AWS, ?http_etag(Digest1)}],
-                            ?reply_ok(Header, Req);
-                        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                            ?reply_internal_error([?SERVER_HEADER], Req);
-                        {error, timeout} ->
-                            ?reply_timeout([?SERVER_HEADER], Req)
-                    end;
-                {_, _Cause} ->
-                    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
-                    ?reply_internal_error([?SERVER_HEADER], Req)
+            case leo_gateway_rpc_handler:put(
+                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
+                {ok, _ETag} ->
+                    Header = [?SERVER_HEADER,
+                              {?HTTP_HEAD_ETAG4AWS, ?http_etag(Digest1)}],
+                    ?reply_ok(Header, Req);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    ?reply_internal_error([?SERVER_HEADER], Req);
+                {error, timeout} ->
+                    ?reply_timeout([?SERVER_HEADER], Req)
             end;
-        {error, _Cause} ->
-            ok = leo_gateway_large_object_handler:rollback(Pid, Counter),
+        {_, _Cause} ->
+            ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks1),
             ?reply_internal_error([?SERVER_HEADER], Req)
     end;
 
 
 %% An error occurred while reading the body, connection is gone.
-put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, Counter, Pid) ->
+put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, TotalChunks, Pid) ->
     ?error("put_large_object/7", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-    ok = leo_gateway_large_object_handler:rollback(Pid, Counter).
+    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks).
 
 
 %% @doc DELETE an object
@@ -507,10 +488,9 @@ range_object(Req, Key, #req_params{range_header = RangeHeader}) ->
             case leo_gateway_rpc_handler:get(Key, Start, End) of
                 {ok, _Meta, RespObject} ->
                     Mime = leo_mime:guess_mime(Key),
-                    Req2 = cowboy_req:set_resp_body(RespObject, Req),
                     Header = [?SERVER_HEADER,
                               {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
-                    ?reply_partial_content(Header, Req2);
+                    ?reply_partial_content(Header, RespObject, Req);
                 {error, not_found} ->
                     ?reply_not_found([?SERVER_HEADER], Req);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
