@@ -148,6 +148,11 @@ after_process_0({ok, _Pid} = Res) ->
     ok = leo_s3_libs:start(slave, [{'provider', ManagerNodes1}]),
     _ = leo_s3_endpoint:get_endpoints(),
 
+    %% Launch http-handler(s)
+    {ok, HttpOptions} = get_options(),
+    Handler = HttpOptions#http_options.handler,
+    ok = Handler:start(leo_gateway_sup, HttpOptions),
+
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);
 
@@ -195,11 +200,6 @@ after_process_1(SystemConf, Members) ->
                            {d, SystemConf#system_conf.d},
                            {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
     ok = leo_membership:set_proc_auditor(leo_gateway_api),
-
-    %% Launch http-handler(s)
-    {ok, HttpOptions} = get_options(),
-    Handler = HttpOptions#http_options.handler,
-    ok = Handler:start(leo_gateway_sup, HttpOptions),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
