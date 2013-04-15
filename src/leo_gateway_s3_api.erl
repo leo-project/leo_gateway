@@ -486,9 +486,9 @@ handle_multi_upload_1(false, Req,_Path,_UploadId) ->
 handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
     %% trim spaces
     Acc = fun(#xmlText{value = " ", pos = P}, Acc, S) ->
-              {Acc, P, S};
-          (X, Acc, S) ->
-              {[X|Acc], S}
+                  {Acc, P, S};
+             (X, Acc, S) ->
+                  {[X|Acc], S}
           end,
     {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(Bin), [{space,normalize}, {acc_fun, Acc}]),
     TotalUploadedObjs = length(Content),
