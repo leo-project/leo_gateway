@@ -380,6 +380,10 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
 
+    %% remove a registered object with 'touch-command'
+    %% from the cache
+    _ = leo_cache_api:delete(Key),
+
     Ret2 = case catch put_large_object(cowboy_req:stream_body(ChunkedSize, Req),
                                        Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
