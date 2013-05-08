@@ -380,7 +380,11 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
 
-    Ret2 = case catch put_large_object(cowboy_req:stream_body(Req, ChunkedSize),
+    %% remove a registered object with 'touch-command'
+    %% from the cache
+    _ = leo_cache_api:delete(Key),
+
+    Ret2 = case catch put_large_object(cowboy_req:stream_body(ChunkedSize, Req),
                                        Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
                    {error, Cause};
@@ -393,7 +397,7 @@ put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
 put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
     DataSize = byte_size(Data),
     catch leo_gateway_large_object_handler:put(Pid, TotalChunks, DataSize, Data),
-    put_large_object(cowboy_req:stream_body(Req, ChunkedSize),
+    put_large_object(cowboy_req:stream_body(ChunkedSize, Req),
                      Key, Size, ChunkedSize, TotalSize + DataSize, TotalChunks + 1, Pid);
 
 put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
