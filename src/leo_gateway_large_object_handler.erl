@@ -33,7 +33,7 @@
 
 %% Application callbacks
 -export([start_link/1, stop/1]).
--export([put/4, get/3, rollback/2, result/1]).
+-export([put/4, get/4, rollback/2, result/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -81,10 +81,10 @@ put(Pid, Index, Size, Bin) ->
 
 %% @doc Retrieve a chunked object from the storage cluster
 %%
--spec(get(pid(), integer(), pid()) ->
+-spec(get(pid(), integer(), pid(), any()) ->
              ok | {error, any()}).
-get(Pid, TotalOfChunkedObjs, Req) ->
-    gen_server:call(Pid, {get, TotalOfChunkedObjs, Req}, ?DEF_TIMEOUT).
+get(Pid, TotalOfChunkedObjs, Req, Ref) ->
+    gen_server:call(Pid, {get, TotalOfChunkedObjs, Req, Ref}, ?DEF_TIMEOUT).
 
 
 %% @doc Make a rollback before all operations
@@ -120,8 +120,8 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 
-handle_call({get, TotalOfChunkedObjs, Req}, _From, #state{key = Key} = State) ->
-    Reply = handle_loop(Key, TotalOfChunkedObjs, Req),
+handle_call({get, TotalOfChunkedObjs, Req, Ref}, _From, #state{key = Key} = State) ->
+    Reply = handle_loop(Key, TotalOfChunkedObjs, Req, Ref),
     {reply, Reply, State};
 
 
@@ -192,18 +192,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Retrieve chunked objects
 %% @private
--spec(handle_loop(binary(), integer(), any()) ->
+-spec(handle_loop(binary(), integer(), any(), any()) ->
              {ok, any()}).
-handle_loop(Key, Total, Req) ->
-    handle_loop(Key, Total, 0, Req).
+handle_loop(Key, Total, Req, Ref) ->
+    handle_loop(Key, Total, 0, Req, Ref).
 
--spec(handle_loop(binary(), integer(), integer(), any()) ->
+-spec(handle_loop(binary(), integer(), integer(), any(), any()) ->
              {ok, any()}).
-handle_loop(_Key, Total, Total, Req) ->
+handle_loop(_Key, Total, Total, Req, _Ref) ->
     {ok, Req};
 
-
-handle_loop(Key1, Total, Index, Req) ->
+handle_loop(Key1, Total, Index, Req, Ref) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
@@ -213,7 +212,7 @@ handle_loop(Key1, Total, Index, Req) ->
 
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
-
+                    leo_cache_api:put(Ref, Key1, Bin),
                     handle_loop(Key1, Total, Index + 1, Req);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
@@ -224,10 +223,10 @@ handle_loop(Key1, Total, Index, Req) ->
         %% both children and grand-children
         {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
-            case handle_loop(Key2, TotalChunkedObjs, Req) of
+            case handle_loop(Key2, TotalChunkedObjs, Req, Ref) of
                 {ok, Req} ->
                     %% children
-                    handle_loop(Key1, Total, Index + 1, Req);
+                    handle_loop(Key1, Total, Index + 1, Req, Ref);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key1), Index, Cause]),

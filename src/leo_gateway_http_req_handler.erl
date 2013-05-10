@@ -28,6 +28,7 @@
 -author('Yosuke Hara').
 
 -include("leo_http.hrl").
+-include_lib("leo_dcerl/include/leo_dcerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([handle/4]).
@@ -81,12 +82,27 @@ handle(?HTTP_GET, Req, Key, #req_params{range_header = RangeHeader,
 handle(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
                                                      has_inner_cache = true,
                                                      handler = Handler} = Params) ->
-    case leo_cache_api:get(Key) of
-        not_found ->
+    case leo_cache_api:get_filepath(Key) of
+        {ok, CacheMeta} when CacheMeta#cache_meta.file_path /= "" ->
+            CachedObj = #cache{
+                etag         = CacheMeta#cache_meta.md5,
+                mtime        = CacheMeta#cache_meta.mtime,
+                content_type = CacheMeta#cache_meta.content_type,
+                body         = <<>>,
+                size         = CacheMeta#cache_meta.size,
+                file_path    = CacheMeta#cache_meta.file_path
+            },
+            Handler:get_object_with_cache(Req, Key, CachedObj, Params);
+        {ok, CacheMeta} when CacheMeta#cache_meta.file_path == "" ->
             handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
-        {ok, CachedObj0} ->
-            CachedObj1 = binary_to_term(CachedObj0),
-            Handler:get_object_with_cache(Req, Key, CachedObj1, Params)
+        not_found -> 
+            case leo_cache_api:get(Key) of
+                not_found ->
+                    handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
+                {ok, CachedObj0} ->
+                    CachedObj1 = binary_to_term(CachedObj0),
+                    Handler:get_object_with_cache(Req, Key, CachedObj1, Params)
+            end
     end;
 
 %% @doc GET operation on Object.

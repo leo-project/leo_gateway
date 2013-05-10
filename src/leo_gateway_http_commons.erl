@@ -29,6 +29,7 @@
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
+-include_lib("leo_dcerl/include/leo_dcerl.hrl").
 -include_lib("leo_cache/include/leo_cache.hrl").
 -undef(error).
 -undef(warn).
@@ -247,18 +248,28 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
             ?reply_ok(Header, RespObject, Req);
 
         %% For a chunked object.
-        {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
+        {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
             {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
             {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, [?SERVER_HEADER], Req),
 
-            Ret = leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req2),
+            {ok, Ref} = leo_cache_api:put_begin_tran(Key),
+
+            Ret = leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req2, Ref),
             catch leo_gateway_large_object_handler:stop(Pid),
+
+            Mime = leo_mime:guess_mime(Key),
+            Meta = #cache_meta{
+                    md5          = Meta#metadata.checksum,
+                    mtime        = Meta#metadata.timestamp,
+                    content_type = Mime},
 
             case Ret of
                 {ok, Req3} ->
+                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, true),
                     {ok, Req3};
                 {error, Cause} ->
-                    ?error("exec1/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
+                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, false),
+                    ?error("get_object/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Req)
             end;
         {error, not_found} ->
@@ -275,27 +286,59 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
              {ok, any()}).
 get_object_with_cache(Req, Key, CacheObj,_Params) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
-        {ok, match} ->
+        {ok, match} when CacheObj#cache.file_path /= "" ->
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
+                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
+                      {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
+                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
+            BodyFunc = fun(Socket, _Transport) ->
+                    file:sendfile(CacheObj#cache.file_path, Socket)
+            end,
+            cowboy_req:reply(?HTTP_ST_OK, Header, BodyFunc, Req);
+        {ok, match} when CacheObj#cache.file_path == "" ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                       {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
             ?reply_ok(Header, CacheObj#cache.body, Req);
-        {ok, Meta, Body} ->
+        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
-            Val = term_to_binary(#cache{etag = Meta#metadata.checksum,
+            Val = term_to_binary(#cache{etag  = Meta#metadata.checksum,
                                         mtime = Meta#metadata.timestamp,
                                         content_type = Mime,
-                                        body = Body}),
-
-            _ = leo_cache_api:put(Key, Val),
-
+                                        body = RespObject}),
+            leo_cache_api:put(Key, Val),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
                       {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
-            ?reply_ok(Header, Body, Req);
+            ?reply_ok(Header, RespObject, Req);
+        {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
+            {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
+            {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, [?SERVER_HEADER], Req),
+
+            {ok, Ref} = leo_cache_api:put_begin_tran(Key),
+
+            Ret = leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req2, Ref),
+            catch leo_gateway_large_object_handler:stop(Pid),
+
+            Mime = leo_mime:guess_mime(Key),
+            Meta = #cache_meta{
+                    md5          = Meta#metadata.checksum,
+                    mtime        = Meta#metadata.timestamp,
+                    content_type = Mime},
+
+            case Ret of
+                {ok, Req3} ->
+                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, true),
+                    {ok, Req3};
+                {error, Cause} ->
+                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, false),
+                    ?error("get_object_with_cache/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
+                    ?reply_internal_error([?SERVER_HEADER], Req)
+            end;
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->

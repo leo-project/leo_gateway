@@ -254,7 +254,9 @@
           etag         = 0    :: pos_integer(), %% actual value is checksum
           mtime        = 0    :: pos_integer(), %% gregorian_seconds
           content_type = []   :: string(),      %% from a Content-Type header
-          body         = <<>> :: binary()       %% body (value)
+          body         = <<>> :: binary(),      %% body (value),
+          size         = 0    :: pos_integer(), %% body size
+          file_path    = ""   :: file:name_all()%% file path when this cache is stored on disk 
          }).
 
 -record(cache_condition, {
