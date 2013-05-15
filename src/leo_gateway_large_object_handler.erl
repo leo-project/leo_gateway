@@ -213,7 +213,7 @@ handle_loop(Key1, Total, Index, Req, Ref) ->
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
                     leo_cache_api:put(Ref, Key1, Bin),
-                    handle_loop(Key1, Total, Index + 1, Req);
+                    handle_loop(Key1, Total, Index + 1, Req, Ref);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key1), Index, Cause]),

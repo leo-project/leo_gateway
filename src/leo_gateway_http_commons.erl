@@ -258,17 +258,18 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
             catch leo_gateway_large_object_handler:stop(Pid),
 
             Mime = leo_mime:guess_mime(Key),
-            Meta = #cache_meta{
+            CacheMeta = #cache_meta{
                     md5          = Meta#metadata.checksum,
                     mtime        = Meta#metadata.timestamp,
                     content_type = Mime},
 
             case Ret of
                 {ok, Req3} ->
-                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, true),
+                    Ret2 = leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true),
+                    io:format("[get_obj]put_end_tran ret:~p~n",[Ret2]),
                     {ok, Req3};
                 {error, Cause} ->
-                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, false),
+                    catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, false),
                     ?error("get_object/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Req)
             end;
@@ -291,7 +292,7 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
                       {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
-                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
+                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True/via disk">>}],
             BodyFunc = fun(Socket, _Transport) ->
                     file:sendfile(CacheObj#cache.file_path, Socket)
             end,
@@ -301,7 +302,7 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
                       {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
-                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
+                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True/via memory">>}],
             ?reply_ok(Header, CacheObj#cache.body, Req);
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
@@ -325,17 +326,18 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
             catch leo_gateway_large_object_handler:stop(Pid),
 
             Mime = leo_mime:guess_mime(Key),
-            Meta = #cache_meta{
+            CacheMeta = #cache_meta{
                     md5          = Meta#metadata.checksum,
                     mtime        = Meta#metadata.timestamp,
                     content_type = Mime},
 
             case Ret of
                 {ok, Req3} ->
-                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, true),
+                    Ret2 = leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true),
+                    io:format("[get_obj]put_end_tran ret:~p~n",[Ret2]),
                     {ok, Req3};
                 {error, Cause} ->
-                    catch leo_cache_api:put_end_tran(Ref, Key, Meta, false),
+                    catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, false),
                     ?error("get_object_with_cache/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Req)
             end;
