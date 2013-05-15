@@ -374,6 +374,9 @@ handle_2({error, _Cause}, Req,_,_,_,State) ->
 %%
 handle_2({ok,_AccessKeyId}, Req1, ?HTTP_POST, _, #req_params{path = Path1,
                                                              is_upload = true}, State) ->
+    %% remove a registered object with 'touch-command'
+    %% from the cache
+    _ = leo_cache_api:delete(Path1),
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
     UploadId    = leo_hex:binary_to_hex(crypto:md5(<< Path1/binary, NowBin/binary >>)),
