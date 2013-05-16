@@ -357,8 +357,6 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                                             chunked_obj_len   = Props#http_options.chunked_obj_len,
                                             threshold_obj_len = Props#http_options.threshold_obj_len}),
             AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
-            io:format("[log] auth:~p req:~p method:~p path:~p", [
-                    AuthRet, Req2, HTTPMethod, Path2]),
             handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
         _ ->
             {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Req2),
