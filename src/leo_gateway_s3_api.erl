@@ -357,6 +357,8 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                                             chunked_obj_len   = Props#http_options.chunked_obj_len,
                                             threshold_obj_len = Props#http_options.threshold_obj_len}),
             AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
+            io:format("[log] auth:~p req:~p method:~p path:~p", [
+                    AuthRet, Req2, HTTPMethod, Path2]),
             handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
         _ ->
             {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Req2),
@@ -374,6 +376,9 @@ handle_2({error, _Cause}, Req,_,_,_,State) ->
 %%
 handle_2({ok,_AccessKeyId}, Req1, ?HTTP_POST, _, #req_params{path = Path1,
                                                              is_upload = true}, State) ->
+    %% remove a registered object with 'touch-command'
+    %% from the cache
+    _ = leo_cache_api:delete(Path1),
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
     UploadId    = leo_hex:binary_to_hex(crypto:md5(<< Path1/binary, NowBin/binary >>)),

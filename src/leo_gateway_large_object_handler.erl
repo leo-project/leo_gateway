@@ -195,16 +195,16 @@ code_change(_OldVsn, State, _Extra) ->
 -spec(handle_loop(binary(), integer(), any(), any()) ->
              {ok, any()}).
 handle_loop(Key, Total, Req, Ref) ->
-    handle_loop(Key, Total, 0, Req, Ref).
+    handle_loop(Key, Key, Total, 0, Req, Ref).
 
--spec(handle_loop(binary(), integer(), integer(), any(), any()) ->
+-spec(handle_loop(binary(), binary(), integer(), integer(), any(), any()) ->
              {ok, any()}).
-handle_loop(_Key, Total, Total, Req, _Ref) ->
+handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Ref) ->
     {ok, Req};
 
-handle_loop(Key1, Total, Index, Req, Ref) ->
+handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Ref) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
-    Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    Key2 = << ChunkedKey/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
     case leo_gateway_rpc_handler:get(Key2) of
         %% only children
@@ -212,29 +212,29 @@ handle_loop(Key1, Total, Index, Req, Ref) ->
 
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
-                    leo_cache_api:put(Ref, Key1, Bin),
-                    handle_loop(Key1, Total, Index + 1, Req, Ref);
+                    leo_cache_api:put(Ref, OriginKey, Bin),
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Ref);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key1), Index, Cause]),
+                           [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
 
         %% both children and grand-children
         {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
-            case handle_loop(Key2, TotalChunkedObjs, Req, Ref) of
+            case handle_loop(OriginKey, Key2, TotalChunkedObjs, 0, Req, Ref) of
                 {ok, Req} ->
                     %% children
-                    handle_loop(Key1, Total, Index + 1, Req, Ref);
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Ref);
                 {error, Cause} ->
                     ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key1), Index, Cause]),
+                           [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
             ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key1), Index, Cause]),
+                   [binary_to_list(Key2), Index, Cause]),
             {error, Cause}
     end.
 

@@ -265,8 +265,7 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
 
             case Ret of
                 {ok, Req3} ->
-                    Ret2 = leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true),
-                    io:format("[get_obj]put_end_tran ret:~p~n",[Ret2]),
+                    catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true),
                     {ok, Req3};
                 {error, Cause} ->
                     catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, false),
@@ -333,8 +332,7 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
 
             case Ret of
                 {ok, Req3} ->
-                    Ret2 = leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true),
-                    io:format("[get_obj]put_end_tran ret:~p~n",[Ret2]),
+                    catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true),
                     {ok, Req3};
                 {error, Cause} ->
                     catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, false),
@@ -376,6 +374,17 @@ put_object(Req, Key, Params) ->
             put_small_object(Ret, Key, Params)
     end.
 
+%% @doc check if a specified binary contains a character
+%% @private
+binary_is_contained(<<>>, _Char) ->
+    false;
+binary_is_contained(<<C:8, Rest/binary>>, Char) ->
+    case C of
+        Char ->
+            true;
+        _ ->
+            binary_is_contained(Rest, Char)
+    end.
 
 %% @doc Put a small object
 %% @private
@@ -397,7 +406,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size, CIndex) of
         {ok, ETag} ->
-            case Params#req_params.has_inner_cache of
+            case Params#req_params.has_inner_cache andalso binary_is_contained(Key, 10) =:= false of
                 true  ->
                     Mime = leo_mime:guess_mime(Key),
                     Val  = term_to_binary(#cache{etag = ETag,
@@ -450,7 +459,6 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
     case catch leo_gateway_large_object_handler:result(Pid) of
         {ok, Digest0} when Size == TotalSize ->
             Digest1 = leo_hex:raw_binary_to_integer(Digest0),
-
             case leo_gateway_rpc_handler:put(
                    Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
                 {ok, _ETag} ->
