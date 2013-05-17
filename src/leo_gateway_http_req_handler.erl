@@ -93,9 +93,7 @@ handle(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
                 file_path    = CacheMeta#cache_meta.file_path
             },
             Handler:get_object_with_cache(Req, Key, CachedObj, Params);
-        {ok, CacheMeta} when CacheMeta#cache_meta.file_path == "" ->
-            handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
-        not_found -> 
+        _ -> 
             case leo_cache_api:get(Key) of
                 not_found ->
                     handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
