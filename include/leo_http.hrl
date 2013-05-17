@@ -69,6 +69,8 @@
 -define(HTTP_QS_BIN_UPLOADS,     <<"uploads">>).
 -define(HTTP_QS_BIN_UPLOAD_ID,   <<"uploadId">>).
 -define(HTTP_QS_BIN_PART_NUMBER, <<"partNumber">>).
+-define(HTTP_QS_BIN_MARKER,      <<"marker">>).
+-define(HTTP_QS_BIN_MAXKEYS,     <<"max-keys">>).
 
 -define(HTTP_ST_OK,                  200).
 -define(HTTP_ST_NO_CONTENT,          204).
@@ -167,9 +169,10 @@
                       "  <Name>standalone</Name>",
                       "  <Prefix>~s</Prefix>",
                       "  <Marker></Marker>",
-                      "  <MaxKeys>1000</MaxKeys>",
+                      "  <NextMarker>~s</NextMarker>",
+                      "  <MaxKeys>~s</MaxKeys>",
                       "  <Delimiter>/</Delimiter>",
-                      "  <IsTruncated>false</IsTruncated>",
+                      "  <IsTruncated>~s</IsTruncated>",
                       "~s",
                       "</ListBucketResult>"])).
 
