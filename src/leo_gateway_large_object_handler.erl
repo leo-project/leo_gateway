@@ -123,15 +123,16 @@ handle_call(stop, _From, State) ->
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = State) ->
     {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, [?SERVER_HEADER], Req),
-    {ok, Ref} = leo_cache_api:put_begin_tran(Key),
+    {ok, Ref}  = leo_cache_api:put_begin_tran(Key),
     Reply = handle_loop(Key, TotalOfChunkedObjs, Req2, Meta, Ref),
+
     case Reply of
         {ok, _Req} ->
             Mime = leo_mime:guess_mime(Key),
             CacheMeta = #cache_meta{
-                    md5          = Meta#metadata.checksum,
-                    mtime        = Meta#metadata.timestamp,
-                    content_type = Mime},
+              md5          = Meta#metadata.checksum,
+              mtime        = Meta#metadata.timestamp,
+              content_type = Mime},
             catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true);
         _ ->
             catch leo_cache_api:put_end_tran(Ref, Key, undef, false)
@@ -156,8 +157,8 @@ handle_call({put, Index, Size, Bin}, _From, #state{key = Key,
                                                    errors = Errors} = State) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
     {Ret, NewState} =
-        case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-                                         Bin, Size, Index) of
+        case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary,
+                                            IndexBin/binary >>, Bin, Size, Index) of
             {ok, _ETag} ->
                 NewContext = crypto:md5_update(Context, Bin),
                 {ok, State#state{md5_context = NewContext}};
@@ -229,7 +230,7 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
                     leo_cache_api:put(Ref, OriginKey, Bin),
                     handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
                 {error, Cause} ->
-                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
@@ -242,12 +243,12 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
                     %% children
                     handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
                 {error, Cause} ->
-                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
-            ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
+            ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
                    [binary_to_list(Key2), Index, Cause]),
             {error, Cause}
     end.

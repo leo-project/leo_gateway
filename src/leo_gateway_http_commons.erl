@@ -277,8 +277,8 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                       {?HTTP_HEAD_X_FROM_CACHE,  <<"True/via disk">>}],
             BodyFunc = fun(Socket, _Transport) ->
-                    file:sendfile(CacheObj#cache.file_path, Socket)
-            end,
+                               file:sendfile(CacheObj#cache.file_path, Socket)
+                       end,
             cowboy_req:reply(?HTTP_ST_OK, Header, BodyFunc, Req);
         {ok, match} when CacheObj#cache.file_path == [] ->
             Header = [?SERVER_HEADER,
@@ -361,7 +361,8 @@ put_small_object({error, Cause},_,_) ->
     {error, Cause};
 put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
     CIndex = case Params#req_params.upload_part_num of
-                 <<>> -> 0;
+                 <<>> ->
+                     0;
                  PartNum ->
                      case is_integer(PartNum) of
                          true ->
@@ -373,7 +374,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size, CIndex) of
         {ok, ETag} ->
-            case Params#req_params.has_inner_cache andalso binary_is_contained(Key, 10) =:= false of
+            case (Params#req_params.has_inner_cache
+                  andalso binary_is_contained(Key, 10) == false) of
                 true  ->
                     Mime = leo_mime:guess_mime(Key),
                     Val  = term_to_binary(#cache{etag = ETag,
@@ -381,7 +383,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
                                                  content_type = Mime,
                                                  body = Bin}),
                     _ = leo_cache_api:put(Key, Val);
-                false -> void
+                false ->
+                    void
             end,
 
             Header = [?SERVER_HEADER,
