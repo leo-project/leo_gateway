@@ -1,3 +1,4 @@
+%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%======================================================================
 %%
 %% LeoFS Gateway
@@ -20,13 +21,13 @@
 %%
 %%======================================================================
 {application, leo_gateway,
-  [
-   {description, "LeoFS Gateway Server"},
-   {vsn, "0.14.2"},
-   {id, "leo_gateway"},
-   {registered, []},
-   {applications, [kernel, stdlib, crypto, ranch]},
-   {mod, {leo_gateway_app, []}},
-   {env, []}
-  ]
+ [
+  {description, "LeoFS Gateway Server"},
+  {vsn, "0.14.2"},
+  {id, "leo_gateway"},
+  {registered, []},
+  {applications, [kernel, stdlib, crypto, ranch]},
+  {mod, {leo_gateway_app, []}},
+  {env, []}
+ ]
 }.
