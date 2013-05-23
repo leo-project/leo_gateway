@@ -63,6 +63,9 @@ gen_tests_1(Arg) ->
                fun get_object_error_/1,
                fun get_object_notfound_/1,
                fun get_object_normal1_/1,
+               fun range_object_normal1_/1,
+               fun range_object_normal2_/1,
+               fun range_object_normal3_/1,
                fun delete_object_error_/1,
                fun delete_object_notfound_/1,
                fun delete_object_normal1_/1,
@@ -432,6 +435,47 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                 ?assertEqual(200, SC),
                 ?assertEqual("body", Body),
                 ?assertEqual(undefined, proplists:get_value("X-From-Cache", Headers))
+            catch
+                throw:Reason ->
+                    throw(Reason)
+            after
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
+range_object_normal1_([_TermFun, _Node0, Node1]) ->
+    range_object_base([_TermFun, _Node0, Node1], "bytes=1-2").
+range_object_normal2_([_TermFun, _Node0, Node1]) ->
+    range_object_base([_TermFun, _Node0, Node1], "bytes=1-").
+range_object_normal3_([_TermFun, _Node0, Node1]) ->
+    range_object_base([_TermFun, _Node0, Node1], "bytes=-1").
+
+range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
+    fun() ->
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, head, 2,
+                           {ok, {metadata, <<"a/b.png">>,
+                                 0, 4, 16384, 0,
+                                 0, 0, 0,
+                                 0, 1, 63505750315, 19740926, 0, 0}}]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, get, 5,
+                           {ok, {metadata, "",
+                                 0, 2, 2, 0,
+                                 0, 0, 0, 0, 1,
+                                 calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
+                                 19740926, 0, 0}, <<"od">>}]),
+
+            try
+                {ok, {{_, SC, _}, _Headers, Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]), [{"connection", "close"},{"range", RangeValue}]}, [], []),
+                ?assertEqual(200, SC),
+                ?assertEqual("od", Body)
             catch
                 throw:Reason ->
                     throw(Reason)

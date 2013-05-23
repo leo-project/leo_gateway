@@ -528,8 +528,9 @@ get_range_object_2(Req, Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0, cnumber = 0} = _Meta} ->
             get_range_object_small(Req, Key, Start, End);
-        {ok, #metadata{del = 0, cnumber = N} = _Meta} ->
-            get_range_object_large(Req, Key, Start, End, N, 0, 0);
+        {ok, #metadata{del = 0, cnumber = N, dsize = ObjectSize} = _Meta} ->
+            {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
+            get_range_object_large(Req, Key, NewStartPos, NewEndPos, N, 0, 0);
         _ ->
             {error, not_found}
     end.
@@ -544,6 +545,14 @@ get_range_object_small(Req, Key, Start, End) ->
             {error, Cause}
     end.
 
+calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
+    NewStartPos = ObjectSize + EndPos,
+    NewEndPos   = ObjectSize - 1,
+    {NewStartPos, NewEndPos};
+calc_pos(StartPos, 0, ObjectSize) ->
+    {StartPos, ObjectSize - 1}; 
+calc_pos(StartPos, EndPos, _ObjectSize) ->
+    {StartPos, EndPos}.
 
 get_range_object_large(_Req, _Key, _Start, _End, Total, Total, CurPos) ->
     {ok, CurPos};
@@ -553,10 +562,10 @@ get_range_object_large(Req, Key, Start, End, Total, Index, CurPos) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
     case leo_gateway_rpc_handler:head(Key2) of
-        {ok, #metadata{cnumber = 0, csize = CS}} ->
+        {ok, #metadata{cnumber = 0, dsize = CS}} -> % not csize
             %% only children
             %% get and chunk
-            NewPos = send_chunk(Req, Key, Start, End, CurPos, CS),
+            NewPos = send_chunk(Req, Key2, Start, End, CurPos, CS),
             get_range_object_large(Req, Key, Start, End, Total, Index + 1, NewPos);
         {ok, #metadata{cnumber = GrandChildNum}} ->
             case get_range_object_large(Req, Key2, Start, End, GrandChildNum, 0, CurPos) of
@@ -590,7 +599,7 @@ send_chunk(Req, Key, Start, End, CurPos, ChunkSize) ->
     end,
     EndPos = case (CurPos + ChunkSize - 1) =< End of
         true -> ChunkSize - 1;
-        false -> (CurPos + ChunkSize - 1) - End
+        false -> End - CurPos
     end,
     case leo_gateway_rpc_handler:get(Key, StartPos, EndPos) of
         {ok, _Meta, <<>>} ->
