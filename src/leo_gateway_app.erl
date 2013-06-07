@@ -198,7 +198,10 @@ after_process_1(SystemConf, Members) ->
                            {r, SystemConf#system_conf.r},
                            {w, SystemConf#system_conf.w},
                            {d, SystemConf#system_conf.d},
-                           {bit_of_ring, SystemConf#system_conf.bit_of_ring}]),
+                           {bit_of_ring, SystemConf#system_conf.bit_of_ring},
+                           {level_1, SystemConf#system_conf.level_1},
+                           {level_2, SystemConf#system_conf.level_2}
+                          ]),
     ok = leo_membership:set_proc_auditor(leo_gateway_api),
 
     %% Register in THIS-Process

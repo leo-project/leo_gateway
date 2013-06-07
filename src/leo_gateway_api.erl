@@ -30,9 +30,11 @@
 -include("leo_http.hrl").
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_libs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([get_node_status/0,
+         update_manager_nodes/1,
          register_in_monitor/1, register_in_monitor/2,
          purge/1, set_endpoint/1
         ]).
@@ -48,7 +50,7 @@ purge(Path) ->
 %%
 -spec(get_node_status() -> {ok, #cluster_node_status{}}).
 get_node_status() ->
-    {ok, Version} = application:get_env(leo_gateway, system_version),
+    {ok, Version} = application:get_key(leo_gateway, vsn),
     {RingHashCur, RingHashPrev} =
         case leo_redundant_manager_api:checksum(ring) of
             {ok, {Chksum0, Chksum1}} -> {Chksum0, Chksum1};
@@ -160,4 +162,13 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
 %%
 set_endpoint(Endpoint) ->
     leo_s3_endpoint:set_endpoint(Endpoint).
+
+%% @doc update manager nodes
+%%
+-spec(update_manager_nodes(list()) ->
+             ok).
+update_manager_nodes(Managers) ->
+    ?update_env_manager_nodes(leo_gateway, Managers),
+    ok = leo_membership:update_manager_nodes(Managers),
+    leo_s3_libs:update_providers(Managers).
 

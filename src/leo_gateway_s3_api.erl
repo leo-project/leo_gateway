@@ -53,8 +53,7 @@
                    handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/3,
                    resp_copy_obj_xml/2, request_params/2, auth/4, auth/5,
-                   get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2,
-                   generate_bucket_xml/3
+                   get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2
                   ]}).
 
 %%--------------------------------------------------------------------
@@ -109,7 +108,15 @@ onresponse(CacheCondition) ->
              {ok, any()}).
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  qs_prefix     = Prefix}) ->
-    case get_bucket_1(AccessKeyId, Key, none, none, 1000, Prefix) of
+    Marker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
+                   {undefined, _} -> [];
+                   {Val0,      _} -> Val0
+               end,
+    MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
+                   {undefined, _} -> 1000;
+                   {Val1,      _} -> list_to_integer(binary_to_list(Val1))
+               end,
+    case get_bucket_1(AccessKeyId, Key, none, Marker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
@@ -712,7 +719,7 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix1) ->
                                         [Key, Delimiter, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, generate_bucket_xml(Key, Prefix2, Meta)};
+            {ok, Meta, generate_bucket_xml(Key, Prefix2, Meta, MaxKeys)};
         {ok, _} ->
             {error, invalid_format};
         Error ->
@@ -774,35 +781,39 @@ head_bucket_1(AccessKeyId, Bucket) ->
 
 %% @doc Generate XML from matadata-list
 %% @private
-generate_bucket_xml(KeyBin, PrefixBin, MetadataList) ->
+generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
     Len    = byte_size(KeyBin),
     Key    = binary_to_list(KeyBin),
     Prefix = binary_to_list(PrefixBin),
+    TruncatedStr = case length(MetadataList) =:= MaxKeys of
+        true -> "true";
+        false -> "false"
+    end,
 
     Fun = fun(#metadata{key       = EntryKeyBin,
                         dsize     = Length,
                         timestamp = TS,
                         checksum  = CS,
-                        del       = 0} , Acc) ->
+                        del       = 0} , {Acc, _NextMarker}) ->
                   EntryKey = binary_to_list(EntryKeyBin),
 
                   case string:equal(Key, EntryKey) of
                       true ->
-                          Acc;
+                          {Acc, _NextMarker};
                       false ->
                           Entry = string:sub_string(EntryKey, Len + 1),
-
                           case Length of
                               -1 ->
                                   %% directory.
-                                  lists:append([Acc,
+                                  {lists:append([Acc,
                                                 "<CommonPrefixes><Prefix>",
                                                 Prefix,
                                                 Entry,
-                                                "</Prefix></CommonPrefixes>"]);
+                                                "</Prefix></CommonPrefixes>"]),
+                                   EntryKeyBin};
                               _ ->
                                   %% file.
-                                  lists:append([Acc,
+                                  {lists:append([Acc,
                                                 "<Contents>",
                                                 "<Key>", Prefix, Entry, "</Key>",
                                                 "<LastModified>", leo_http:web_date(TS),
@@ -816,11 +827,13 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList) ->
                                                 "<ID>leofs</ID>",
                                                 "<DisplayName>leofs</DisplayName>",
                                                 "</Owner>",
-                                                "</Contents>"])
+                                                "</Contents>"]),
+                                   EntryKeyBin}
                           end
                   end
           end,
-    io_lib:format(?XML_OBJ_LIST, [Prefix, lists:foldl(Fun, [], MetadataList)]).
+    {List, NextMarker}= lists:foldl(Fun, {[], <<>>}, MetadataList),
+    io_lib:format(?XML_OBJ_LIST, [Prefix, NextMarker, integer_to_list(MaxKeys), TruncatedStr, List]).
 
 generate_bucket_xml(MetadataList) ->
     Fun = fun(#bucket{name = BucketBin,

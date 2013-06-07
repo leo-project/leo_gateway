@@ -29,6 +29,7 @@
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
+-include_lib("leo_dcerl/include/leo_dcerl.hrl").
 -include_lib("leo_cache/include/leo_cache.hrl").
 -undef(error).
 -undef(warn).
@@ -247,19 +248,12 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
             ?reply_ok(Header, RespObject, Req);
 
         %% For a chunked object.
-        {ok, #metadata{cnumber = TotalChunkedObjs}, _RespObject} ->
+        {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
             {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
-            {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, [?SERVER_HEADER], Req),
-
-            Ret = leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req2),
-            catch leo_gateway_large_object_handler:stop(Pid),
-
-            case Ret of
-                {ok, Req3} ->
-                    {ok, Req3};
-                {error, Cause} ->
-                    ?error("exec1/4", "path:~s, cause:~p", [binary_to_list(Key), Cause]),
-                    ?reply_internal_error([?SERVER_HEADER], Req)
+            try
+                leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
+            after
+                catch leo_gateway_large_object_handler:stop(Pid)
             end;
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
@@ -275,27 +269,43 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
              {ok, any()}).
 get_object_with_cache(Req, Key, CacheObj,_Params) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
-        {ok, match} ->
+        {ok, match} when CacheObj#cache.file_path /= [] ->
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
+                      {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(CacheObj#cache.size)},
+                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
+                      {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
+                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True/via disk">>}],
+            BodyFunc = fun(Socket, _Transport) ->
+                               file:sendfile(CacheObj#cache.file_path, Socket)
+                       end,
+            cowboy_req:reply(?HTTP_ST_OK, Header, BodyFunc, Req);
+        {ok, match} when CacheObj#cache.file_path == [] ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
-                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True">>}],
+                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True/via memory">>}],
             ?reply_ok(Header, CacheObj#cache.body, Req);
-        {ok, Meta, Body} ->
+        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
-            Val = term_to_binary(#cache{etag = Meta#metadata.checksum,
+            Val = term_to_binary(#cache{etag  = Meta#metadata.checksum,
                                         mtime = Meta#metadata.timestamp,
                                         content_type = Mime,
-                                        body = Body}),
-
-            _ = leo_cache_api:put(Key, Val),
-
+                                        body = RespObject}),
+            leo_cache_api:put(Key, Val),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
                       {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
-            ?reply_ok(Header, Body, Req);
+            ?reply_ok(Header, RespObject, Req);
+        {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
+            {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
+            try
+                leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
+            after
+                catch leo_gateway_large_object_handler:stop(Pid)
+            end;
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -331,6 +341,17 @@ put_object(Req, Key, Params) ->
             put_small_object(Ret, Key, Params)
     end.
 
+%% @doc check if a specified binary contains a character
+%% @private
+binary_is_contained(<<>>, _Char) ->
+    false;
+binary_is_contained(<<C:8, Rest/binary>>, Char) ->
+    case C of
+        Char ->
+            true;
+        _ ->
+            binary_is_contained(Rest, Char)
+    end.
 
 %% @doc Put a small object
 %% @private
@@ -340,7 +361,8 @@ put_small_object({error, Cause},_,_) ->
     {error, Cause};
 put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
     CIndex = case Params#req_params.upload_part_num of
-                 <<>> -> 0;
+                 <<>> ->
+                     0;
                  PartNum ->
                      case is_integer(PartNum) of
                          true ->
@@ -352,7 +374,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size, CIndex) of
         {ok, ETag} ->
-            case Params#req_params.has_inner_cache of
+            case (Params#req_params.has_inner_cache
+                  andalso binary_is_contained(Key, 10) == false) of
                 true  ->
                     Mime = leo_mime:guess_mime(Key),
                     Val  = term_to_binary(#cache{etag = ETag,
@@ -360,7 +383,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
                                                  content_type = Mime,
                                                  body = Bin}),
                     _ = leo_cache_api:put(Key, Val);
-                false -> void
+                false ->
+                    void
             end,
 
             Header = [?SERVER_HEADER,
@@ -405,7 +429,6 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
     case catch leo_gateway_large_object_handler:result(Pid) of
         {ok, Digest0} when Size == TotalSize ->
             Digest1 = leo_hex:raw_binary_to_integer(Digest0),
-
             case leo_gateway_rpc_handler:put(
                    Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
                 {ok, _ETag} ->
@@ -468,43 +491,126 @@ head_object(Req, Key,_Params) ->
             ?reply_timeout([?SERVER_HEADER], Req)
     end.
 
+-undef(DEF_SEPARATOR).
+-define(DEF_SEPARATOR, <<"\n">>).
 
 %% @doc Retrieve a part of an object
 -spec(range_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 range_object(Req, Key, #req_params{range_header = RangeHeader}) ->
-    [_,ByteRangeSpec|_] = string:tokens(binary_to_list(RangeHeader), "="),
-    ByteRangeSet = string:tokens(ByteRangeSpec, "-"),
-    {Start, End} = case length(ByteRangeSet) of
-                       1 ->
-                           [StartStr|_] = ByteRangeSet,
-                           {list_to_integer(StartStr), 0};
-                       2 ->
-                           [StartStr,EndStr|_] = ByteRangeSet,
-                           {list_to_integer(StartStr), list_to_integer(EndStr) + 1};
-                       _ ->
-                           {undefined, undefined}
-                   end,
-    case Start of
-        undefined ->
-            ?reply_bad_range([?SERVER_HEADER], Req);
+    Range = cowboy_http:range(RangeHeader),
+    get_range_object(Req, Key, Range).
+
+get_range_object(Req, _Key, {error, badarg}) ->
+    ?reply_bad_range([?SERVER_HEADER], Req);
+get_range_object(Req, Key, {_Unit, Ranges}) when is_list(Ranges) ->
+    Mime = leo_mime:guess_mime(Key),
+    Header = [?SERVER_HEADER,
+              {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
+    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
+    get_range_object_1(Req2, Key, Ranges, undefined).
+
+get_range_object_1(Req, _Key, [], _) ->
+    {ok, Req};
+get_range_object_1(Req, _Key, _, {error, _}) ->
+    {ok, Req};
+get_range_object_1(Req, Key, [{Start, infinity}|Rest], _) ->
+    Ret = get_range_object_2(Req, Key, Start, 0),
+    get_range_object_1(Req, Key, Rest, Ret);
+get_range_object_1(Req, Key, [{Start, End}|Rest], _) ->
+    Ret = get_range_object_2(Req, Key, Start, End),
+    get_range_object_1(Req, Key, Rest, Ret);
+get_range_object_1(Req, Key, [End|Rest], _) ->
+    Ret = get_range_object_2(Req, Key, 0, End),
+    get_range_object_1(Req, Key, Rest, Ret).
+
+get_range_object_2(Req, Key, Start, End) ->
+    case leo_gateway_rpc_handler:head(Key) of
+        {ok, #metadata{del = 0, cnumber = 0} = _Meta} ->
+            get_range_object_small(Req, Key, Start, End);
+        {ok, #metadata{del = 0, cnumber = N, dsize = ObjectSize} = _Meta} ->
+            {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
+            get_range_object_large(Req, Key, NewStartPos, NewEndPos, N, 0, 0);
         _ ->
-            case leo_gateway_rpc_handler:get(Key, Start, End) of
-                {ok, _Meta, RespObject} ->
-                    Mime = leo_mime:guess_mime(Key),
-                    Header = [?SERVER_HEADER,
-                              {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
-                    ?reply_partial_content(Header, RespObject, Req);
-                {error, not_found} ->
-                    ?reply_not_found([?SERVER_HEADER], Req);
-                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                    ?reply_internal_error([?SERVER_HEADER], Req);
-                {error, timeout} ->
-                    ?reply_timeout([?SERVER_HEADER], Req)
-            end
+            {error, not_found}
     end.
 
+get_range_object_small(Req, Key, Start, End) ->
+    case leo_gateway_rpc_handler:get(Key, Start, End) of
+        {ok, _Meta, <<>>} ->
+            ok;
+        {ok, _Meta, Bin} ->
+            cowboy_req:chunk(Bin, Req);
+        {error, Cause} ->
+            {error, Cause}
+    end.
 
+calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
+    NewStartPos = ObjectSize + EndPos,
+    NewEndPos   = ObjectSize - 1,
+    {NewStartPos, NewEndPos};
+calc_pos(StartPos, 0, ObjectSize) ->
+    {StartPos, ObjectSize - 1}; 
+calc_pos(StartPos, EndPos, _ObjectSize) ->
+    {StartPos, EndPos}.
+
+get_range_object_large(_Req, _Key, _Start, _End, Total, Total, CurPos) ->
+    {ok, CurPos};
+get_range_object_large(_Req, _Key, _Start, End, _Total, _Index, CurPos) when CurPos > End ->
+    {ok, CurPos};
+get_range_object_large(Req, Key, Start, End, Total, Index, CurPos) ->
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
+    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:head(Key2) of
+        {ok, #metadata{cnumber = 0, dsize = CS}} -> % not csize
+            %% only children
+            %% get and chunk
+            NewPos = send_chunk(Req, Key2, Start, End, CurPos, CS),
+            get_range_object_large(Req, Key, Start, End, Total, Index + 1, NewPos);
+        {ok, #metadata{cnumber = GrandChildNum}} ->
+            case get_range_object_large(Req, Key2, Start, End, GrandChildNum, 0, CurPos) of
+                {ok, NewPos} ->
+                    get_range_object_large(Req, Key, Start, End, Total, Index + 1, NewPos);
+                {error, Cause} ->
+                    {error, Cause}
+            end;
+        {error, Cause} ->
+            {error, Cause}
+    end.
+
+send_chunk(_Req, _Key, Start, _End, CurPos, ChunkSize) when (CurPos + ChunkSize - 1) < Start ->
+    % skip
+    CurPos + ChunkSize;
+send_chunk(Req, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
+                                                         (CurPos + ChunkSize - 1) =< End ->
+    % whole get
+    case leo_gateway_rpc_handler:get(Key) of
+        {ok, _Meta, Bin} ->
+            cowboy_req:chunk(Bin, Req),
+            CurPos + ChunkSize;
+        Error ->
+            Error
+    end;
+send_chunk(Req, Key, Start, End, CurPos, ChunkSize) ->
+    % partial get
+    StartPos = case Start =< CurPos of
+        true -> 0;
+        false -> Start - CurPos
+    end,
+    EndPos = case (CurPos + ChunkSize - 1) =< End of
+        true -> ChunkSize - 1;
+        false -> End - CurPos
+    end,
+    case leo_gateway_rpc_handler:get(Key, StartPos, EndPos) of
+        {ok, _Meta, <<>>} ->
+            CurPos + ChunkSize;
+        {ok, _Meta, Bin} ->
+            cowboy_req:chunk(Bin, Req),
+            CurPos + ChunkSize;
+        {error, Cause} ->
+            {error, Cause}
+    end.
+    
 %%--------------------------------------------------------------------
 %% INNER Functions
 %%--------------------------------------------------------------------

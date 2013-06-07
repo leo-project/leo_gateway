@@ -28,12 +28,13 @@
 -include("leo_http.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_dcerl/include/leo_dcerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 
 %% Application callbacks
 -export([start_link/1, stop/1]).
--export([put/4, get/3, rollback/2, result/1]).
+-export([put/4, get/4, rollback/2, result/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -81,10 +82,10 @@ put(Pid, Index, Size, Bin) ->
 
 %% @doc Retrieve a chunked object from the storage cluster
 %%
--spec(get(pid(), integer(), pid()) ->
+-spec(get(pid(), integer(), any(), #metadata{}) ->
              ok | {error, any()}).
-get(Pid, TotalOfChunkedObjs, Req) ->
-    gen_server:call(Pid, {get, TotalOfChunkedObjs, Req}, ?DEF_TIMEOUT).
+get(Pid, TotalOfChunkedObjs, Req, Meta) ->
+    gen_server:call(Pid, {get, TotalOfChunkedObjs, Req, Meta}, ?DEF_TIMEOUT).
 
 
 %% @doc Make a rollback before all operations
@@ -120,8 +121,22 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 
-handle_call({get, TotalOfChunkedObjs, Req}, _From, #state{key = Key} = State) ->
-    Reply = handle_loop(Key, TotalOfChunkedObjs, Req),
+handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = State) ->
+    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, [?SERVER_HEADER], Req),
+    {ok, Ref}  = leo_cache_api:put_begin_tran(Key),
+    Reply = handle_loop(Key, TotalOfChunkedObjs, Req2, Meta, Ref),
+
+    case Reply of
+        {ok, _Req} ->
+            Mime = leo_mime:guess_mime(Key),
+            CacheMeta = #cache_meta{
+              md5          = Meta#metadata.checksum,
+              mtime        = Meta#metadata.timestamp,
+              content_type = Mime},
+            catch leo_cache_api:put_end_tran(Ref, Key, CacheMeta, true);
+        _ ->
+            catch leo_cache_api:put_end_tran(Ref, Key, undef, false)
+    end,
     {reply, Reply, State};
 
 
@@ -142,8 +157,8 @@ handle_call({put, Index, Size, Bin}, _From, #state{key = Key,
                                                    errors = Errors} = State) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
     {Ret, NewState} =
-        case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-                                         Bin, Size, Index) of
+        case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary,
+                                            IndexBin/binary >>, Bin, Size, Index) of
             {ok, _ETag} ->
                 NewContext = crypto:md5_update(Context, Bin),
                 {ok, State#state{md5_context = NewContext}};
@@ -192,20 +207,19 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Retrieve chunked objects
 %% @private
--spec(handle_loop(binary(), integer(), any()) ->
+-spec(handle_loop(binary(), integer(), any(), #metadata{}, any()) ->
              {ok, any()}).
-handle_loop(Key, Total, Req) ->
-    handle_loop(Key, Total, 0, Req).
+handle_loop(Key, Total, Req, Meta, Ref) ->
+    handle_loop(Key, Key, Total, 0, Req, Meta, Ref).
 
--spec(handle_loop(binary(), integer(), integer(), any()) ->
+-spec(handle_loop(binary(), binary(), integer(), integer(), any(), #metadata{}, any()) ->
              {ok, any()}).
-handle_loop(_Key, Total, Total, Req) ->
+handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Meta, _Ref) ->
     {ok, Req};
 
-
-handle_loop(Key1, Total, Index, Req) ->
+handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
-    Key2 = << Key1/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    Key2 = << ChunkedKey/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
     case leo_gateway_rpc_handler:get(Key2) of
         %% only children
@@ -213,32 +227,31 @@ handle_loop(Key1, Total, Index, Req) ->
 
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
-
-                    handle_loop(Key1, Total, Index + 1, Req);
+                    leo_cache_api:put(Ref, OriginKey, Bin),
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
                 {error, Cause} ->
-                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key1), Index, Cause]),
+                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+                           [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
 
         %% both children and grand-children
         {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
-            case handle_loop(Key2, TotalChunkedObjs, Req) of
+            case handle_loop(OriginKey, Key2, TotalChunkedObjs, 0, Req, Meta, Ref) of
                 {ok, Req} ->
                     %% children
-                    handle_loop(Key1, Total, Index + 1, Req);
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
                 {error, Cause} ->
-                    ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key1), Index, Cause]),
+                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+                           [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
-            ?error("handle_loop/4", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key1), Index, Cause]),
+            ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+                   [binary_to_list(Key2), Index, Cause]),
             {error, Cause}
     end.
-
 
 %% @doc Remove chunked objects
 %% @private
