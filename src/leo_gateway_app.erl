@@ -125,6 +125,8 @@ inspect_cluster_status(Res, ManagerNodes) ->
             timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
                               [ok, ManagerNodes]);
         Error ->
+            timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
+                              [ok, ManagerNodes]),
             io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
             Error
     end,
