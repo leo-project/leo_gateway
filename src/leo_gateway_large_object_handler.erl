@@ -114,7 +114,7 @@ result(Pid) ->
 %% Description: Initiates the server
 init([Key]) ->
     {ok, #state{key = Key,
-                md5_context = crypto:md5_init(),
+                md5_context = crypto:hash_init(md5),
                 errors = []}}.
 
 handle_call(stop, _From, State) ->
@@ -144,7 +144,7 @@ handle_call(result, _From, #state{md5_context = Context,
                                   errors = Errors} = State) ->
     Reply = case Errors of
                 [] ->
-                    Digest = crypto:md5_final(Context),
+                    Digest = crypto:hash_final(Context),
                     {ok, Digest};
                 _  ->
                     {error, Errors}
@@ -160,7 +160,7 @@ handle_call({put, Index, Size, Bin}, _From, #state{key = Key,
         case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary,
                                             IndexBin/binary >>, Bin, Size, Index) of
             {ok, _ETag} ->
-                NewContext = crypto:md5_update(Context, Bin),
+                NewContext = crypto:hash_update(Context, Bin),
                 {ok, State#state{md5_context = NewContext}};
             {error, Cause} ->
                 ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),

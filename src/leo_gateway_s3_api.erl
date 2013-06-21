@@ -386,7 +386,7 @@ handle_2({ok,_AccessKeyId}, Req1, ?HTTP_POST, _, #req_params{path = Path1,
     _ = leo_cache_api:delete(Path1),
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
-    UploadId    = leo_hex:binary_to_hex(crypto:md5(<< Path1/binary, NowBin/binary >>)),
+    UploadId    = leo_hex:binary_to_hex(crypto:hash(md5, << Path1/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
 
     {ok, Req2} =
@@ -534,7 +534,7 @@ handle_multi_upload_3(0, _, Acc) ->
                              ETagBin2 = list_to_binary(leo_hex:integer_to_hex(Checksum, 32)),
                              {Sum + DSize, <<ETagBin1/binary, ETagBin2/binary>>}
                      end, {0, <<>>}, lists:sort(Metas)),
-    ETag2 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(crypto:md5(ETag1))),
+    ETag2 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(crypto:hash(md5, ETag1))),
     {ok, {Len, ETag2}};
 
 handle_multi_upload_3(PartNum, Path, Acc) ->
