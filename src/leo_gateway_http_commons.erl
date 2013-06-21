@@ -199,7 +199,7 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                             Now = leo_date:now(),
                             Bin = term_to_binary(
                                     #cache{mtime        = Now,
-                                           etag         = leo_hex:raw_binary_to_integer(crypto:md5(Body)),
+                                           etag         = leo_hex:raw_binary_to_integer(crypto:hash(md5, Body)),
                                            content_type = ?http_content_type(Header1),
                                            body         = Body}),
                             _ = leo_cache_api:put(Key, Bin),
