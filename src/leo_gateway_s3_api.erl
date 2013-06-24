@@ -208,7 +208,6 @@ get_object_with_cache(Req, Key, CacheObj, Params) ->
 -spec(put_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_object(Req, Key, Params) ->
-    ?debug("put_object/3", "key:~s", [Key]),
     put_object(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params).
 
 put_object(?BIN_EMPTY, Req, Key, Params) ->
