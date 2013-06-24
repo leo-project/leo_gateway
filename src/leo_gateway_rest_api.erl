@@ -116,6 +116,7 @@ head_bucket(Req,_Key,_Params) ->
 -spec(get_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 get_object(Req, Key, Params) ->
+    ?debug("get_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:get_object(Req, Key, Params).
 
 
@@ -123,6 +124,7 @@ get_object(Req, Key, Params) ->
 -spec(get_object_with_cache(any(), binary(), #cache{}, #req_params{}) ->
              {ok, any()}).
 get_object_with_cache(Req, Key, CacheObj, Params) ->
+    ?debug("get_object_with_cache/4", "key:~s", [Key]),
     leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj, Params).
 
 
@@ -130,6 +132,7 @@ get_object_with_cache(Req, Key, CacheObj, Params) ->
 -spec(put_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_object(Req, Key, Params) ->
+    ?debug("put_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:put_object(Req, Key, Params).
 
 
@@ -137,6 +140,7 @@ put_object(Req, Key, Params) ->
 -spec(delete_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 delete_object(Req, Key, Params) ->
+    ?debug("delete_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:delete_object(Req, Key, Params).
 
 
@@ -144,6 +148,7 @@ delete_object(Req, Key, Params) ->
 -spec(head_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 head_object(Req, Key, Params) ->
+    ?debug("head_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:head_object(Req, Key, Params).
 
 
