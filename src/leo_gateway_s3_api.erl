@@ -108,6 +108,7 @@ onresponse(CacheCondition) ->
              {ok, any()}).
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  qs_prefix     = Prefix}) ->
+    ?debug("get_bucket/3", "prefix:~s, key:~s", [Prefix, Key]),
     Marker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
                    {undefined, _} -> [];
                    {Val0,      _} -> Val0
@@ -133,6 +134,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
 -spec(put_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    ?debug("put_bucket/3", "key:~s", [Key]),
     Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
                  true ->
                      binary:part(Key, {0, byte_size(Key) -1});
@@ -153,6 +155,7 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 -spec(delete_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    ?debug("delete_bucket/3", "key:~s", [Key]),
     case delete_bucket_1(AccessKeyId, Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -169,6 +172,7 @@ delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 -spec(head_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    ?debug("head_bucket/3", "key:~s", [Key]),
     case head_bucket_1(AccessKeyId, Key) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
@@ -188,6 +192,7 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 -spec(get_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 get_object(Req, Key, Params) ->
+    ?debug("get_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:get_object(Req, Key, Params).
 
 
@@ -195,6 +200,7 @@ get_object(Req, Key, Params) ->
 -spec(get_object_with_cache(any(), binary(), #cache{}, #req_params{}) ->
              {ok, any()}).
 get_object_with_cache(Req, Key, CacheObj, Params) ->
+    ?debug("get_object_with_cache/4", "key:~s", [Key]),
     leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj,  Params).
 
 
@@ -205,6 +211,7 @@ put_object(Req, Key, Params) ->
     put_object(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params).
 
 put_object(?BIN_EMPTY, Req, Key, Params) ->
+    ?debug("put_object/3", "key:~s", [Key]),
     {Size, _} = cowboy_req:body_length(Req),
 
     case (Size >= Params#req_params.threshold_obj_len) of
@@ -230,6 +237,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
 put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
+    ?debug("put_object/3", "key:~s", [Key]),
     CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
@@ -294,6 +302,7 @@ put_object_3(Req, Meta) ->
 -spec(delete_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 delete_object(Req, Key, Params) ->
+    ?debug("delete_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:delete_object(Req, Key, Params).
 
 
@@ -301,6 +310,7 @@ delete_object(Req, Key, Params) ->
 -spec(head_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 head_object(Req, Key, Params) ->
+    ?debug("head_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:head_object(Req, Key, Params).
 
 
@@ -308,6 +318,7 @@ head_object(Req, Key, Params) ->
 -spec(range_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 range_object(Req, Key, Params) ->
+    ?debug("range_object/3", "key:~s", [Key]),
     leo_gateway_http_commons:range_object(Req, Key, Params).
 
 
