@@ -123,7 +123,12 @@ handle_call(stop, _From, State) ->
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = State) ->
     {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, [?SERVER_HEADER], Req),
-    {ok, Ref}  = leo_cache_api:put_begin_tran(Key),
+    {ok, Ref}  = case leo_cache_api:put_begin_tran(Key) of
+        {ok, Ref0} ->
+            {ok, Ref0};
+        _Error ->
+            {ok, undef}
+    end,
     Reply = handle_loop(Key, TotalOfChunkedObjs, Req2, Meta, Ref),
 
     case Reply of
