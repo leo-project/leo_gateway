@@ -124,9 +124,9 @@ handle_call(stop, _From, State) ->
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = State) ->
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,
-             {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-             {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
-             {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+             {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
+             {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
+             {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
     {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
     Ref1 = case leo_cache_api:put_begin_tran(Key) of
                {ok, Ref} -> Ref;
