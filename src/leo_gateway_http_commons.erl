@@ -158,11 +158,12 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_LAST_MODIFIED, LastModified},
-                      {?HTTP_HEAD_CONTENT_TYPE,  ContentType},
-                      {?HTTP_HEAD_AGE,           integer_to_list(Diff)},
-                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Checksum)},
-                      {?HTTP_HEAD_CACHE_CTRL,    ?httP_cache_ctl(Expire)}],
+                      {?HTTP_HEAD_RESP_LAST_MODIFIED, LastModified},
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  ContentType},
+                      {?HTTP_HEAD_RESP_AGE,           integer_to_list(Diff)},
+                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Checksum)},
+                      {?HTTP_HEAD_RESP_CACHE_CTRL,    ?httP_cache_ctl(Expire)}],
+
             IMSSec = case cowboy_req:parse_header(?HTTP_HEAD_IF_MODIFIED_SINCE, Req) of
                          {ok, undefined, _} ->
                              0;
@@ -205,8 +206,8 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                             _ = leo_cache_api:put(Key, Bin),
 
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
-                            Header3 = [{?HTTP_HEAD_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
-                                       {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
+                            Header3 = [{?HTTP_HEAD_RESP_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
+                                       {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
                                        |Header2],
                             {ok, Req2} = ?reply_ok(Header3, Req),
                             Req2;
@@ -242,9 +243,9 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
             end,
 
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
-                      {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
+                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
+                      {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
             ?reply_ok(Header, RespObject, Req);
 
         %% For a chunked object.
@@ -271,21 +272,21 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         {ok, match} when CacheObj#cache.file_path /= [] ->
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
-                      {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(CacheObj#cache.size)},
-                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
-                      {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
-                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True/via disk">>}],
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE,   CacheObj#cache.content_type},
+                      {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(CacheObj#cache.size)},
+                      {?HTTP_HEAD_RESP_ETAG,           ?http_etag(CacheObj#cache.etag)},
+                      {?HTTP_HEAD_RESP_LAST_MODIFIED,  leo_http:rfc1123_date(CacheObj#cache.mtime)},
+                      {?HTTP_HEAD_X_FROM_CACHE,        <<"True/via disk">>}],
             BodyFunc = fun(Socket, _Transport) ->
                                file:sendfile(CacheObj#cache.file_path, Socket)
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Header, BodyFunc, Req);
         {ok, match} when CacheObj#cache.file_path == [] ->
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_CONTENT_TYPE,  CacheObj#cache.content_type},
-                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(CacheObj#cache.etag)},
-                      {?HTTP_HEAD_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
-                      {?HTTP_HEAD_X_FROM_CACHE,  <<"True/via memory">>}],
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  CacheObj#cache.content_type},
+                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(CacheObj#cache.etag)},
+                      {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
+                      {?HTTP_HEAD_X_FROM_CACHE,       <<"True/via memory">>}],
             ?reply_ok(Header, CacheObj#cache.body, Req);
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
@@ -295,9 +296,9 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
                                         body = RespObject}),
             leo_cache_api:put(Key, Val),
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_CONTENT_TYPE,  Mime},
-                      {?HTTP_HEAD_ETAG4AWS,      ?http_etag(Meta#metadata.checksum)},
-                      {?HTTP_HEAD_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
+                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
+                      {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
             ?reply_ok(Header, RespObject, Req);
         {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
             {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
@@ -388,7 +389,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
             end,
 
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_ETAG4AWS, ?http_etag(ETag)}],
+                      {?HTTP_HEAD_RESP_ETAG, ?http_etag(ETag)}],
             ?reply_ok(Header, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Req);
@@ -433,7 +434,7 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
                    Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
                 {ok, _ETag} ->
                     Header = [?SERVER_HEADER,
-                              {?HTTP_HEAD_ETAG4AWS, ?http_etag(Digest1)}],
+                              {?HTTP_HEAD_RESP_ETAG, ?http_etag(Digest1)}],
                     ?reply_ok(Header, Req);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     ?reply_internal_error([?SERVER_HEADER], Req);
@@ -476,10 +477,10 @@ head_object(Req, Key,_Params) ->
         {ok, #metadata{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
             Headers   = [?SERVER_HEADER,
-                         {?HTTP_HEAD_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_ETAG4AWS,       ?http_etag(Meta#metadata.checksum)},
-                         {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
-                         {?HTTP_HEAD_LAST_MODIFIED,  Timestamp}],
+                         {?HTTP_HEAD_RESP_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
+                         {?HTTP_HEAD_RESP_ETAG,           ?http_etag(Meta#metadata.checksum)},
+                         {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
+                         {?HTTP_HEAD_RESP_LAST_MODIFIED,  Timestamp}],
             ?reply_ok(Headers, Req);
         {ok, #metadata{del = 1}} ->
             ?reply_not_found([?SERVER_HEADER], Req);
@@ -506,7 +507,7 @@ get_range_object(Req, _Key, {error, badarg}) ->
 get_range_object(Req, Key, {_Unit, Ranges}) when is_list(Ranges) ->
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,
-              {?HTTP_HEAD_CONTENT_TYPE,  Mime}],
+              {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}],
     {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
     get_range_object_1(Req2, Key, Ranges, undefined).
 

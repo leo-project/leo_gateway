@@ -120,7 +120,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
     case get_bucket_1(AccessKeyId, Key, none, Marker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
@@ -595,7 +595,7 @@ resp_copy_obj_xml(Req, Meta) ->
                         [leo_http:web_date(Meta#metadata.timestamp),
                          leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
     ?reply_ok([?SERVER_HEADER,
-               {?HTTP_HEAD_CONTENT_TYPE, ?HTTP_CTYPE_XML}
+               {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}
               ], XML, Req).
 
 

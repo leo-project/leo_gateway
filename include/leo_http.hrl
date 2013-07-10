@@ -53,7 +53,15 @@
 -define(HTTP_HEAD_PREFIX,             <<"prefix">>).
 -define(HTTP_HEAD_RANGE,              <<"range">>).
 
--define(HTTP_HEAD_ETAG4AWS,                     <<"ETag">>).
+-define(HTTP_HEAD_RESP_AGE,               <<"Age">>).
+-define(HTTP_HEAD_RESP_CACHE_CTRL,        <<"Cache-Control">>).
+-define(HTTP_HEAD_RESP_CONTENT_LENGTH,    <<"Content-Length">>).
+-define(HTTP_HEAD_RESP_CONTENT_MD5,       <<"Content-MD5">>).
+-define(HTTP_HEAD_RESP_CONTENT_TYPE,      <<"Content-Type">>).
+-define(HTTP_HEAD_RESP_ETAG,              <<"ETag">>).
+-define(HTTP_HEAD_RESP_IF_MODIFIED_SINCE, <<"If-Modified-Since">>).
+-define(HTTP_HEAD_RESP_LAST_MODIFIED,     <<"Last-Modified">>).
+
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"x-amz-metadata-directive">>).
 -define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"x-amz-copy-source">>).
 -define(HTTP_HEAD_X_AMZ_ID_2,                   <<"x-amz-id-2">>).
