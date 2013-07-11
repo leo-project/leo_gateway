@@ -117,6 +117,7 @@
 -define(DEF_HTTP_SSL_K_FILE,          "./server_key.pem").
 -define(DEF_HTTP_NUM_OF_ACCEPTORS,    32).
 -define(DEF_HTTP_CACHE,               false).
+-define(DEF_HTTP_MAX_KEEPALIVE,       1024).
 -define(DEF_CACHE_WORKERS,            64).
 -define(DEF_CACHE_RAM_CAPACITY,       64000000).
 -define(DEF_CACHE_DISC_CAPACITY,      64000000).
@@ -218,6 +219,7 @@
           ssl_certfile = []            :: string(),       %% ssl cert file name
           ssl_keyfile = []             :: string(),       %% ssk key file name
           num_of_acceptors = 0         :: pos_integer(),  %% # of acceptors (http server's workers)
+          max_keepalive = 0            :: pos_integer(),  %% # of request per processes
           %% for cache
           cache_method                 :: cache_method(), %% cahce method: [http | inner]
           cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers

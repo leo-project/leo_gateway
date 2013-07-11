@@ -303,12 +303,13 @@ log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
 get_options() ->
     %% Retrieve http-related properties:
     HttpProp = ?env_http_properties(),
-    HttpHandler          = leo_misc:get_value('handler',          HttpProp, ?DEF_HTTTP_HANDLER),
-    Port                 = leo_misc:get_value('port',             HttpProp, ?DEF_HTTP_PORT),
-    SSLPort              = leo_misc:get_value('ssl_port',         HttpProp, ?DEF_HTTP_SSL_PORT),
-    SSLCertFile          = leo_misc:get_value('ssl_certfile',     HttpProp, ?DEF_HTTP_SSL_C_FILE),
-    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',      HttpProp, ?DEF_HTTP_SSL_K_FILE),
-    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors', HttpProp, ?DEF_HTTP_NUM_OF_ACCEPTORS),
+    HttpHandler          = leo_misc:get_value('handler',             HttpProp, ?DEF_HTTTP_HANDLER),
+    Port                 = leo_misc:get_value('port',                HttpProp, ?DEF_HTTP_PORT),
+    SSLPort              = leo_misc:get_value('ssl_port',            HttpProp, ?DEF_HTTP_SSL_PORT),
+    SSLCertFile          = leo_misc:get_value('ssl_certfile',        HttpProp, ?DEF_HTTP_SSL_C_FILE),
+    SSLKeyFile           = leo_misc:get_value('ssl_keyfile',         HttpProp, ?DEF_HTTP_SSL_K_FILE),
+    NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',    HttpProp, ?DEF_HTTP_NUM_OF_ACCEPTORS),
+    MaxKeepAlive         = leo_misc:get_value('max_keepalive',       HttpProp, ?DEF_HTTP_MAX_KEEPALIVE),
 
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
@@ -359,6 +360,7 @@ get_options() ->
                                 ssl_certfile             = SSLCertFile,
                                 ssl_keyfile              = SSLKeyFile,
                                 num_of_acceptors         = NumOfAcceptors,
+                                max_keepalive            = MaxKeepAlive,
                                 cache_method             = CacheMethod,
                                 cache_workers            = CacheWorkers,
                                 cache_ram_capacity       = CacheRAMCapacity,
@@ -380,6 +382,7 @@ get_options() ->
     ?info("start/3", "ssl certfile: ~p",             [SSLCertFile]),
     ?info("start/3", "ssl keyfile: ~p",              [SSLKeyFile]),
     ?info("start/3", "num of acceptors: ~p",         [NumOfAcceptors]),
+    ?info("start/3", "max keepalive: ~p",            [MaxKeepAlive]),
     ?info("start/3", "cache_method: ~p",             [CacheMethod]),
     ?info("start/3", "cache workers: ~p",            [CacheWorkers]),
     ?info("start/3", "cache ram capacity: ~p",       [CacheRAMCapacity]),

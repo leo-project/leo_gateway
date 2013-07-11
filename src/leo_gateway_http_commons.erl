@@ -55,6 +55,7 @@ start(#http_options{handler                = Handler,
                     ssl_certfile           = SSLCertFile,
                     ssl_keyfile            = SSLKeyFile,
                     num_of_acceptors       = NumOfAcceptors,
+                    max_keepalive          = MaxKeepAlive,
                     cache_method           = CacheMethod,
                     cache_expire           = CacheExpire,
                     cache_max_content_len  = CacheMaxContentLen,
@@ -68,7 +69,8 @@ start(#http_options{handler                = Handler,
     Config = case InternalCache of
                  %% Using inner-cache
                  true ->
-                     [{env, [{dispatch, Dispatch}]}];
+                     [{env, [{dispatch, Dispatch}]},
+                      {max_keepalive, MaxKeepAlive}];
                  %% Using http-cache (like a varnish/squid)
                  false ->
                      CacheCondition = #cache_condition{expire          = CacheExpire,
@@ -76,8 +78,9 @@ start(#http_options{handler                = Handler,
                                                        content_types   = CachableContentTypes,
                                                        path_patterns   = CachablePathPatterns},
                      [{env,        [{dispatch, Dispatch}]},
-                      {onrequest,  Handler:onrequest(CacheCondition)},
-                      {onresponse, Handler:onresponse(CacheCondition)}]
+                      {max_keepalive, MaxKeepAlive},
+                      {onrequest,     Handler:onrequest(CacheCondition)},
+                      {onresponse,    Handler:onresponse(CacheCondition)}]
              end,
 
     {ok, _Pid1}= cowboy:start_http(Handler, NumOfAcceptors,
