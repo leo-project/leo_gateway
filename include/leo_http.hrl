@@ -53,7 +53,15 @@
 -define(HTTP_HEAD_PREFIX,             <<"prefix">>).
 -define(HTTP_HEAD_RANGE,              <<"range">>).
 
--define(HTTP_HEAD_ETAG4AWS,                     <<"ETag">>).
+-define(HTTP_HEAD_RESP_AGE,               <<"Age">>).
+-define(HTTP_HEAD_RESP_CACHE_CTRL,        <<"Cache-Control">>).
+-define(HTTP_HEAD_RESP_CONTENT_LENGTH,    <<"Content-Length">>).
+-define(HTTP_HEAD_RESP_CONTENT_MD5,       <<"Content-MD5">>).
+-define(HTTP_HEAD_RESP_CONTENT_TYPE,      <<"Content-Type">>).
+-define(HTTP_HEAD_RESP_ETAG,              <<"ETag">>).
+-define(HTTP_HEAD_RESP_IF_MODIFIED_SINCE, <<"If-Modified-Since">>).
+-define(HTTP_HEAD_RESP_LAST_MODIFIED,     <<"Last-Modified">>).
+
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE,         <<"x-amz-metadata-directive">>).
 -define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"x-amz-copy-source">>).
 -define(HTTP_HEAD_X_AMZ_ID_2,                   <<"x-amz-id-2">>).
@@ -109,6 +117,7 @@
 -define(DEF_HTTP_SSL_K_FILE,          "./server_key.pem").
 -define(DEF_HTTP_NUM_OF_ACCEPTORS,    32).
 -define(DEF_HTTP_CACHE,               false).
+-define(DEF_HTTP_MAX_KEEPALIVE,       1024).
 -define(DEF_CACHE_WORKERS,            64).
 -define(DEF_CACHE_RAM_CAPACITY,       64000000).
 -define(DEF_CACHE_DISC_CAPACITY,      64000000).
@@ -210,6 +219,7 @@
           ssl_certfile = []            :: string(),       %% ssl cert file name
           ssl_keyfile = []             :: string(),       %% ssk key file name
           num_of_acceptors = 0         :: pos_integer(),  %% # of acceptors (http server's workers)
+          max_keepalive = 0            :: pos_integer(),  %% # of request per processes
           %% for cache
           cache_method                 :: cache_method(), %% cahce method: [http | inner]
           cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers
