@@ -273,14 +273,13 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
         {ok, match} when CacheObj#cache.file_path /= [] ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,   CacheObj#cache.content_type},
-                      {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(CacheObj#cache.size)},
                       {?HTTP_HEAD_RESP_ETAG,           ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_RESP_LAST_MODIFIED,  leo_http:rfc1123_date(CacheObj#cache.mtime)},
                       {?HTTP_HEAD_X_FROM_CACHE,        <<"True/via disk">>}],
             BodyFunc = fun(Socket, _Transport) ->
                                file:sendfile(CacheObj#cache.file_path, Socket)
                        end,
-            cowboy_req:reply(?HTTP_ST_OK, Header, BodyFunc, Req);
+            cowboy_req:reply(?HTTP_ST_OK, Header, {CacheObj#cache.size, BodyFunc}, Req);
         {ok, match} when CacheObj#cache.file_path == [] ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  CacheObj#cache.content_type},
