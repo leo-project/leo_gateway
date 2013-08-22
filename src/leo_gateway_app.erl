@@ -78,6 +78,8 @@ start(_Type, _StartArgs) ->
                         DefLogDir
                 end,
     ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
+    ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
+                                      LogDir, ?LOG_FILENAME_ACCESS),
 
     %% Launch Supervisor
     Res = leo_gateway_sup:start_link(),
@@ -97,6 +99,7 @@ profile_output() ->
     eprof:log("leo_gateway.total.profile"),
     eprof:analyze(total).
 
+
 -spec consider_profiling() -> profiling | not_profiling | {error, any()}.
 consider_profiling() ->
     case application:get_env(profile) of
@@ -106,6 +109,7 @@ consider_profiling() ->
         _ ->
             not_profiling
     end.
+
 
 %% @doc Inspect the cluster-status
 %%
