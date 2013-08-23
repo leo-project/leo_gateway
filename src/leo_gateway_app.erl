@@ -78,8 +78,14 @@ start(_Type, _StartArgs) ->
                         DefLogDir
                 end,
     ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
-    ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
-                                      LogDir, ?LOG_FILENAME_ACCESS),
+    case application:get_env(leo_gateway, is_enable_access_log) of
+        {ok, true} ->
+            %% launch an access-logger
+            ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
+                                              LogDir, ?LOG_FILENAME_ACCESS);
+        _ ->
+            void
+    end,
 
     %% Launch Supervisor
     Res = leo_gateway_sup:start_link(),
