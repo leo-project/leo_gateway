@@ -62,6 +62,13 @@
 -define(TIMEOUT_L5_SEC,   30000).
 
 
+%% access-log
+-define(LOG_GROUP_ID_ACCESS, 'log_grp_access_log').
+-define(LOG_ID_ACCESS,       'log_id_access_log').
+-define(LOG_FILENAME_ACCESS, "access").
+
+
+
 -define(env_http_properties(),
         case application:get_env(leo_gateway, http) of
             {ok, EnvHttp} -> EnvHttp;
@@ -151,3 +158,39 @@
           proc_mem_usage   = 0 :: integer(),
           num_of_procs     = 0 :: integer()
          }).
+
+%% access-log
+%%
+-define(access_log_get(Filename, Size),
+        leo_logger_client_common:append({?LOG_ID_ACCESS,
+                                         #message_log{format  = "[GET]\t~s\t~w\t\~s\t~w\n",
+                                                      message = [Filename, Size,
+                                                                 leo_date:date_format(type_of_now, now()),
+                                                                 leo_date:clock()
+                                                                ]}
+                                        })).
+-define(access_log_put(Filename, Size),
+        leo_logger_client_common:append({?LOG_ID_ACCESS,
+                                         #message_log{format  = "[PUT]\t~s\t~w\t\~s\t~w\n",
+                                                      message = [Filename, Size,
+                                                                 leo_date:date_format(type_of_now, now()),
+                                                                 leo_date:clock()
+                                                                ]}
+                                        })).
+-define(access_log_delete(Filename),
+        leo_logger_client_common:append({?LOG_ID_ACCESS,
+                                         #message_log{format  = "[DELETE]\t~s\t~w\t\~s\t~w\n",
+                                                      message = [Filename, 0,
+                                                                 leo_date:date_format(type_of_now, now()),
+                                                                 leo_date:clock()
+                                                                ]}
+                                        })).
+-define(access_log_head(Filename),
+        leo_logger_client_common:append({?LOG_ID_ACCESS,
+                                         #message_log{format  = "[HEAD]\t~s\t~w\t\~s\t~w\n",
+                                                      message = [Filename, 0,
+                                                                 leo_date:date_format(type_of_now, now()),
+                                                                 leo_date:clock()
+                                                                ]}
+                                        })).
+

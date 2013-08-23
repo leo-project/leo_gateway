@@ -202,10 +202,11 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                         true ->
                             Now = leo_date:now(),
                             Bin = term_to_binary(
-                                    #cache{mtime        = Now,
-                                           etag         = leo_hex:raw_binary_to_integer(crypto:hash(md5, Body)),
-                                           content_type = ?http_content_type(Header1),
-                                           body         = Body}),
+                                    #cache{mtime = Now,
+                                           etag  = leo_hex:raw_binary_to_integer(crypto:hash(md5, Body)),
+                                           size  = byte_size(Body),
+                                           body  = Body,
+                                           content_type = ?http_content_type(Header1)}),
                             _ = leo_cache_api:put(Key, Bin),
 
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
@@ -232,6 +233,7 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
+            ?access_log_get(binary_to_list(Key), Meta#metadata.dsize),
             Mime = leo_mime:guess_mime(Key),
 
             case HasInnerCache of
@@ -239,7 +241,8 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
                     Val = term_to_binary(#cache{etag  = Meta#metadata.checksum,
                                                 mtime = Meta#metadata.timestamp,
                                                 content_type = Mime,
-                                                body = RespObject}),
+                                                body = RespObject,
+                                                size = byte_size(RespObject)}),
                     leo_cache_api:put(Key, Val);
                 false ->
                     void
@@ -253,7 +256,9 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
 
         %% For a chunked object.
         {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
-            {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
+            ?access_log_get(binary_to_list(Key), Meta#metadata.dsize),
+            {ok, Pid} = leo_gateway_large_object_handler:start_link(Key),
+
             try
                 leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
             after
@@ -273,7 +278,10 @@ get_object(Req, Key, #req_params{has_inner_cache = HasInnerCache}) ->
              {ok, any()}).
 get_object_with_cache(Req, Key, CacheObj,_Params) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
+        %% HIT: get an object from disc-cache
         {ok, match} when CacheObj#cache.file_path /= [] ->
+            ?access_log_get(binary_to_list(Key), CacheObj#cache.size),
+
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,   CacheObj#cache.content_type},
                       {?HTTP_HEAD_RESP_ETAG,           ?http_etag(CacheObj#cache.etag)},
@@ -283,32 +291,47 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
                                file:sendfile(CacheObj#cache.file_path, Socket)
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Header, {CacheObj#cache.size, BodyFunc}, Req);
+
+        %% HIT: get an object from memory-cache
         {ok, match} when CacheObj#cache.file_path == [] ->
+            ?access_log_get(binary_to_list(Key), CacheObj#cache.size),
+
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  CacheObj#cache.content_type},
                       {?HTTP_HEAD_RESP_ETAG,          ?http_etag(CacheObj#cache.etag)},
                       {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                       {?HTTP_HEAD_X_FROM_CACHE,       <<"True/via memory">>}],
             ?reply_ok(Header, CacheObj#cache.body, Req);
+
+        %% MISS: get an object from storage (small-size)
         {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
+            ?access_log_get(binary_to_list(Key), Meta#metadata.dsize),
+
             Mime = leo_mime:guess_mime(Key),
             Val = term_to_binary(#cache{etag  = Meta#metadata.checksum,
                                         mtime = Meta#metadata.timestamp,
                                         content_type = Mime,
-                                        body = RespObject}),
+                                        body = RespObject,
+                                        size = byte_size(RespObject)
+                                       }),
             leo_cache_api:put(Key, Val),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
                       {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
             ?reply_ok(Header, RespObject, Req);
+
+        %% MISS: get an object from storage (large-size)
         {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
+            ?access_log_get(binary_to_list(Key), Meta#metadata.dsize),
             {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
+
             try
                 leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
             after
                 catch leo_gateway_large_object_handler:stop(Pid)
             end;
+
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -322,19 +345,21 @@ get_object_with_cache(Req, Key, CacheObj,_Params) ->
 -spec(put_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_object(Req, Key, Params) ->
-    {Size0, _} = cowboy_req:body_length(Req),
+    {Size, _} = cowboy_req:body_length(Req),
 
-    case (Size0 >= Params#req_params.threshold_obj_len) of
-        true when Size0 >= Params#req_params.max_len_for_obj ->
+    case (Size >= Params#req_params.threshold_obj_len) of
+        true when Size >= Params#req_params.max_len_for_obj ->
             ?reply_bad_request([?SERVER_HEADER], Req);
+
         true when Params#req_params.is_upload == false ->
-            put_large_object(Req, Key, Size0, Params);
+            put_large_object(Req, Key, Size, Params);
+
         false ->
             Ret = case cowboy_req:has_body(Req) of
                       true ->
                           case cowboy_req:body(Req) of
                               {ok, Bin0, Req0} ->
-                                  {ok, {Size0, Bin0, Req0}};
+                                  {ok, {Size, Bin0, Req0}};
                               {error, Cause} ->
                                   {error, Cause}
                           end;
@@ -363,6 +388,7 @@ binary_is_contained(<<C:8, Rest/binary>>, Char) ->
 put_small_object({error, Cause},_,_) ->
     {error, Cause};
 put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
+    ?access_log_put(binary_to_list(Key), Size),
     CIndex = case Params#req_params.upload_part_num of
                  <<>> ->
                      0;
@@ -384,7 +410,9 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
                     Val  = term_to_binary(#cache{etag = ETag,
                                                  mtime = leo_date:now(),
                                                  content_type = Mime,
-                                                 body = Bin}),
+                                                 body = Bin,
+                                                 size = byte_size(Bin)
+                                                }),
                     _ = leo_cache_api:put(Key, Val);
                 false ->
                     void
@@ -405,6 +433,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, Params) ->
 -spec(put_large_object(any(), binary(), pos_integer(), #req_params{}) ->
              {ok, any()}).
 put_large_object(Req, Key, Size, #req_params{chunked_obj_len=ChunkedSize})->
+    ?access_log_put(binary_to_list(Key), Size),
     {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
 
     %% remove a registered object with 'touch-command'
@@ -459,6 +488,8 @@ put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, TotalChun
 -spec(delete_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 delete_object(Req, Key,_Params) ->
+    ?access_log_delete(binary_to_list(Key)),
+
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
@@ -475,6 +506,8 @@ delete_object(Req, Key,_Params) ->
 -spec(head_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 head_object(Req, Key,_Params) ->
+    ?access_log_head(binary_to_list(Key)),
+
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
@@ -506,12 +539,12 @@ range_object(Req, Key, #req_params{range_header = RangeHeader}) ->
 
 get_range_object(Req, _Key, {error, badarg}) ->
     ?reply_bad_range([?SERVER_HEADER], Req);
-get_range_object(Req, Key, {_Unit, Ranges}) when is_list(Ranges) ->
+get_range_object(Req, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,
               {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}],
     {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
-    get_range_object_1(Req2, Key, Ranges, undefined).
+    get_range_object_1(Req2, Key, Range, undefined).
 
 get_range_object_1(Req, _Key, [], _) ->
     {ok, Req};
@@ -528,6 +561,8 @@ get_range_object_1(Req, Key, [End|Rest], _) ->
     get_range_object_1(Req, Key, Rest, Ret).
 
 get_range_object_2(Req, Key, Start, End) ->
+    ?access_log_get(binary_to_list(Key), End - Start),
+
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0, cnumber = 0} = _Meta} ->
             get_range_object_small(Req, Key, Start, End);
@@ -553,7 +588,7 @@ calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
     NewEndPos   = ObjectSize - 1,
     {NewStartPos, NewEndPos};
 calc_pos(StartPos, 0, ObjectSize) ->
-    {StartPos, ObjectSize - 1}; 
+    {StartPos, ObjectSize - 1};
 calc_pos(StartPos, EndPos, _ObjectSize) ->
     {StartPos, EndPos}.
 
@@ -582,11 +617,11 @@ get_range_object_large(Req, Key, Start, End, Total, Index, CurPos) ->
     end.
 
 send_chunk(_Req, _Key, Start, _End, CurPos, ChunkSize) when (CurPos + ChunkSize - 1) < Start ->
-    % skip
+                                                % skip
     CurPos + ChunkSize;
 send_chunk(Req, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
                                                          (CurPos + ChunkSize - 1) =< End ->
-    % whole get
+                                                % whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->
             cowboy_req:chunk(Bin, Req),
@@ -595,15 +630,15 @@ send_chunk(Req, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
             Error
     end;
 send_chunk(Req, Key, Start, End, CurPos, ChunkSize) ->
-    % partial get
+                                                % partial get
     StartPos = case Start =< CurPos of
-        true -> 0;
-        false -> Start - CurPos
-    end,
+                   true -> 0;
+                   false -> Start - CurPos
+               end,
     EndPos = case (CurPos + ChunkSize - 1) =< End of
-        true -> ChunkSize - 1;
-        false -> End - CurPos
-    end,
+                 true -> ChunkSize - 1;
+                 false -> End - CurPos
+             end,
     case leo_gateway_rpc_handler:get(Key, StartPos, EndPos) of
         {ok, _Meta, <<>>} ->
             CurPos + ChunkSize;
@@ -613,7 +648,7 @@ send_chunk(Req, Key, Start, End, CurPos, ChunkSize) ->
         {error, Cause} ->
             {error, Cause}
     end.
-    
+
 %%--------------------------------------------------------------------
 %% INNER Functions
 %%--------------------------------------------------------------------
