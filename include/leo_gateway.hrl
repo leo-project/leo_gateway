@@ -177,10 +177,10 @@
                                                                  leo_date:clock()
                                                                 ]}
                                         })).
--define(access_log_delete(Filename),
+-define(access_log_delete(Filename, Size),
         leo_logger_client_common:append({?LOG_ID_ACCESS,
                                          #message_log{format  = "[DELETE]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, 0,
+                                                      message = [Filename, Size,
                                                                  leo_date:date_format(type_of_now, now()),
                                                                  leo_date:clock()
                                                                 ]}
