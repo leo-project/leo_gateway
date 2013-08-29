@@ -499,7 +499,7 @@ delete_object(Req, Key,_Params) ->
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
         {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_no_content([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->
