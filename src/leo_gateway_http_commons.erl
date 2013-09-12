@@ -488,13 +488,18 @@ put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, TotalChun
 -spec(delete_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 delete_object(Req, Key,_Params) ->
-    ?access_log_delete(binary_to_list(Key)),
+    case leo_gateway_rpc_handler:head(Key) of
+        {ok, #metadata{del = 0, dsize = Size}} ->
+            ?access_log_delete(binary_to_list(Key), Size);
+        _ ->
+            ?access_log_delete(binary_to_list(Key), 0)
+    end,
 
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
         {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_no_content([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Req);
         {error, timeout} ->

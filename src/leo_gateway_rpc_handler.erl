@@ -226,11 +226,13 @@ get_request_parameters(Method, Key) ->
 
 %% @doc Error messeage filtering
 %%
-error_filter([not_found = Error|_T])       -> Error;
-error_filter([H|T])                        -> error_filter(T, H).
-error_filter([],                     Prev) -> Prev;
-error_filter([not_found = Error|_T],_Prev) -> Error;
-error_filter([_H|T],                 Prev) -> error_filter(T, Prev).
+error_filter([not_found|_])          -> not_found;
+error_filter([{error, not_found}|_]) -> not_found;
+error_filter([H|T])                  -> error_filter(T, H).
+error_filter([],             Prev)   -> Prev;
+error_filter([not_found|_T],_Prev)   -> not_found;
+error_filter([{error,not_found}|_],_Prev) -> not_found;
+error_filter([_H|T],                Prev) -> error_filter(T, Prev).
 
 
 %% @doc Handle an error response

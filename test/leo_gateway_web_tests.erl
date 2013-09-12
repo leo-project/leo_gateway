@@ -505,7 +505,7 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
                                                          ?TARGET_HOST,
                                                          ":8080/a/b.png"]),
                                            [{"Authorization","auth"}]}, [], [{full_result, false}]),
-                ?assertEqual(404, SC)
+                ?assertEqual(204, SC)
             catch
                 throw:Reason ->
                     throw(Reason)
