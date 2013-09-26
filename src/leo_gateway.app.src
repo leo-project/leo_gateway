@@ -22,7 +22,7 @@
 {application, leo_gateway,
   [
    {description, "LeoFS Gateway Server"},
-   {vsn, "0.14.13"},
+   {vsn, "0.14.14"},
    {id, "leo_gateway"},
    {registered, []},
    {applications, [kernel, stdlib, crypto, ranch, asn1]},
