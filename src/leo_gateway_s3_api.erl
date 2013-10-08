@@ -49,7 +49,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
--compile({inline, [handle/2, handle_1/3, handle_2/6,
+-compile({inline, [handle/2, handle_1/4, handle_2/6,
                    handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/3,
                    resp_copy_obj_xml/2, request_params/2, auth/4, auth/5,
@@ -75,8 +75,8 @@ init({_Any, http}, Req, Opts) ->
 %% @doc Handle a request
 %% @callback
 handle(Req, State) ->
-    Key = gen_key(Req),
-    handle_1(Req, State, Key).
+    {Bucket, Key} = gen_key(Req),
+    handle_1(Req, State, Bucket, Key).
 
 %% @doc Terminater
 terminate(_Reason, _Req, _State) ->
@@ -330,7 +330,7 @@ gen_key(Req) ->
 
 %% @doc Handle an http-request
 %% @private
-handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Path) ->
+handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Bucket, Path) ->
     BinPart    = binary:part(Path, {byte_size(Path)-1, 1}),
     TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod = cowboy_req:get(method, Req),
@@ -352,6 +352,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
             ReqParams = request_params(
                           Req2, #req_params{handler           = ?MODULE,
                                             path              = Path2,
+                                            bucket            = Bucket,
                                             token_length      = TokenLen,
                                             min_layers        = NumOfMinLayers,
                                             max_layers        = NumOfMaxLayers,

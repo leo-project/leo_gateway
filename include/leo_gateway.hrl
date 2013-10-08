@@ -68,7 +68,6 @@
 -define(LOG_FILENAME_ACCESS, "access").
 
 
-
 -define(env_http_properties(),
         case application:get_env(leo_gateway, http) of
             {ok, EnvHttp} -> EnvHttp;
@@ -161,36 +160,48 @@
 
 %% access-log
 %%
--define(access_log_get(Filename, Size),
+-define(access_log_get(Bucket, Path, Size, Response),
         leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[GET]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, Size,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
+                                         #message_log{format  = "[GET]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                                                      message = [binary_to_list(Bucket),
+                                                                 binary_to_list(Path),
+                                                                 Size,
+                                                                 leo_date:date_format(),
+                                                                 leo_date:clock(),
+                                                                 Response
                                                                 ]}
                                         })).
--define(access_log_put(Filename, Size),
+-define(access_log_put(Bucket, Path, Size, Response),
         leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[PUT]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, Size,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
+                                         #message_log{format  = "[PUT]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                                                      message = [binary_to_list(Bucket),
+                                                                 binary_to_list(Path),
+                                                                 Size,
+                                                                 leo_date:date_format(),
+                                                                 leo_date:clock(),
+                                                                 Response
                                                                 ]}
                                         })).
--define(access_log_delete(Filename, Size),
+-define(access_log_delete(Bucket, Path, Size, Response),
         leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[DELETE]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, Size,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
+                                         #message_log{format  = "[DELETE]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                                                      message = [binary_to_list(Bucket),
+                                                                 binary_to_list(Path),
+                                                                 Size,
+                                                                 leo_date:date_format(),
+                                                                 leo_date:clock(),
+                                                                 Response
                                                                 ]}
                                         })).
--define(access_log_head(Filename),
+-define(access_log_head(Bucket, Path, Response),
         leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[HEAD]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, 0,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
+                                         #message_log{format  = "[HEAD]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                                                      message = [binary_to_list(Bucket),
+                                                                 binary_to_list(Path),
+                                                                 0,
+                                                                 leo_date:date_format(),
+                                                                 leo_date:clock(),
+                                                                 Response
                                                                 ]}
                                         })).
 

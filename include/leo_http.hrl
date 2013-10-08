@@ -243,6 +243,7 @@
           %% basic info
           handler                    :: http_handler(), %% http-handler
           path = <<>>                :: binary(),       %% path (uri)
+          bucket = <<>>              :: binary(),       %% bucket (for s3-api)
           access_key_id = []         :: string(),       %% s3's access-key-id
           token_length = 0           :: pos_integer(),  %% length of tokened path
           min_layers = 0             :: pos_integer(),  %% acceptable # of min layers
