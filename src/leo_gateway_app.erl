@@ -78,11 +78,36 @@ start(_Type, _StartArgs) ->
                         DefLogDir
                 end,
     ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
+
+    %% access-logger (file-appender)
     case application:get_env(leo_gateway, is_enable_access_log) of
         {ok, true} ->
-            %% launch an access-logger
             ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
                                               LogDir, ?LOG_FILENAME_ACCESS);
+        _ ->
+            void
+    end,
+
+    %% access-logger (log search)
+    case application:get_env(leo_gateway, is_enable_esearch) of
+        {ok, true} ->
+            ESearchHost = case application:get_env(leo_gateway, esearch_host) of
+                              {ok, V1} ->
+                                  V1;
+                              _ -> ?DEF_ESEARCH_HOST
+                          end,
+            ESearchPort = case application:get_env(leo_gateway, esearch_port) of
+                              {ok, V2} ->
+                                  V2;
+                              _ -> ?DEF_ESEARCH_PORT
+                          end,
+            ESearchTimeout = case application:get_env(leo_gateway, esearch_timeout) of
+                                 {ok, V3} ->
+                                     V3;
+                                 _ -> ?DEF_ESEARCH_TIMEOUT
+                             end,
+            ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
+                                               ESearchHost, ESearchPort, ESearchTimeout);
         _ ->
             void
     end,

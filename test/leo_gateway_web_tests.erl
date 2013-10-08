@@ -141,6 +141,8 @@ setup(InitFun, TermFun) ->
     ok = leo_logger_client_message:new("./", ?LOG_LEVEL_WARN),
     ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
                                       "./", ?LOG_FILENAME_ACCESS),
+    ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
+                                       "127.0.0.1", 9200, 5000),
 
     io:format(user, "cwd:~p~n",[os:cmd("pwd")]),
     [] = os:cmd("epmd -daemon"),
