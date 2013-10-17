@@ -52,7 +52,7 @@
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
                    handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/3,
-                   resp_copy_obj_xml/2, request_params/2, auth/4, auth/5,
+                   resp_copy_obj_xml/2, request_params/2, auth/4, auth/6, auth/7,
                    get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2
                   ]}).
 
@@ -612,32 +612,68 @@ request_params(Req, Params) ->
                       upload_part_num = PartNum,
                       range_header    = Range}.
 
+%% @doc check if bucket is public-read
+is_public_read([]) ->
+    false;
+is_public_read([H|Rest]) ->
+    #bucket_acl_info{user_id = UserId, permissions = Permissions} = H,
+    case UserId == ?GRANTEE_ALL_USER andalso (Permissions == [read] orelse Permissions == [read, write]) of
+        true ->
+            true;
+        false ->
+            is_public_read(Rest)
+    end.
+
+is_public_read_write([]) ->
+    false;
+is_public_read_write([H|Rest]) ->
+    #bucket_acl_info{user_id = UserId, permissions = Permissions} = H,
+    case UserId == ?GRANTEE_ALL_USER andalso Permissions == [read, write] of
+        true ->
+            true;
+        false ->
+            is_public_read_write(Rest)
+    end.
 
 %% @doc Authentication
 %% @private
-auth(Req, HTTPMethod, Path, TokenLen) when TokenLen =< 1 ->
-    auth(next, Req, HTTPMethod, Path, TokenLen);
-auth(Req, ?HTTP_POST = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
-    auth(next, Req, HTTPMethod, Path, TokenLen);
-auth(Req, ?HTTP_PUT = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
-    auth(next, Req, HTTPMethod, Path, TokenLen);
-auth(Req, ?HTTP_DELETE = HTTPMethod, Path, TokenLen) when TokenLen > 1 ->
-    auth(next, Req, HTTPMethod, Path, TokenLen);
-auth(_,_,_,_) ->
-    {ok, []}.
+auth(Req, HTTPMethod, Path, TokenLen) ->
+    Bucket = case (TokenLen >= 1) of
+        true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
+        false -> ?BIN_EMPTY
+    end,
+    case leo_s3_bucket:get_acls(Bucket) of
+        {ok, ACLs} ->
+            auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
+        {error, Cause} ->
+            {error, Cause}
+    end.
 
-auth(next, Req, HTTPMethod, Path, TokenLen) ->
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen =< 1 ->
+    auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 andalso (HTTPMethod == ?HTTP_POST orelse HTTPMethod == ?HTTP_PUT orelse HTTPMethod == ?HTTP_DELETE)->
+    case is_public_read_write(ACLs) of
+        true ->
+            {ok, []};
+        false ->
+            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs)
+    end;
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 ->
+    %% handle HTTP_GET|HTTP_HEAD
+    case is_public_read(ACLs) of
+        true ->
+            {ok, []};
+        false ->
+            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs)
+    end.
+
+auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
         {AuthorizationBin, _} ->
-            Bucket = case (TokenLen >= 1) of
-                         true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
-                         false -> ?BIN_EMPTY
-                     end,
-
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
             {RawUri,  _} = cowboy_req:path(Req),
             {QStr1,   _} = cowboy_req:qs(Req),
