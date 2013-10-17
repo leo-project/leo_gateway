@@ -67,6 +67,14 @@
 -define(LOG_ID_ACCESS,       'log_id_access_log').
 -define(LOG_FILENAME_ACCESS, "access").
 
+%% sync interval for s3 related info
+-define(DEF_SYNC_INTERVAL, 60).
+
+-define(env_sync_interval(),
+        case application:get_env(leo_gateway, sync_interval) of
+            {ok, SyncInterval} -> SyncInterval;
+            _ -> ?DEF_SYNC_INTERVAL
+        end).
 
 -define(env_http_properties(),
         case application:get_env(leo_gateway, http) of
