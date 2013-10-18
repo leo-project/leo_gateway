@@ -374,6 +374,9 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
 
 %% @doc Handle a request (sub)
 %% @private
+handle_2({error, not_found}, Req,_,_,_,State) ->
+    {ok, Req1} = ?reply_not_found([?SERVER_HEADER], Req),
+    {ok, Req1, State};
 handle_2({error, _Cause}, Req,_,_,_,State) ->
     {ok, Req1} = ?reply_forbidden([?SERVER_HEADER], Req),
     {ok, Req1, State};
@@ -645,6 +648,8 @@ auth(Req, HTTPMethod, Path, TokenLen) ->
     case leo_s3_bucket:get_acls(Bucket) of
         {ok, ACLs} ->
             auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
+        not_found ->
+            {error, not_found};
         {error, Cause} ->
             {error, Cause}
     end.
