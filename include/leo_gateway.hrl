@@ -68,12 +68,12 @@
 -define(LOG_FILENAME_ACCESS, "access").
 
 %% sync interval for s3 related info
--define(DEF_SYNC_INTERVAL, 300).
+-define(DEF_BUCKET_PROP_SYNC_INTERVAL, 300).
 
--define(env_sync_interval(),
-        case application:get_env(leo_gateway, sync_interval) of
-            {ok, SyncInterval} -> SyncInterval;
-            _ -> ?DEF_SYNC_INTERVAL
+-define(env_bucket_prop_sync_interval(),
+        case application:get_env(leo_gateway, bucket_prop_sync_interval) of
+            {ok, EnvBucketPropSyncInterval} -> EnvBucketPropSyncInterval;
+            _ -> ?DEF_BUCKET_PROP_SYNC_INTERVAL
         end).
 
 -define(env_http_properties(),

@@ -182,10 +182,12 @@ after_process_0({ok, _Pid} = Res) ->
     ManagerNodes0  = ?env_manager_nodes(leo_gateway),
     ManagerNodes1 = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes0),
 
-    S3SyncInterval = ?env_sync_interval(),
+    %% Retrieve bucket-prop-sync-interval for S3-API
+    BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
 
     %% Launch S3Libs:Auth/Bucket/EndPoint
-    ok = leo_s3_libs:start(slave, [{'provider', ManagerNodes1}, {'sync_interval', S3SyncInterval}]),
+    ok = leo_s3_libs:start(slave, [{'provider', ManagerNodes1},
+                                   {'sync_interval', BucketPropSyncInterval}]),
     _ = leo_s3_endpoint:get_endpoints(),
 
     %% Launch http-handler(s)
