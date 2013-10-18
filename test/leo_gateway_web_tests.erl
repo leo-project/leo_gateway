@@ -31,6 +31,7 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -141,8 +142,8 @@ setup(InitFun, TermFun) ->
     ok = leo_logger_client_message:new("./", ?LOG_LEVEL_WARN),
     ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
                                       "./", ?LOG_FILENAME_ACCESS),
-    ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
-                                       "127.0.0.1", 9200, 5000),
+    %ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
+    %                                   "127.0.0.1", 9200, 5000),
 
     io:format(user, "cwd:~p~n",[os:cmd("pwd")]),
     [] = os:cmd("epmd -daemon"),
@@ -167,6 +168,9 @@ setup(InitFun, TermFun) ->
                 end),
     meck:new(leo_s3_endpoint),
     meck:expect(leo_s3_endpoint, get_endpoints, 0, {ok, [{endpoint, <<"localhost">>, 0}]}),
+
+    meck:new(leo_s3_bucket),
+    meck:expect(leo_s3_bucket, get_acls, 1, {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER, permissions = [read, write]}]}),
 
     code:add_path("../cherly/ebin"),
     ok = file:write_file("./server_cert.pem", ?SSL_CERT_DATA),
@@ -501,8 +505,6 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, delete, 2, {error, not_found}]),
 
-            meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} =
@@ -516,8 +518,7 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
                     throw(Reason)
             after
                 ok = rpc:call(Node0, meck, unload, [leo_storage_handler_object]),
-                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
-                ok = meck:unload(leo_s3_auth)
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
             end,
             ok
     end.
@@ -529,8 +530,6 @@ delete_object_error_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, delete, 2, {error, foobar}]),
 
-            meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} =
@@ -543,8 +542,7 @@ delete_object_error_([_TermFun, _Node0, Node1]) ->
                 throw:Reason ->
                     throw(Reason)
             after
-                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
-                ok = meck:unload(leo_s3_auth)
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
             end,
             ok
     end.
@@ -555,9 +553,6 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
                           [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, delete, 2, ok]),
-
-            meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} =
@@ -570,8 +565,7 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
                 throw:Reason ->
                     throw(Reason)
             after
-                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
-                ok = meck:unload(leo_s3_auth)
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
             end,
             ok
     end.
@@ -582,9 +576,6 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
                           [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, put, 2, {error, foobar}]),
-
-            meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} =
@@ -598,8 +589,7 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
                 throw:Reason ->
                     throw(Reason)
             after
-                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
-                ok = meck:unload(leo_s3_auth)
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
             end,
             ok
     end.
@@ -610,9 +600,6 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
                           [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, put, 2, {ok, 1}]),
-
-            meck:new(leo_s3_auth),
-            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
 
             try
                 {ok, {SC, _Body}} =
@@ -626,8 +613,7 @@ put_object_normal1_([_TermFun, _Node0, Node1]) ->
                 throw:Reason ->
                     throw(Reason)
             after
-                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
-                ok = meck:unload(leo_s3_auth)
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
             end,
             ok
     end.
