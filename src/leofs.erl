@@ -19,18 +19,18 @@
 %% under the License.
 %%
 %%====================================================================
--module(leo_gateway_embed_api).
+-module(leofs).
 -author('Yosuke Hara').
 
 -include("leo_http.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/0, stop/0,
+-export([start/0, stop/0,
          get/1, put/2, head/1, delete/1]).
 
 
-start_link() ->
+start() ->
     application:start(crypto),
     application:start(ranch),
     application:start(asn1),
