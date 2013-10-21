@@ -26,7 +26,7 @@
 
 -define(SHUTDOWN_WAITING_TIME, 2000).
 -define(S3_HTTP, leo_s3_http).
--define(DEF_LAYERS_OF_DIRS, {1, 12}).
+-define(DEF_LAYERS_OF_DIRS, {1, 64}).
 
 -ifdef(TEST).
 -define(DEF_TIMEOUT,     1000).
@@ -67,13 +67,11 @@
 -define(LOG_ID_ACCESS,       'log_id_access_log').
 -define(LOG_FILENAME_ACCESS, "access").
 
-%% sync interval for s3 related info
--define(DEF_BUCKET_PROP_SYNC_INTERVAL, 300).
 
 -define(env_bucket_prop_sync_interval(),
         case application:get_env(leo_gateway, bucket_prop_sync_interval) of
             {ok, EnvBucketPropSyncInterval} -> EnvBucketPropSyncInterval;
-            _ -> ?DEF_BUCKET_PROP_SYNC_INTERVAL
+            _ -> 300 %% 300sec/5min
         end).
 
 -define(env_http_properties(),

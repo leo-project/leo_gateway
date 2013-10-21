@@ -29,10 +29,6 @@
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
--include_lib("leo_dcerl/include/leo_dcerl.hrl").
--include_lib("leo_cache/include/leo_cache.hrl").
--undef(error).
--undef(warn).
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -98,24 +94,6 @@ start(#http_options{handler                = Handler,
 -spec(start(atom(), #http_options{}) ->
              ok).
 start(Sup, Options) ->
-    %% launch LeoCache
-    NumOfCacheWorkers     = Options#http_options.cache_workers,
-    CacheRAMCapacity      = Options#http_options.cache_ram_capacity,
-    CacheDiscCapacity     = Options#http_options.cache_disc_capacity,
-    CacheDiscThresholdLen = Options#http_options.cache_disc_threshold_len,
-    CacheDiscDirData      = Options#http_options.cache_disc_dir_data,
-    CacheDiscDirJournal   = Options#http_options.cache_disc_dir_journal,
-    leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
-                         {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
-                         {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
-                         {?PROP_DISC_CACHE_NAME,          ?DEF_PROP_DISC_CACHE},
-                         {?PROP_DISC_CACHE_WORKERS,       NumOfCacheWorkers},
-                         {?PROP_DISC_CACHE_SIZE,          CacheDiscCapacity},
-                         {?PROP_DISC_CACHE_THRESHOLD_LEN, CacheDiscThresholdLen},
-                         {?PROP_DISC_CACHE_DATA_DIR,      CacheDiscDirData},
-                         {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
-                        ]),
-
     %% launch Cowboy
     ChildSpec1 = {cowboy_sup,
                   {cowboy_sup, start_link, []},

@@ -33,7 +33,7 @@
          get/2,
          get/3,
          delete/1,
-         put/3, put/4, put/6, put/7,
+         put/2, put/3, put/4, put/6, put/7,
          invoke/5
         ]).
 
@@ -124,6 +124,12 @@ delete(Key) ->
 
 %% @doc Insert an object into the storage-cluster (regular-case)
 %%
+-spec(put(binary(), binary()) ->
+             ok|{error, any()}).
+put(Key, Body) ->
+    Size = byte_size(Body),
+    put(Key, Body, Size, 0, 0, 0, 0).
+
 -spec(put(binary(), binary(), integer()) ->
              ok|{error, any()}).
 put(Key, Body, Size) ->

@@ -100,14 +100,17 @@
 -define(HTTP_HANDLER_S3,    'leo_gateway_s3_api').
 -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
 -define(HTTP_HANDLER_REST,  'leo_gateway_rest_api').
+-define(HTTP_HANDLER_EMBED, 'leo_gateway_embed').
+
 -type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST).
 
 -define(convert_to_handler(_V), case _V of
-                                     'rest'  -> ?HTTP_HANDLER_REST;
-                                     'swift' -> ?HTTP_HANDLER_SWIFT;
-                                     's3'    -> ?HTTP_HANDLER_S3;
-                                     _       -> ?HTTP_HANDLER_S3
-                                 end).
+                                    'rest'  -> ?HTTP_HANDLER_REST;
+                                    'swift' -> ?HTTP_HANDLER_SWIFT;
+                                    's3'    -> ?HTTP_HANDLER_S3;
+                                    'embed' -> ?HTTP_HANDLER_EMBED;
+                                    _       -> ?HTTP_HANDLER_S3
+                                end).
 
 %% Default values
 -define(DEF_HTTTP_HANDLER,            's3').
@@ -155,7 +158,7 @@
 -define(http_date(_D),         leo_http:rfc1123_date(_D)).
 -define(httP_cache_ctl(_C),    lists:append(["max-age=",integer_to_list(_C)])).
 -define(http_content_type(_H), case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE,1,_H) of
-                                  false     -> ?HTTP_CTYPE_OCTET_STREAM;
+                                   false     -> ?HTTP_CTYPE_OCTET_STREAM;
                                    {_, Val} -> Val
                                end).
 
@@ -270,7 +273,7 @@
           content_type = []   :: string(),      %% from a Content-Type header
           body         = <<>> :: binary(),      %% body (value),
           size         = 0    :: pos_integer(), %% body size
-          file_path    = ""   :: file:name_all()%% file path when this cache is stored on disk 
+          file_path    = ""   :: file:name_all()%% file path when this cache is stored on disk
          }).
 
 -record(cache_condition, {
