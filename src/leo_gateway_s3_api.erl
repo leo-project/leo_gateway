@@ -109,13 +109,14 @@ onresponse(CacheCondition) ->
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  qs_prefix     = Prefix}) ->
     Marker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
-                   {undefined, _} -> [];
-                   {Val0,      _} -> Val0
-               end,
+                 {undefined, _} -> [];
+                 {Val0,      _} -> Val0
+             end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
-                   {undefined, _} -> 1000;
-                   {Val1,      _} -> list_to_integer(binary_to_list(Val1))
-               end,
+                  {undefined, _} -> 1000;
+                  {Val1,      _} -> list_to_integer(binary_to_list(Val1))
+              end,
+
     case get_bucket_1(AccessKeyId, Key, none, Marker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Header = [?SERVER_HEADER,
@@ -504,7 +505,9 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
              (X, Acc, S) ->
                   {[X|Acc], S}
           end,
-    {#xmlElement{content = Content},_} = xmerl_scan:string(binary_to_list(Bin), [{space,normalize}, {acc_fun, Acc}]),
+    {#xmlElement{content = Content},_} = xmerl_scan:string(
+                                           binary_to_list(Bin),
+                                           [{space,normalize}, {acc_fun, Acc}]),
     TotalUploadedObjs = length(Content),
 
     case handle_multi_upload_3(TotalUploadedObjs, Path1, []) of
@@ -642,21 +645,24 @@ is_public_read_write([H|Rest]) ->
 %% @private
 auth(Req, HTTPMethod, Path, TokenLen) ->
     Bucket = case (TokenLen >= 1) of
-        true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
-        false -> ?BIN_EMPTY
-    end,
+                 true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
+                 false -> ?BIN_EMPTY
+             end,
     case leo_s3_bucket:get_acls(Bucket) of
         {ok, ACLs} ->
             auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
         not_found ->
-            {error, not_found};
+            auth(Req, HTTPMethod, Path, TokenLen, Bucket, []);
         {error, Cause} ->
             {error, Cause}
     end.
 
 auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen =< 1 ->
     auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 andalso (HTTPMethod == ?HTTP_POST orelse HTTPMethod == ?HTTP_PUT orelse HTTPMethod == ?HTTP_DELETE)->
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 andalso
+                                                         (HTTPMethod == ?HTTP_POST orelse
+                                                          HTTPMethod == ?HTTP_PUT orelse
+                                                          HTTPMethod == ?HTTP_DELETE) ->
     case is_public_read_write(ACLs) of
         true ->
             {ok, []};
@@ -828,9 +834,9 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
     Key    = binary_to_list(KeyBin),
     Prefix = binary_to_list(PrefixBin),
     TruncatedStr = case length(MetadataList) =:= MaxKeys of
-        true -> "true";
-        false -> "false"
-    end,
+                       true -> "true";
+                       false -> "false"
+                   end,
 
     Fun = fun(#metadata{key       = EntryKeyBin,
                         dsize     = Length,
@@ -848,28 +854,28 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                               -1 ->
                                   %% directory.
                                   {lists:append([Acc,
-                                                "<CommonPrefixes><Prefix>",
-                                                Prefix,
-                                                Entry,
-                                                "</Prefix></CommonPrefixes>"]),
+                                                 "<CommonPrefixes><Prefix>",
+                                                 Prefix,
+                                                 Entry,
+                                                 "</Prefix></CommonPrefixes>"]),
                                    EntryKeyBin};
                               _ ->
                                   %% file.
                                   {lists:append([Acc,
-                                                "<Contents>",
-                                                "<Key>", Prefix, Entry, "</Key>",
-                                                "<LastModified>", leo_http:web_date(TS),
-                                                "</LastModified>",
-                                                "<ETag>", leo_hex:integer_to_hex(CS, 32),
-                                                "</ETag>",
-                                                "<Size>", integer_to_list(Length),
-                                                "</Size>",
-                                                "<StorageClass>STANDARD</StorageClass>",
-                                                "<Owner>",
-                                                "<ID>leofs</ID>",
-                                                "<DisplayName>leofs</DisplayName>",
-                                                "</Owner>",
-                                                "</Contents>"]),
+                                                 "<Contents>",
+                                                 "<Key>", Prefix, Entry, "</Key>",
+                                                 "<LastModified>", leo_http:web_date(TS),
+                                                 "</LastModified>",
+                                                 "<ETag>", leo_hex:integer_to_hex(CS, 32),
+                                                 "</ETag>",
+                                                 "<Size>", integer_to_list(Length),
+                                                 "</Size>",
+                                                 "<StorageClass>STANDARD</StorageClass>",
+                                                 "<Owner>",
+                                                 "<ID>leofs</ID>",
+                                                 "<DisplayName>leofs</DisplayName>",
+                                                 "</Owner>",
+                                                 "</Contents>"]),
                                    EntryKeyBin}
                           end
                   end

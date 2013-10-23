@@ -201,7 +201,7 @@ after_process_0({ok, _Pid} = Res) ->
                     ok = leo_s3_libs:start(slave,
                                            [{'provider', ManagerNodes1},
                                             {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
-                    _ = leo_s3_endpoint:get_endpoints();
+                    leo_s3_endpoint:get_endpoints();
                 _ ->
                     void
             end,
@@ -229,17 +229,16 @@ after_process_0({ok, _Pid} = Res) ->
     CacheDiscThresholdLen = HttpOptions#http_options.cache_disc_threshold_len,
     CacheDiscDirData      = HttpOptions#http_options.cache_disc_dir_data,
     CacheDiscDirJournal   = HttpOptions#http_options.cache_disc_dir_journal,
-    _Res = leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
-                         {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
-                         {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
-                         {?PROP_DISC_CACHE_NAME,          ?DEF_PROP_DISC_CACHE},
-                         {?PROP_DISC_CACHE_WORKERS,       NumOfCacheWorkers},
-                         {?PROP_DISC_CACHE_SIZE,          CacheDiscCapacity},
-                         {?PROP_DISC_CACHE_THRESHOLD_LEN, CacheDiscThresholdLen},
-                         {?PROP_DISC_CACHE_DATA_DIR,      CacheDiscDirData},
-                         {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
-                        ]),
-    ?debugVal(_Res),
+    ok = leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
+                              {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
+                              {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
+                              {?PROP_DISC_CACHE_NAME,          ?DEF_PROP_DISC_CACHE},
+                              {?PROP_DISC_CACHE_WORKERS,       NumOfCacheWorkers},
+                              {?PROP_DISC_CACHE_SIZE,          CacheDiscCapacity},
+                              {?PROP_DISC_CACHE_THRESHOLD_LEN, CacheDiscThresholdLen},
+                              {?PROP_DISC_CACHE_DATA_DIR,      CacheDiscDirData},
+                              {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
+                             ]),
 
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);
