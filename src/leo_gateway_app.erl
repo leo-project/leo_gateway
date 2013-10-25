@@ -29,6 +29,10 @@
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
+-include_lib("leo_cache/include/leo_cache.hrl").
+-undef(error).
+-undef(warn).
+-undef(PROP_OPTIONS).
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
@@ -78,11 +82,37 @@ start(_Type, _StartArgs) ->
                         DefLogDir
                 end,
     ok = leo_logger_client_message:new(LogDir, ?env_log_level(App), log_file_appender()),
+
+    %% access-logger (file-appender)
     case application:get_env(leo_gateway, is_enable_access_log) of
         {ok, true} ->
-            %% launch an access-logger
             ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
                                               LogDir, ?LOG_FILENAME_ACCESS);
+        _ ->
+            void
+    end,
+
+    %% access-logger (log search)
+    case application:get_env(leo_gateway, is_enable_esearch) of
+        {ok, true} ->
+            ESHost = case application:get_env(leo_gateway, esearch_host) of
+                         {ok, V1} -> V1;
+                         _ -> ?DEF_ESEARCH_HOST
+                     end,
+            ESPort = case application:get_env(leo_gateway, esearch_port) of
+                         {ok, V2} -> V2;
+                         _ -> ?DEF_ESEARCH_PORT
+                     end,
+            ESTimeout = case application:get_env(leo_gateway, esearch_timeout) of
+                            {ok, V3} -> V3;
+                            _ -> ?DEF_ESEARCH_TIMEOUT
+                        end,
+            ESBulkDuration = case application:get_env(leo_gateway, esearch_bulk_duration) of
+                                 {ok, V4} -> V4;
+                                 _ -> ?DEF_ESEARCH_BULK_DURATION
+                             end,
+            ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
+                                               ESHost, ESPort, ESTimeout, ESBulkDuration);
         _ ->
             void
     end,
@@ -156,14 +186,59 @@ after_process_0({ok, _Pid} = Res) ->
     ManagerNodes0  = ?env_manager_nodes(leo_gateway),
     ManagerNodes1 = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes0),
 
-    %% Launch S3Libs:Auth/Bucket/EndPoint
-    ok = leo_s3_libs:start(slave, [{'provider', ManagerNodes1}]),
-    _ = leo_s3_endpoint:get_endpoints(),
-
-    %% Launch http-handler(s)
+    %% Retrieve http-options
     {ok, HttpOptions} = get_options(),
-    Handler = HttpOptions#http_options.handler,
-    ok = Handler:start(leo_gateway_sup, HttpOptions),
+    case HttpOptions#http_options.handler of
+        ?HTTP_HANDLER_EMBED ->
+            void;
+        Handler ->
+            case Handler of
+                ?HTTP_HANDLER_S3 ->
+                    %% Retrieve bucket-prop-sync-interval for S3-API
+                    BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
+
+                    %% Launch S3Libs:Auth/Bucket/EndPoint
+                    ok = leo_s3_libs:start(slave,
+                                           [{'provider', ManagerNodes1},
+                                            {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
+                    leo_s3_endpoint:get_endpoints();
+                _ ->
+                    void
+            end,
+
+            %% Launch SNMPA
+            ok = leo_statistics_api:start_link(leo_gateway),
+            ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
+            ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
+            ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
+            ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
+            ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
+            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
+            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
+
+            %% Launch http-handler(s)
+            {ok, HttpOptions} = get_options(),
+            Handler = HttpOptions#http_options.handler,
+            ok = Handler:start(leo_gateway_sup, HttpOptions)
+    end,
+
+    %% launch LeoCache
+    NumOfCacheWorkers     = HttpOptions#http_options.cache_workers,
+    CacheRAMCapacity      = HttpOptions#http_options.cache_ram_capacity,
+    CacheDiscCapacity     = HttpOptions#http_options.cache_disc_capacity,
+    CacheDiscThresholdLen = HttpOptions#http_options.cache_disc_threshold_len,
+    CacheDiscDirData      = HttpOptions#http_options.cache_disc_dir_data,
+    CacheDiscDirJournal   = HttpOptions#http_options.cache_disc_dir_journal,
+    ok = leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
+                              {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
+                              {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
+                              {?PROP_DISC_CACHE_NAME,          ?DEF_PROP_DISC_CACHE},
+                              {?PROP_DISC_CACHE_WORKERS,       NumOfCacheWorkers},
+                              {?PROP_DISC_CACHE_SIZE,          CacheDiscCapacity},
+                              {?PROP_DISC_CACHE_THRESHOLD_LEN, CacheDiscThresholdLen},
+                              {?PROP_DISC_CACHE_DATA_DIR,      CacheDiscDirData},
+                              {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
+                             ]),
 
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);
@@ -194,16 +269,6 @@ after_process_1(SystemConf, Members) ->
             {ok, _} = leo_redundant_manager_sup:start_link(
                         gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
     end,
-
-    %% Launch SNMPA
-    ok = leo_statistics_api:start_link(leo_gateway),
-    ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
-    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
-    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
-    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
-    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
     {ok,_,_} = leo_redundant_manager_api:create(
                  Members, [{n, SystemConf#system_conf.n},
@@ -300,10 +365,7 @@ log_file_appender([], []) ->
 log_file_appender([], Acc) ->
     lists:reverse(Acc);
 log_file_appender([{Type, _}|T], Acc) when Type == file ->
-    log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|[{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]);
-%% @TODO
-log_file_appender([{Type, _}|T], Acc) when Type == zmq ->
-    log_file_appender(T, [{?LOG_ID_ZMQ, ?LOG_APPENDER_ZMQ}|Acc]).
+    log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|[{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]).
 
 
 %% @doc Retrieve properties

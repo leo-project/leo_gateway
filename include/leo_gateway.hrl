@@ -26,7 +26,7 @@
 
 -define(SHUTDOWN_WAITING_TIME, 2000).
 -define(S3_HTTP, leo_s3_http).
--define(DEF_LAYERS_OF_DIRS, {1, 12}).
+-define(DEF_LAYERS_OF_DIRS, {1, 64}).
 
 -ifdef(TEST).
 -define(DEF_TIMEOUT,     1000).
@@ -68,6 +68,11 @@
 -define(LOG_FILENAME_ACCESS, "access").
 
 
+-define(env_bucket_prop_sync_interval(),
+        case application:get_env(leo_gateway, bucket_prop_sync_interval) of
+            {ok, EnvBucketPropSyncInterval} -> EnvBucketPropSyncInterval;
+            _ -> 300 %% 300sec/5min
+        end).
 
 -define(env_http_properties(),
         case application:get_env(leo_gateway, http) of
@@ -161,36 +166,90 @@
 
 %% access-log
 %%
--define(access_log_get(Filename, Size),
-        leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[GET]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, Size,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
-                                                                ]}
-                                        })).
--define(access_log_put(Filename, Size),
-        leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[PUT]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, Size,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
-                                                                ]}
-                                        })).
--define(access_log_delete(Filename, Size),
-        leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[DELETE]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, Size,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
-                                                                ]}
-                                        })).
--define(access_log_head(Filename),
-        leo_logger_client_common:append({?LOG_ID_ACCESS,
-                                         #message_log{format  = "[HEAD]\t~s\t~w\t\~s\t~w\n",
-                                                      message = [Filename, 0,
-                                                                 leo_date:date_format(type_of_now, now()),
-                                                                 leo_date:clock()
-                                                                ]}
-                                        })).
+-define(ESEARCH_LOG_IDX_PREFIX, <<"leoaccesslog-">>).
+-define(esearch_index(_GregorianSeconds),
+        begin
+            {{Year, Month, Date},_} =
+                calendar:gregorian_seconds_to_datetime(_GregorianSeconds),
+            io_lib:format("~4..0w.~2..0w.~2..0w", [Year, Month, Date])
+        end).
+-define(esearch_doc(_Method, _Bucket, _Path, _Size, _Response),
+        begin
+            _GregorianSec = calendar:datetime_to_gregorian_seconds(
+                              calendar:now_to_universal_time(os:timestamp())),
+            _Timestamp = list_to_binary(leo_date:date_format('utc', _GregorianSec)),
+            _Index = list_to_binary(?esearch_index(_GregorianSec)),
+
+            leo_logger_client_esearch:append(
+              {?LOG_ID_ESEARCH,
+               #message_log{message = [{<<"@timestamp">>, _Timestamp},
+                                       {<<"method">>,     _Method},
+                                       {<<"bucket">>,     _Bucket},
+                                       {<<"path">>,       _Path},
+                                       {<<"size">>,       _Size},
+                                       {<<"response">>,   _Response},
+                                       {<<"gateway">>,    list_to_binary(atom_to_list(node()))}
+                                      ],
+                            esearch = [{?ESEARCH_DOC_INDEX, <<?ESEARCH_LOG_IDX_PREFIX/binary, _Index/binary>>},
+                                       {?ESEARCH_DOC_TYPE,  _Bucket}]}})
+        end).
+
+-define(access_log_get(_Bucket, _Path, _Size, _Response),
+        begin
+            leo_logger_client_common:append(
+              {?LOG_ID_ACCESS,
+               #message_log{format  = "[GET]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       binary_to_list(_Path),
+                                       _Size,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response]}}),
+            ?esearch_doc(<<"GET">>, _Bucket, _Path, _Size, _Response)
+        end).
+-define(access_log_put(_Bucket, _Path, _Size, _Response),
+        begin
+            leo_logger_client_common:append(
+              {?LOG_ID_ACCESS,
+               #message_log{format  = "[PUT]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       binary_to_list(_Path),
+                                       _Size,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              }),
+            ?esearch_doc(<<"PUT">>, _Bucket, _Path, _Size, _Response)
+        end).
+-define(access_log_delete(_Bucket, _Path, _Size, _Response),
+        begin
+            leo_logger_client_common:append(
+              {?LOG_ID_ACCESS,
+               #message_log{format  = "[DELETE]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       binary_to_list(_Path),
+                                       _Size,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              }),
+            ?esearch_doc(<<"DELETE">>, _Bucket, _Path, _Size, _Response)
+        end).
+-define(access_log_head(_Bucket, _Path, _Response),
+        begin
+            leo_logger_client_common:append(
+              {?LOG_ID_ACCESS,
+               #message_log{format  = "[HEAD]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       binary_to_list(_Path),
+                                       0,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              }),
+            ?esearch_doc(<<"HEAD">>, _Bucket, _Path, 0, _Response)
+        end).
 
