@@ -30,7 +30,7 @@
   {mod, {leo_gateway_app, []}},
   {env, [
          %% System Ver
-         {system_version, "0.14.9" },
+         {system_version, "0.16.0" },
 
          %% Gateway Properties:
          {http, [
