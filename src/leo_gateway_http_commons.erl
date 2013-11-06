@@ -516,7 +516,7 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
                          {?HTTP_HEAD_RESP_ETAG,           ?http_etag(Meta#metadata.checksum)},
                          {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
                          {?HTTP_HEAD_RESP_LAST_MODIFIED,  Timestamp}],
-            ?reply_ok(Headers, Req);
+            cowboy_req:reply(?HTTP_ST_OK, Headers, fun() -> void end, Req);
         {ok, #metadata{del = 1}} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Req);
