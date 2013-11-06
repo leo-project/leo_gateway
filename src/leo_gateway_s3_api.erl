@@ -798,20 +798,17 @@ delete_bucket_1(AccessKeyId, Bucket1) ->
               end,
 
     ManagerNodes = ?env_manager_nodes(leo_gateway),
-    case delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2) of
-        true ->
-            ok;
-        false ->
-            {error, "Could not operate deletion of bucket"}
-    end.
-
+    delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2).
+    
 delete_bucket_2([],_,_) ->
-    false;
+    {error, ?ERR_TYPE_INTERNAL_ERROR};
 delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
     case rpc:call(list_to_atom(Node), leo_manager_api, delete_bucket,
                   [AccessKeyId, Bucket], ?DEF_TIMEOUT) of
         ok ->
-            true;
+            ok;
+        {error, not_found} ->
+            not_found;
         {_, Cause} ->
             ?warn("delete_bucket_2/3", "cause:~p", [Cause]),
             delete_bucket_2(Rest, AccessKeyId, Bucket)
