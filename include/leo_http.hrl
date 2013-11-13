@@ -168,8 +168,8 @@
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01\">",
                       "<Owner>",
-                      "  <ID>LeoFS</ID>",
-                      "  <DisplayName>webfile</DisplayName>",
+                      "<ID>LeoFS</ID>",
+                      "<DisplayName>webfile</DisplayName>",
                       "</Owner>",
                       "<Buckets>",
                       "~s",
@@ -178,38 +178,38 @@
 -define(XML_OBJ_LIST,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
-                      "  <Name>standalone</Name>",
-                      "  <Prefix>~s</Prefix>",
-                      "  <Marker></Marker>",
-                      "  <NextMarker>~s</NextMarker>",
-                      "  <MaxKeys>~s</MaxKeys>",
-                      "  <Delimiter>/</Delimiter>",
-                      "  <IsTruncated>~s</IsTruncated>",
+                      "<Name>standalone</Name>",
+                      "<Prefix>~s</Prefix>",
+                      "<Marker></Marker>",
+                      "<NextMarker>~s</NextMarker>",
+                      "<MaxKeys>~s</MaxKeys>",
+                      "<Delimiter>/</Delimiter>",
+                      "<IsTruncated>~s</IsTruncated>",
                       "~s",
                       "</ListBucketResult>"])).
 
 -define(XML_COPY_OBJ_RESULT,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<CopyObjectResult>",
-                      "  <LastModified>~s</LastModified>",
-                      "  <ETag>\"~s\"</ETag>",
+                      "<LastModified>~s</LastModified>",
+                      "<ETag>\"~s\"</ETag>",
                       "</CopyObjectResult>"])).
 
 -define(XML_UPLOAD_INITIATION,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<InitiateMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
-                      "  <Bucket>~s</Bucket>"
-                      "  <Key>~s</Key>"
-                      "  <UploadId>~s</UploadId>"
+                      "<Bucket>~s</Bucket>"
+                      "<Key>~s</Key>"
+                      "<UploadId>~s</UploadId>"
                       "</InitiateMultipartUploadResult>"])).
 
 -define(XML_UPLOAD_COMPLETION,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<CompleteMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
-                      "  <Location>http://Example-Bucket.s3.amazonaws.com/Example-Object</Location>",
-                      "  <Bucket>~s</Bucket>",
-                      "  <Key>~s</Key>",
-                      "  <ETag>\"~s\"</ETag>",
+                      "<Location>http://Example-Bucket.s3.amazonaws.com/Example-Object</Location>",
+                      "<Bucket>~s</Bucket>",
+                      "<Key>~s</Key>",
+                      "<ETag>\"~s\"</ETag>",
                       "</CompleteMultipartUploadResult>"])).
 
 
