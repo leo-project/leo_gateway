@@ -269,22 +269,21 @@ after_process_1(SystemConf, Members) ->
             {ok, _} = leo_redundant_manager_sup:start_link(
                         gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
     end,
-
-    {ok,_,_} = leo_redundant_manager_api:create(
-                 Members, [{n, SystemConf#system_conf.n},
-                           {r, SystemConf#system_conf.r},
-                           {w, SystemConf#system_conf.w},
-                           {d, SystemConf#system_conf.d},
-                           {bit_of_ring, SystemConf#system_conf.bit_of_ring},
-                           {level_1, SystemConf#system_conf.level_1},
-                           {level_2, SystemConf#system_conf.level_2}
-                          ]),
+    ok = leo_redundant_manager_api:update_members(Members),
+    ok = leo_redundant_manager_api:set_options([{n, SystemConf#system_conf.n},
+                                                 {r, SystemConf#system_conf.r},
+                                                 {w, SystemConf#system_conf.w},
+                                                 {d, SystemConf#system_conf.d},
+                                                 {bit_of_ring, SystemConf#system_conf.bit_of_ring},
+                                                 {level_1, SystemConf#system_conf.level_1},
+                                                 {level_2, SystemConf#system_conf.level_2}]),
+    {ok,_,_} = leo_redundant_manager_api:create(),
     ok = leo_membership:set_proc_auditor(leo_gateway_api),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),
     lists:foldl(fun(N, false) ->
-                        {ok, Checksums} = leo_redundant_manager_api:checksum(ring),
+                        {ok, Checksums} = leo_redundant_manager_api:checksum(?CHECKSUM_RING),
                         case rpc:call(N, leo_manager_api, notify,
                                       [launched, gateway, node(), Checksums], ?DEF_TIMEOUT) of
                             ok -> true;
