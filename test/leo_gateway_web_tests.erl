@@ -163,7 +163,10 @@ setup(InitFun, TermFun) ->
     meck:expect(leo_redundant_manager_api, get_redundancies_by_key,
                 fun(_Method, _Key) ->
                         {ok, #redundancies{id = 0,
-                                           nodes = [{Node0,true}, {Node1,true}],
+                                           nodes = [#redundant_node{node = Node0,
+                                                                    available = true},
+                                                    #redundant_node{node = Node1,
+                                                                    available = true}],
                                            n = 2, r = 1, w = 1, d = 1}}
                 end),
     meck:new(leo_s3_endpoint),
