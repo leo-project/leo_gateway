@@ -52,7 +52,7 @@
           req_id       = 0  :: integer(),
           timestamp    = 0  :: integer(),
           addr_id      = 0  :: integer(),
-          redundancies = [] :: list()
+          redundancies = [] :: list(#redundant_node{})
          }).
 
 
@@ -180,9 +180,10 @@ put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
              ok|{ok, any()}|{error, any()}).
 invoke([], _Mod, _Method, _Args, Errors) ->
     {error, error_filter(Errors)};
-invoke([{_, false}|T], Mod, Method, Args, Errors) ->
+invoke([#redundant_node{available = false}|T], Mod, Method, Args, Errors) ->
     invoke(T, Mod, Method, Args, [?ERR_TYPE_INTERNAL_ERROR|Errors]);
-invoke([{Node, true}|T], Mod, Method, Args, Errors) ->
+invoke([#redundant_node{node      = Node,
+                        available = true}|T], Mod, Method, Args, Errors) ->
     RPCKey  = rpc:async_call(Node, Mod, Method, Args),
     Timeout = timeout(Method, Args),
 

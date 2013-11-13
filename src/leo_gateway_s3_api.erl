@@ -881,8 +881,8 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
     io_lib:format(?XML_OBJ_LIST, [Prefix, NextMarker, integer_to_list(MaxKeys), TruncatedStr, List]).
 
 generate_bucket_xml(MetadataList) ->
-    Fun = fun(#bucket{name = BucketBin,
-                      created_at = CreatedAt} , Acc) ->
+    Fun = fun(#?BUCKET{name = BucketBin,
+                       created_at = CreatedAt} , Acc) ->
                   Bucket = binary_to_list(BucketBin),
                   case string:equal(?STR_SLASH, Bucket) of
                       true ->
