@@ -271,15 +271,13 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
 put_object_2(Req, Key, Meta) ->
-    KeyList = binary_to_list(Key),
-    case KeyList == Meta#metadata.key of
+    case Key == Meta#metadata.key of
         true  -> resp_copy_obj_xml(Req, Meta);
         false -> put_object_3(Req, Meta)
     end.
 
 put_object_3(Req, Meta) ->
-    KeyBin = list_to_binary(Meta#metadata.key),
-    case leo_gateway_rpc_handler:delete(KeyBin) of
+    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
         ok ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
