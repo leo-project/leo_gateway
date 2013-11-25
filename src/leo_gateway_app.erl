@@ -54,9 +54,14 @@
                 [{ok, [#system_conf{n = 1,
                                     w = 1,
                                     r = 1,
-                                    d = 1}]},
-                 {ok, [#member{node  = 'node_0',
-                               state = 'running'}]}]
+                                    d = 1}]
+                 },
+                 {ok, {[#member{node  = 'node_0',
+                                state = 'running'}],
+                       [#member{node  = 'node_0',
+                                state = 'running'}]}
+                 }
+                ]
         end).
 -else.
 -define(get_several_info_from_manager(X),  {get_system_config_from_manager(X),
@@ -153,13 +158,13 @@ consider_profiling() ->
              pid()).
 inspect_cluster_status(Res, ManagerNodes) ->
     case ?get_several_info_from_manager(ManagerNodes) of
-        {{ok, SystemConf}, {ok, Members}} ->
-            case get_cluster_state(Members) of
+        {{ok, SystemConf}, {ok, {MembersCur, MembersPrev}}} ->
+            case get_cluster_state(MembersCur) of
                 ?STATE_STOP ->
                     timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
                                       [ok, ManagerNodes]);
                 ?STATE_RUNNING ->
-                    ok = after_process_1(SystemConf, Members)
+                    ok = after_process_1(SystemConf, MembersCur, MembersPrev)
             end;
         {{ok,_SystemConf}, {error,_Cause}} ->
             timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
@@ -250,9 +255,9 @@ after_process_0(Error) ->
 
 %% @doc After process of start_link
 %% @private
--spec(after_process_1(#system_conf{}, list(#member{})) ->
+-spec(after_process_1(#system_conf{}, list(#member{}), list(#member{})) ->
              ok).
-after_process_1(SystemConf, Members) ->
+after_process_1(SystemConf, MembersCur, MembersPrev) ->
     %% Launch Redundant-manager#2
     ManagerNodes    = ?env_manager_nodes(leo_gateway),
     NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
@@ -269,14 +274,17 @@ after_process_1(SystemConf, Members) ->
             {ok, _} = leo_redundant_manager_sup:start_link(
                         gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
     end,
-    ok = leo_redundant_manager_api:update_members(Members),
     ok = leo_redundant_manager_api:set_options([{n, SystemConf#system_conf.n},
-                                                 {r, SystemConf#system_conf.r},
-                                                 {w, SystemConf#system_conf.w},
-                                                 {d, SystemConf#system_conf.d},
-                                                 {bit_of_ring, SystemConf#system_conf.bit_of_ring},
-                                                 {level_1, SystemConf#system_conf.level_1},
-                                                 {level_2, SystemConf#system_conf.level_2}]),
+                                                {r, SystemConf#system_conf.r},
+                                                {w, SystemConf#system_conf.w},
+                                                {d, SystemConf#system_conf.d},
+                                                {bit_of_ring, SystemConf#system_conf.bit_of_ring},
+                                                {level_1, SystemConf#system_conf.level_1},
+                                                {level_2, SystemConf#system_conf.level_2}]),
+
+    {ok,_MembersChecksum} = leo_redundant_manager_api:synchronize(
+                              ?SYNC_TARGET_MEMBER, [{?VER_CUR,  MembersCur },
+                                                    {?VER_PREV, MembersPrev}]),
     {ok,_,_} = leo_redundant_manager_api:create(),
     ok = leo_membership:set_proc_auditor(leo_gateway_api),
 
@@ -325,9 +333,9 @@ get_system_config_from_manager([Manager|T]) ->
 get_members_from_manager([]) ->
     {error, 'could_not_get_members'};
 get_members_from_manager([Manager|T]) ->
-    case rpc:call(Manager, leo_manager_api, get_members, [], ?DEF_TIMEOUT) of
-        {ok, Members} ->
-            {ok, Members};
+    case rpc:call(Manager, leo_manager_api, get_members_of_all_versions, [], ?DEF_TIMEOUT) of
+        {ok, {MembersCur, MembersPrev}} ->
+            {ok, {MembersCur, MembersPrev}};
         {badrpc, Why} ->
             {error, Why};
         {error, Cause} ->
