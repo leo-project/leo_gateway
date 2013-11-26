@@ -31,22 +31,21 @@
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
--include_lib("leo_s3_libs/include/leo_s3_libs.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([get_node_status/0,
          register_in_monitor/1, register_in_monitor/2,
-         purge/1, set_endpoint/1, delete_endpoint/1,
-         update_manager_nodes/1
+         purge/1, update_manager_nodes/1
         ]).
 
-%% @doc Purge an object into the cache
--spec(purge(string()) -> ok).
-purge(Path) ->
-    BinPath = list_to_binary(Path),
-    _ = leo_cache_api:delete(BinPath),
-    ok.
+-export([set_endpoint/1, delete_endpoint/1,
+         update_acl/3]).
 
+
+%%----------------------------------------------------------------------
+%% API-Function(s)
+%%----------------------------------------------------------------------
 %% @doc Get node status (gateway).
 %%
 -spec(get_node_status() -> {ok, #cluster_node_status{}}).
@@ -59,9 +58,9 @@ get_node_status() ->
         end,
 
     SNMPAgent = case application:get_env(leo_storage, snmp_agent) of
-                   {ok, EnvSNMPAgent} -> EnvSNMPAgent;
-                   _ -> []
-               end,
+                    {ok, EnvSNMPAgent} -> EnvSNMPAgent;
+                    _ -> []
+                end,
     Directories = [{log,        ?env_log_dir(leo_gateway)},
                    {mnesia,     []},
                    {snmp_agent, SNMPAgent}
@@ -140,11 +139,11 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
                           true;
                       {error, Cause} ->
                           ?warn("register_in_monitor/3",
-                                 "manager:~w, cause:~p", [Node2, Cause]),
+                                "manager:~w, cause:~p", [Node2, Cause]),
                           false;
                       {badrpc, Cause} ->
                           ?warn("register_in_monitor/3",
-                                 "manager:~w, cause:~p", [Node2, Cause]),
+                                "manager:~w, cause:~p", [Node2, Cause]),
                           false
                   end;
               false ->
@@ -158,20 +157,12 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
     end.
 
 
-%% @doc Set s3-endpoint from manager
-%%
--spec(set_endpoint(binary()) ->
-             ok | {error, any()}).
-set_endpoint(Endpoint) ->
-    leo_s3_endpoint:set_endpoint(Endpoint).
-
-
-%% @doc Set s3-endpoint from manager
-%%
--spec(delete_endpoint(binary()) ->
-             ok | {error, any()}).
-delete_endpoint(Endpoint) ->
-    leo_s3_endpoint:delete_endpoint(Endpoint).
+%% @doc Purge an object into the cache
+-spec(purge(string()) -> ok).
+purge(Path) ->
+    BinPath = list_to_binary(Path),
+    _ = leo_cache_api:delete(BinPath),
+    ok.
 
 
 %% @doc update manager nodes
@@ -183,3 +174,37 @@ update_manager_nodes(Managers) ->
     ok = leo_membership:update_manager_nodes(Managers),
     leo_s3_libs:update_providers(Managers).
 
+
+%%----------------------------------------------------------------------
+%% S3API-related Function(s)
+%%----------------------------------------------------------------------
+%% @doc Set s3-endpoint from manager (S3-API)
+%%
+-spec(set_endpoint(binary()) ->
+             ok | {error, any()}).
+set_endpoint(Endpoint) ->
+    leo_s3_endpoint:set_endpoint(Endpoint).
+
+
+%% @doc Set s3-endpoint from manager (S3-API)
+%%
+-spec(delete_endpoint(binary()) ->
+             ok | {error, any()}).
+delete_endpoint(Endpoint) ->
+    leo_s3_endpoint:delete_endpoint(Endpoint).
+
+
+%% @doc Update permission by access-key-id (S3-API)
+%%
+-spec(update_acl(string(), binary(), binary()) ->
+             ok | {error, any()}).
+update_acl(?CANNED_ACL_PRIVATE, AccessKey, Bucket) ->
+    leo_s3_bucket:update_acls2private(AccessKey, Bucket);
+update_acl(?CANNED_ACL_PUBLIC_READ, AccessKey, Bucket) ->
+    leo_s3_bucket:update_acls2public_read(AccessKey, Bucket);
+update_acl(?CANNED_ACL_PUBLIC_READ_WRITE, AccessKey, Bucket) ->
+    leo_s3_bucket:update_acls2public_read_write(AccessKey, Bucket);
+update_acl(?CANNED_ACL_AUTHENTICATED_READ, AccessKey, Bucket) ->
+    leo_s3_bucket:update_acls2authenticated_read(AccessKey, Bucket);
+update_acl(_,_,_) ->
+    {error, invalid_args}.
