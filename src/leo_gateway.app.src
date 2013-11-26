@@ -23,14 +23,14 @@
 {application, leo_gateway,
  [
   {description, "LeoFS Gateway Server"},
-  {vsn, "0.14.14"},
+  {vsn, "0.16.5"},
   {id, "leo_gateway"},
   {registered, []},
   {applications, [kernel, stdlib, crypto, ranch, asn1]},
   {mod, {leo_gateway_app, []}},
   {env, [
          %% System Ver
-         {system_version, "0.16.0" },
+         {system_version, "0.16.5" },
 
          %% Gateway Properties:
          {http, [
