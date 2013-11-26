@@ -271,15 +271,13 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
 put_object_2(Req, Key, Meta) ->
-    KeyList = binary_to_list(Key),
-    case KeyList == Meta#metadata.key of
+    case Key == Meta#metadata.key of
         true  -> resp_copy_obj_xml(Req, Meta);
         false -> put_object_3(Req, Meta)
     end.
 
 put_object_3(Req, Meta) ->
-    KeyBin = list_to_binary(Meta#metadata.key),
-    case leo_gateway_rpc_handler:delete(KeyBin) of
+    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
         ok ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
@@ -798,20 +796,17 @@ delete_bucket_1(AccessKeyId, Bucket1) ->
               end,
 
     ManagerNodes = ?env_manager_nodes(leo_gateway),
-    case delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2) of
-        true ->
-            ok;
-        false ->
-            {error, "Could not operate deletion of bucket"}
-    end.
-
+    delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2).
+    
 delete_bucket_2([],_,_) ->
-    false;
+    {error, ?ERR_TYPE_INTERNAL_ERROR};
 delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
     case rpc:call(list_to_atom(Node), leo_manager_api, delete_bucket,
                   [AccessKeyId, Bucket], ?DEF_TIMEOUT) of
         ok ->
-            true;
+            ok;
+        {error, not_found} ->
+            not_found;
         {_, Cause} ->
             ?warn("delete_bucket_2/3", "cause:~p", [Cause]),
             delete_bucket_2(Rest, AccessKeyId, Bucket)
@@ -884,8 +879,8 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
     io_lib:format(?XML_OBJ_LIST, [Prefix, NextMarker, integer_to_list(MaxKeys), TruncatedStr, List]).
 
 generate_bucket_xml(MetadataList) ->
-    Fun = fun(#bucket{name = BucketBin,
-                      created_at = CreatedAt} , Acc) ->
+    Fun = fun(#?BUCKET{name = BucketBin,
+                       created_at = CreatedAt} , Acc) ->
                   Bucket = binary_to_list(BucketBin),
                   case string:equal(?STR_SLASH, Bucket) of
                       true ->
