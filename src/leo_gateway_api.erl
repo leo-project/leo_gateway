@@ -35,9 +35,9 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([get_node_status/0,
-         update_manager_nodes/1,
          register_in_monitor/1, register_in_monitor/2,
-         purge/1, set_endpoint/1
+         purge/1, set_endpoint/1, delete_endpoint/1,
+         update_manager_nodes/1
         ]).
 
 %% @doc Purge an object into the cache
@@ -160,8 +160,19 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
 
 %% @doc Set s3-endpoint from manager
 %%
+-spec(set_endpoint(binary()) ->
+             ok | {error, any()}).
 set_endpoint(Endpoint) ->
     leo_s3_endpoint:set_endpoint(Endpoint).
+
+
+%% @doc Set s3-endpoint from manager
+%%
+-spec(delete_endpoint(binary()) ->
+             ok | {error, any()}).
+delete_endpoint(Endpoint) ->
+    leo_s3_endpoint:delete_endpoint(Endpoint).
+
 
 %% @doc update manager nodes
 %%
