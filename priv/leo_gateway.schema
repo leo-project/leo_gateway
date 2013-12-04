@@ -22,31 +22,46 @@
 %% @author: Yosuke Hara
 %%
 %%======================================================================
-
 %%======================================================================
 %% For app.config
 %%======================================================================
 %%
 %% SASL
 %%
-%% @doc
+%% See: http://www.erlang.org/doc/man/sasl_app.html
+%%
+%% The following configuration parameters are defined for
+%% the SASL application. See app(4) for more information
+%% about configuration parameters
+%%
+%% @doc SASL error log path
 {mapping,
- "sasl.sasl_error_logger",
+ "sasl.sasl_error_log",
  "sasl.sasl_error_logger",
  [
-  {default, "./log/sasl/sasl-error.log"}
+  {datatype, tuple},
+  {default, {file, "./log/sasl/sasl-error.log"}}
  ]}.
 
-%% @doc
+{translation, "sasl.sasl_error_logger",
+ fun(Conf) ->
+         Path = cuttlefish_util:conf_get_value("sasl.sasl_error_log", Conf),
+         {file, Path}
+ end}.
+
+%% @doc Restricts the error logging performed by the specified sasl_error_logger
+%%      to error reports, progress reports, or both.
+%%      errlog_type = [error | progress | all]
 {mapping,
  "sasl.errlog_type",
  "sasl.errlog_type",
  [
   {datatype, atom},
-  {default, 'error'}
+  {default, error}
  ]}.
 
-%% @doc
+%% @doc Specifies in which directory the files are stored.
+%%      If this parameter is undefined or false, the error_logger_mf_h is not installed.
 {mapping,
  "sasl.error_logger_mf_dir",
  "sasl.error_logger_mf_dir",
@@ -54,16 +69,19 @@
   {default, "./log/sasl"}
  ]}.
 
-%% @doc
+%% @doc Specifies how large each individual file can be.
+%%      If this parameter is undefined, the error_logger_mf_h is not installed.
+%%
 {mapping,
  "sasl.error_logger_mf_maxbytes",
  "sasl.error_logger_mf_maxbytes",
  [
-  {datatype, integer},
+  {datatype, bytesize},
   {default, 10485760}
  ]}.
 
-%% @doc
+%% @doc Specifies how many files are used.
+%%      If this parameter is undefined, the error_logger_mf_h is not installed.
 {mapping,
  "sasl.error_logger_mf_maxfiles",
  "sasl.error_logger_mf_maxfiles",
@@ -75,267 +93,12 @@
 %%
 %% Gateway
 %%
-%% @doc
+%% @doc LeoFS version
 {mapping,
  "gateway.system_version",
  "gateway.system_version",
  [
   {default, "0.16.5"}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.handler",
- "gateway.http.handler",
- [
-  {datatype, atom},
-  {default, s3}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.port",
- "gateway.http.port",
- [
-  {datatype, integer},
-  {default, 8080}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.num_of_acceptors",
- "gateway.http.num_of_acceptors",
- [
-  {datatype, integer},
-  {default, 128}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.max_keepalive",
- "gateway.http.max_keepalive",
- [
-  {datatype, integer},
-  {default, 4096}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.layer_of_dirs",
- "gateway.http.layer_of_dirs",
- [
-  {datatype, integer},
-  {default, 12}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.ssl_port",
- "gateway.http.ssl_port",
- [
-  {datatype, integer},
-  {default, 8443}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.ssl_certfile",
- "gateway.http.ssl_certfile",
- [
-  {default, "./etc/server_cert.pem"}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.http.ssl_keyfile",
- "gateway.http.ssl_keyfile",
- [
-  {default, "./etc/server_key.pem"}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.bucket_prop_sync_interval",
- "gateway.bucket_prop_sync_interval",
- [
-  {datatype, integer},
-  {default, 300}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.large_object.max_chunked_objs",
- "gateway.large_object.max_chunked_objs",
- [
-  {datatype, integer},
-  {default, 1000}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.large_object.max_len_for_obj",
- "gateway.large_object.max_len_for_obj",
- [
-  {datatype, integer},
-  {default, 524288000}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.large_object.chunked_obj_len",
- "gateway.large_object.chunked_obj_len",
- [
-  {datatype, integer},
-  {default, 5242880}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.large_object.threshold_obj_len",
- "gateway.large_object.threshold_obj_len",
- [
-  {datatype, integer},
-  {default, 5767168}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.http_cache",
- "gateway.cache.http_cache",
- [
-  {datatype, boolean},
-  {default, false}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_workers",
- "gateway.cache.cache_workers",
- [
-  {datatype, integer},
-  {default, 16}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_ram_capacity",
- "gateway.cache.cache_ram_capacity",
- [
-  {datatype, integer},
-  {default, 1073741824}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_disc_capacity",
- "gateway.cache.cache_disc_capacity",
- [
-  {datatype, integer},
-  {default, 524288000}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_disc_threshold_len",
- "gateway.cache.cache_disc_threshold_len",
- [
-  {datatype, integer},
-  {default, 1048576}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_disc_dir_data",
- "gateway.cache.cache_disc_dir_data",
- [
-  {default, "./cache/data"}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_disc_dir_journal",
- "gateway.cache.cache_disc_dir_journal",
- [
-  {default, "./cache/journal"}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_expire",
- "gateway.cache.cache_expire",
- [
-  {datatype, integer},
-  {default, 300}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cache_max_content_len",
- "gateway.cache.cache_max_content_len",
- [
-  {datatype, integer},
-  {default, 1048576}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cachable_content_type",
- "gateway.cache.cachable_content_type",
- [
-  {default, []}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.cache.cachable_path_pattern",
- "gateway.cache.cachable_path_pattern",
- [
-  {default, []}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.timeout.level_1",
- "gateway.timeout.level_1",
- [
-  {datatype, integer},
-  {default, 5000}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.timeout.level_2",
- "gateway.timeout.level_2",
- [
-  {datatype, integer},
-  {default, 7000}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.timeout.level_3",
- "gateway.timeout.level_3",
- [
-  {datatype, integer},
-  {default, 10000}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.timeout.level_4",
- "gateway.timeout.level_4",
- [
-  {datatype, integer},
-  {default, 20000}
- ]}.
-
-%% @doc
-{mapping,
- "gateway.timeout.level_5",
- "gateway.timeout.level_5",
- [
-  {datatype, integer},
-  {default, 30000}
  ]}.
 
 %% @TODO
@@ -346,6 +109,265 @@
  [
   {datatype, atom},
   {default, 'manager_0@127.0.0.1'}
+ ]}.
+
+%% @doc Gateway’s HTTP API to use: [s3 | rest | embed]
+{mapping,
+ "gateway.http.handler",
+ "gateway.http.handler",
+ [
+  {datatype, {enum, [s3, rest, embed]}},
+  {default, s3}
+ ]}.
+
+%% @doc Port number the Gateway uses for HTTP connections
+{mapping,
+ "gateway.http.port",
+ "gateway.http.port",
+ [
+  {datatype, integer},
+  {default, 8080}
+ ]}.
+
+%% @doc Numbers of processes listening for connections
+{mapping,
+ "gateway.http.num_of_acceptors",
+ "gateway.http.num_of_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
+
+%% @doc Maximum number of requests allowed in a single keep-alive session
+{mapping,
+ "gateway.http.max_keepalive",
+ "gateway.http.max_keepalive",
+ [
+  {datatype, integer},
+  {default, 4096}
+ ]}.
+
+%% @doc Total number of virtual directories
+{mapping,
+ "gateway.http.layer_of_dirs",
+ "gateway.http.layer_of_dirs",
+ [
+  {datatype, integer},
+  {default, 12}
+ ]}.
+
+%% @doc Port number the Gateway uses for HTTPS connections
+{mapping,
+ "gateway.http.ssl_port",
+ "gateway.http.ssl_port",
+ [
+  {datatype, integer},
+  {default, 8443}
+ ]}.
+
+%% @doc SSL Certificate file
+{mapping,
+ "gateway.http.ssl_certfile",
+ "gateway.http.ssl_certfile",
+ [
+  {default, "./etc/server_cert.pem"}
+ ]}.
+
+%% @doc SSL key
+{mapping,
+ "gateway.http.ssl_keyfile",
+ "gateway.http.ssl_keyfile",
+ [
+  {default, "./etc/server_key.pem"}
+ ]}.
+
+%% @doc Synchronized time of a bucket property (second)
+{mapping,
+ "gateway.bucket_prop_sync_interval",
+ "gateway.bucket_prop_sync_interval",
+ [
+  {datatype, integer},
+  {default, 300}
+ ]}.
+
+%% @doc Total number of chunked objects
+{mapping,
+ "gateway.large_object.max_chunked_objs",
+ "gateway.large_object.max_chunked_objs",
+ [
+  {datatype, integer},
+  {default, 1000}
+ ]}.
+
+%% @doc Maximum length of an object
+{mapping,
+ "gateway.large_object.max_len_for_obj",
+ "gateway.large_object.max_len_for_obj",
+ [
+  {datatype, bytesize},
+  {default, 524288000}
+ ]}.
+
+%% @doc Length of a chunked object
+{mapping,
+ "gateway.large_object.chunked_obj_len",
+ "gateway.large_object.chunked_obj_len",
+ [
+  {datatype, bytesize},
+  {default, 5242880}
+ ]}.
+
+%% @doc Beginning of length of a chunked object
+{mapping,
+ "gateway.large_object.threshold_obj_len",
+ "gateway.large_object.threshold_obj_len",
+ [
+  {datatype, bytesize},
+  {default, 5767168}
+ ]}.
+
+%% @doc If this parameter is 'true', Gateway turns on HTTP-based cache server, like Varnish OR Squid.
+%%      If this parameter is 'false', Stores objects into the Gateway’s memory.
+%%      When operating READ, the Etag of the cache is compared with a backend storage’s Etag.
+{mapping,
+ "gateway.cache.http_cache",
+ "gateway.cache.http_cache",
+ [
+  {datatype, {enum, [true, false]}},
+  {default, false}
+ ]}.
+
+%% @doc A number of cache workers
+{mapping,
+ "gateway.cache.cache_workers",
+ "gateway.cache.cache_workers",
+ [
+  {datatype, integer},
+  {default, 16}
+ ]}.
+
+%% @doc Memory cache capacity in bytes
+{mapping,
+ "gateway.cache.cache_ram_capacity",
+ "gateway.cache.cache_ram_capacity",
+ [
+  {datatype, bytesize},
+  {default, 1073741824}
+ ]}.
+
+%% @doc Disk cache capacity in bytes
+{mapping,
+ "gateway.cache.cache_disc_capacity",
+ "gateway.cache.cache_disc_capacity",
+ [
+  {datatype, bytesize},
+  {default, 524288000}
+ ]}.
+
+%% @doc When the length of the object exceeds this value, store the object on disk
+{mapping,
+ "gateway.cache.cache_disc_threshold_len",
+ "gateway.cache.cache_disc_threshold_len",
+ [
+  {datatype, bytesize},
+  {default, 1048576}
+ ]}.
+
+%% @doc Directory for the disk cache data
+{mapping,
+ "gateway.cache.cache_disc_dir_data",
+ "gateway.cache.cache_disc_dir_data",
+ [
+  {default, "./cache/data"}
+ ]}.
+
+%% @doc Directory for the disk cache journal
+{mapping,
+ "gateway.cache.cache_disc_dir_journal",
+ "gateway.cache.cache_disc_dir_journal",
+ [
+  {default, "./cache/journal"}
+ ]}.
+
+%% @doc Cache Expire in seconds
+{mapping,
+ "gateway.cache.cache_expire",
+ "gateway.cache.cache_expire",
+ [
+  {datatype, integer},
+  {default, 300}
+ ]}.
+
+%% @doc Cache Max Content Length in bytes
+{mapping,
+ "gateway.cache.cache_max_content_len",
+ "gateway.cache.cache_max_content_len",
+ [
+  {datatype, bytesize},
+  {default, 1048576}
+ ]}.
+
+%% @doc Cache Content Type(s)
+%%      In case of "empty", all objects are cached.
+{mapping,
+ "gateway.cache.cachable_content_type",
+ "gateway.cache.cachable_content_type",
+ [
+  {default, []}
+ ]}.
+
+%% @doc Cache Content Pattern(s)
+%%      In case of "empty", all objects are cached.
+{mapping,
+ "gateway.cache.cachable_path_pattern",
+ "gateway.cache.cachable_path_pattern",
+ [
+  {default, []}
+ ]}.
+
+%% @doc Timeout value when requesting to a storage
+{mapping,
+ "gateway.timeout.level_1",
+ "gateway.timeout.level_1",
+ [
+  {datatype, {duration, ms}},
+  {default, 5000}
+ ]}.
+
+%% @doc Timeout value when requesting to a storage
+{mapping,
+ "gateway.timeout.level_2",
+ "gateway.timeout.level_2",
+ [
+  {datatype, {duration, ms}},
+  {default, 7000}
+ ]}.
+
+%% @doc Timeout value when requesting to a storage
+{mapping,
+ "gateway.timeout.level_3",
+ "gateway.timeout.level_3",
+ [
+  {datatype, {duration, ms}},
+  {default, 10000}
+ ]}.
+
+%% @doc Timeout value when requesting to a storage
+{mapping,
+ "gateway.timeout.level_4",
+ "gateway.timeout.level_4",
+ [
+  {datatype, {duration, ms}},
+  {default, 20000}
+ ]}.
+
+%% @doc Timeout value when requesting to a storage
+{mapping,
+ "gateway.timeout.level_5",
+ "gateway.timeout.level_5",
+ [
+  {datatype, {duration, ms}},
+  {default, 30000}
  ]}.
 
 %% @TODO
@@ -363,7 +385,7 @@
  "gateway.log.is_enable_access_log",
  "gateway.log.is_enable_access_log",
  [
-  {datatype, boolean},
+  {datatype, {enum, [true, false]}},
   {default, false}
  ]}.
 
@@ -382,7 +404,7 @@
  "gateway.log.is_enable_esearch",
  "gateway.log.is_enable_esearch",
  [
-  {datatype, boolean},
+  {datatype, {enum, [true, false]}},
   {default, false}
  ]}.
 
