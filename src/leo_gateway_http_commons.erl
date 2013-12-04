@@ -433,7 +433,8 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
     Ret2 = case catch put_large_object(cowboy_req:stream_body(ChunkedSize, Req),
                                        Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
-                   {error, Cause};
+                   ?error("put_large_object/4", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+                   ?reply_internal_error([?SERVER_HEADER], Req);
                {error, _} ->
                    ?reply_internal_error([?SERVER_HEADER], Req);
                Ret1 ->
@@ -466,7 +467,8 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
                 {error, timeout} ->
                     ?reply_timeout([?SERVER_HEADER], Req)
             end;
-        {_, _Cause} ->
+        {_, Cause} ->
+            ?error("put_large_object/7", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
             ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks1),
             ?reply_internal_error([?SERVER_HEADER], Req)
     end;
