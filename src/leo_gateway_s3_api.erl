@@ -707,24 +707,12 @@ auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs) ->
                             list_to_binary(Ret)
                     end,
 
-            URI = case (Len > 0) of
-                      true when  QStr3 == ?HTTP_QS_BIN_UPLOADS ->
-                          << RawUri/binary, "?", QStr3/binary >>;
-                      true ->
-                          case (nomatch /= binary:match(QStr3, ?HTTP_QS_BIN_UPLOAD_ID)) of
-                              true  -> << RawUri/binary, "?", QStr3/binary >>;
-                              false -> RawUri
-                          end;
-                      _ ->
-                          RawUri
-                  end,
-
             SignParams = #sign_params{http_verb    = HTTPMethod,
                                       content_md5  = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
                                       content_type = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
                                       date         = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket       = Bucket,
-                                      uri          = URI,
+                                      uri          = RawUri,
                                       query_str    = QStr3,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
