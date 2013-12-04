@@ -1,0 +1,518 @@
+%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%%======================================================================
+%%
+%% LeoFS
+%%
+%% Copyright (c) 2012-2013 Rakuten, Inc.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% @author: Yosuke Hara
+%%
+%%======================================================================
+
+%%======================================================================
+%% For app.config
+%%======================================================================
+%%
+%% SASL
+%%
+%% @doc
+{mapping,
+ "sasl.sasl_error_logger",
+ "sasl.sasl_error_logger",
+ [
+  {default, "./log/sasl/sasl-error.log"}
+ ]}.
+
+%% @doc
+{mapping,
+ "sasl.errlog_type",
+ "sasl.errlog_type",
+ [
+  {datatype, atom},
+  {default, 'error'}
+ ]}.
+
+%% @doc
+{mapping,
+ "sasl.error_logger_mf_dir",
+ "sasl.error_logger_mf_dir",
+ [
+  {default, "./log/sasl"}
+ ]}.
+
+%% @doc
+{mapping,
+ "sasl.error_logger_mf_maxbytes",
+ "sasl.error_logger_mf_maxbytes",
+ [
+  {datatype, integer},
+  {default, 10485760}
+ ]}.
+
+%% @doc
+{mapping,
+ "sasl.error_logger_mf_maxfiles",
+ "sasl.error_logger_mf_maxfiles",
+ [
+  {datatype, integer},
+  {default, 5}
+ ]}.
+
+%%
+%% Gateway
+%%
+%% @doc
+{mapping,
+ "gateway.system_version",
+ "gateway.system_version",
+ [
+  {default, "0.16.5"}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.handler",
+ "gateway.http.handler",
+ [
+  {datatype, atom},
+  {default, s3}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.port",
+ "gateway.http.port",
+ [
+  {datatype, integer},
+  {default, 8080}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.num_of_acceptors",
+ "gateway.http.num_of_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.max_keepalive",
+ "gateway.http.max_keepalive",
+ [
+  {datatype, integer},
+  {default, 4096}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.layer_of_dirs",
+ "gateway.http.layer_of_dirs",
+ [
+  {datatype, integer},
+  {default, 12}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.ssl_port",
+ "gateway.http.ssl_port",
+ [
+  {datatype, integer},
+  {default, 8443}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.ssl_certfile",
+ "gateway.http.ssl_certfile",
+ [
+  {default, "./etc/server_cert.pem"}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.http.ssl_keyfile",
+ "gateway.http.ssl_keyfile",
+ [
+  {default, "./etc/server_key.pem"}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.bucket_prop_sync_interval",
+ "gateway.bucket_prop_sync_interval",
+ [
+  {datatype, integer},
+  {default, 300}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.large_object.max_chunked_objs",
+ "gateway.large_object.max_chunked_objs",
+ [
+  {datatype, integer},
+  {default, 1000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.large_object.max_len_for_obj",
+ "gateway.large_object.max_len_for_obj",
+ [
+  {datatype, integer},
+  {default, 524288000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.large_object.chunked_obj_len",
+ "gateway.large_object.chunked_obj_len",
+ [
+  {datatype, integer},
+  {default, 5242880}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.large_object.threshold_obj_len",
+ "gateway.large_object.threshold_obj_len",
+ [
+  {datatype, integer},
+  {default, 5767168}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.http_cache",
+ "gateway.cache.http_cache",
+ [
+  {datatype, boolean},
+  {default, false}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_workers",
+ "gateway.cache.cache_workers",
+ [
+  {datatype, integer},
+  {default, 16}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_ram_capacity",
+ "gateway.cache.cache_ram_capacity",
+ [
+  {datatype, integer},
+  {default, 1073741824}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_disc_capacity",
+ "gateway.cache.cache_disc_capacity",
+ [
+  {datatype, integer},
+  {default, 524288000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_disc_threshold_len",
+ "gateway.cache.cache_disc_threshold_len",
+ [
+  {datatype, integer},
+  {default, 1048576}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_disc_dir_data",
+ "gateway.cache.cache_disc_dir_data",
+ [
+  {default, "./cache/data"}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_disc_dir_journal",
+ "gateway.cache.cache_disc_dir_journal",
+ [
+  {default, "./cache/journal"}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_expire",
+ "gateway.cache.cache_expire",
+ [
+  {datatype, integer},
+  {default, 300}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cache_max_content_len",
+ "gateway.cache.cache_max_content_len",
+ [
+  {datatype, integer},
+  {default, 1048576}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cachable_content_type",
+ "gateway.cache.cachable_content_type",
+ [
+  {default, []}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.cache.cachable_path_pattern",
+ "gateway.cache.cachable_path_pattern",
+ [
+  {default, []}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.timeout.level_1",
+ "gateway.timeout.level_1",
+ [
+  {datatype, integer},
+  {default, 5000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.timeout.level_2",
+ "gateway.timeout.level_2",
+ [
+  {datatype, integer},
+  {default, 7000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.timeout.level_3",
+ "gateway.timeout.level_3",
+ [
+  {datatype, integer},
+  {default, 10000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.timeout.level_4",
+ "gateway.timeout.level_4",
+ [
+  {datatype, integer},
+  {default, 20000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.timeout.level_5",
+ "gateway.timeout.level_5",
+ [
+  {datatype, integer},
+  {default, 30000}
+ ]}.
+
+%% @TODO
+%% @doc
+{mapping,
+ "gateway.manager",
+ "gateway.manager",
+ [
+  {datatype, atom},
+  {default, 'manager_0@127.0.0.1'}
+ ]}.
+
+%% @TODO
+%% @doc
+{mapping,
+ "gateway.log.log_level",
+ "gateway.log.log_level",
+ [
+  {datatype, integer}, %% >> enum
+  {default, 1}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.log.is_enable_access_log",
+ "gateway.log.is_enable_access_log",
+ [
+  {datatype, boolean},
+  {default, false}
+ ]}.
+
+%% @TODO
+%% @doc
+{mapping,
+ "gateway.log.log_appender",
+ "gateway.log.log_appender",
+ [
+  {datatype, atom},
+  {default, file}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.log.is_enable_esearch",
+ "gateway.log.is_enable_esearch",
+ [
+  {datatype, boolean},
+  {default, false}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.log.esearch.host",
+ "gateway.log.esearch.host",
+ [
+  {default, "127.0.0.1"}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.log.esearch.port",
+ "gateway.log.esearch.port",
+ [
+  {datatype, integer},
+  {default, 9200}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.log.esearch.timeout",
+ "gateway.log.esearch.timeout",
+ [
+  {datatype, integer},
+  {default, 5000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.log.esearch.esearch_bulk_duration",
+ "gateway.log.esearch.esearch_bulk_duration",
+ [
+  {datatype, integer},
+  {default, 3000}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.queue_dir",
+ "gateway.queue_dir",
+ [
+  {default, "./work/queue"}
+ ]}.
+
+%% @doc
+{mapping,
+ "gateway.snmp_agent",
+ "gateway.snmp_agent",
+ [
+  {default, "./snmp/snmpa_gateway_0/LEO-GATEWAY"}
+ ]}.
+
+
+%%======================================================================
+%% For vm.args
+%%======================================================================
+%%%% Tunables
+%% @doc Name of the riak node
+{mapping, "nodename", "vm_args.-name", [
+                                        {default, "dev1@127.0.0.1"}
+                                       ]}.
+
+%% @doc Cookie for distributed node communication.  All nodes in the same cluster
+%% should use the same cookie or they will not be able to communicate.
+{mapping, "distributed_cookie", "vm_args.-setcookie", [
+                                                       {default, "riak"}
+                                                      ]}.
+
+{mapping, "erlang.asyc_threads", "vm_args.+A", [
+                                                {default, "64"}
+                                               ]}.
+
+%% @doc Increase number of concurrent ports/sockets
+{mapping, "erlang.max_ports", "vm_args.-env ERL_MAX_PORTS", [
+                                                             {default, "64000"}
+                                                            ]}.
+
+%% @doc Tweak GC to run more often
+{mapping, "erlang.fullsweep_after", "vm_args.-env ERL_FULLSWEEP_AFTER", [
+                                                                         {default, "0"},
+                                                                         {level, advanced}
+                                                                        ]}.
+
+%% @doc Set the location of crash dumps
+{mapping, "erlang.crash_dump", "vm_args.-env ERL_CRASH_DUMP", [
+                                                               {default, "./log/erl_crash.dump"}
+                                                              ]}.
+
+%% @doc Raise the ETS table limit
+{mapping, "erlang.max_ets_tables", "vm_args.-env ERL_MAX_ETS_TABLES", [
+                                                                       {default, "256000"}
+                                                                      ]}.
+
+%% @doc Raise the default erlang process limit
+{mapping, "process_limit", "vm_args.+P", [
+                                          {datatype, integer},
+                                          {default, 256000}
+                                         ]}.
+
+{translation, "vm_args.+P",
+ fun(Conf) ->
+         Procs = cuttlefish_util:conf_get_value("process_limit", Conf),
+         integer_to_list(Procs)
+ end}.
+
+
+%% @doc For nodes with many busy_dist_port events, Basho recommends
+%% raising the sender-side network distribution buffer size.
+%% 32mb may not be sufficient for some workloads and is a suggested
+%% starting point.
+%% The Erlang/OTP default is 1024 (1 megabyte).
+%% See: http://www.erlang.org/doc/man/erl.html#%2bzdbbl
+{mapping, "erlang.zdouble", "vm_args.+zdbbl", [
+                                               {commented, "32MB"},
+                                               {datatype, bytesize}
+                                              ]}.
+
+%% @doc Erlang VM scheduler tuning.
+%% Prerequisite: a patched VM from Basho, or a VM compiled separately
+%% with this patch applied:
+%%     https://gist.github.com/evanmcc/a599f4c6374338ed672ew
+{mapping, "erlang.swiffy", "vm_args.+sfwi", [
+                                             {commented, "500"}
+                                            ]}.
+
+
+%% @doc configuration path of the leofs gateway's snmp-agent
+%% See: http://www.leofs.org/docs/configuration.html#snmpa-setup
+{mapping, "snmp_conf", "vm_args.-config", [
+                                           {default, "leo_gateway_snmp"}
+                                          ]}.
