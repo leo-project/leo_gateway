@@ -434,6 +434,8 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                                        Key, Size, ChunkedSize, 0, 1, Pid) of
                {'EXIT', Cause} ->
                    {error, Cause};
+               {error, _} ->
+                   ?reply_internal_error([?SERVER_HEADER], Req);
                Ret1 ->
                    Ret1
            end,
@@ -473,7 +475,8 @@ put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pi
 %% An error occurred while reading the body, connection is gone.
 put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, TotalChunks, Pid) ->
     ?error("put_large_object/7", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks).
+    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
+    {error, rollbacked_request}.
 
 
 %% @doc DELETE an object
