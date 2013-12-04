@@ -85,7 +85,9 @@ put(Pid, Index, Size, Bin) ->
 -spec(get(pid(), integer(), any(), #metadata{}) ->
              ok | {error, any()}).
 get(Pid, TotalOfChunkedObjs, Req, Meta) ->
-    gen_server:call(Pid, {get, TotalOfChunkedObjs, Req, Meta}, ?DEF_TIMEOUT).
+    %% Since this call may take a long time in case of handling a very large file,
+    %% Timeout sholud be infinity.
+    gen_server:call(Pid, {get, TotalOfChunkedObjs, Req, Meta}, infinity).
 
 
 %% @doc Make a rollback before all operations
