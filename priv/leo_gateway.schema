@@ -22,12 +22,9 @@
 %% @author: Yosuke Hara
 %%
 %%======================================================================
-%%======================================================================
-%% For app.config
-%%======================================================================
-%%
+%% --------------------------------------------------------------------
 %% SASL
-%%
+%% --------------------------------------------------------------------
 %% See: http://www.erlang.org/doc/man/sasl_app.html
 %%
 %% The following configuration parameters are defined for
@@ -96,7 +93,7 @@
 %%
 %% @doc Nodes of manager
 {mapping,
- "manager.some.var1",
+ "manager.1",
  "gateway.managers",
  [
   {datatype, atom},
@@ -104,7 +101,7 @@
  ]}.
 
 {mapping,
- "manager.some.var2",
+ "manager.2",
  "gateway.managers",
  [
   {datatype, atom},
@@ -113,14 +110,14 @@
 
 {translation, "gateway.managers",
  fun(Conf) ->
-         Manager_1 = cuttlefish_util:conf_get_value("manager.some.var1", Conf),
-         Manager_2 = cuttlefish_util:conf_get_value("manager.some.var2", Conf),
+         Manager_1 = cuttlefish_util:conf_get_value("manager.1", Conf),
+         Manager_2 = cuttlefish_util:conf_get_value("manager.2", Conf),
          [Manager_1, Manager_2]
  end}.
 
-%%
-%% Gateway
-%%
+%% --------------------------------------------------------------------
+%% GATEWAY
+%% --------------------------------------------------------------------
 %% @doc LeoFS version
 {mapping,
  "gateway.system_version",
@@ -209,6 +206,9 @@
   {default, 300}
  ]}.
 
+%% --------------------------------------------------------------------
+%% GATEWAY - Large Object
+%% --------------------------------------------------------------------
 %% @doc Total number of chunked objects
 {mapping,
  "gateway.large_object.max_chunked_objs",
@@ -245,6 +245,10 @@
   {default, 5767168}
  ]}.
 
+
+%% --------------------------------------------------------------------
+%% GATEWAY - CACHE
+%% --------------------------------------------------------------------
 %% @doc If this parameter is 'true', Gateway turns on HTTP-based cache server, like Varnish OR Squid.
 %%      If this parameter is 'false', Stores objects into the Gateway’s memory.
 %%      When operating READ, the Etag of the cache is compared with a backend storage’s Etag.
@@ -344,6 +348,10 @@
   {default, []}
  ]}.
 
+
+%% --------------------------------------------------------------------
+%% GATEWAY - Timeout
+%% --------------------------------------------------------------------
 %% @doc Timeout value when requesting to a storage
 {mapping,
  "gateway.timeout.level_1",
@@ -389,10 +397,14 @@
   {default, 30000}
  ]}.
 
+
+%% --------------------------------------------------------------------
+%% GATEWAY - LOG
+%% --------------------------------------------------------------------
 %% @doc Log level
 {mapping,
  "gateway.log.log_level",
- "gateway.log.log_level",
+ "gateway.log_level",
  [
   {datatype, integer}, %% >> enum
   {default, 1}
@@ -401,31 +413,59 @@
 %% @doc Is enable access log
 {mapping,
  "gateway.log.is_enable_access_log",
- "gateway.log.is_enable_access_log",
+ "gateway.is_enable_access_log",
  [
   {datatype, {enum, [true, false]}},
   {default, false}
  ]}.
 
-%% @doc Directory of output error-log(s)
+%% @doc Output log file(s) - erlang
 {mapping,
- "gateway.log.output_path",
- "gateway.log.log_appender",
+ "gateway.log.erlang",
+ "gateway.log_dir",
+ [
+  {datatype, string},
+  {default, "./log/erlang"}
+ ]}.
+
+%% @doc Output log file(s) - app
+{mapping,
+ "gateway.log.app",
+ "gateway.log_appender",
  [
   {datatype, string},
   {default, "./log/app"}
  ]}.
 
-{translation, "gateway.log.log_appender",
+{translation, "gateway.log_appender",
  fun(Conf) ->
-         Path = cuttlefish_util:conf_get_value("gateway.log.output_path", Conf),
+         Path = cuttlefish_util:conf_get_value("gateway.log.app", Conf),
          {file, [{path, Path}]}
  end}.
+
+%% @doc Output log file(s) - members of storage-cluster
+{mapping,
+ "storage.log.member_dir",
+ "leo_redundant_manager.log_dir_member",
+ [
+  {datatype, string},
+  {default, "./log/ring"}
+ ]}.
+
+%% @doc Output log file(s) - ring
+{mapping,
+ "storage.log.ring_dir",
+ "leo_redundant_manager.log_dir_ring",
+ [
+  {datatype, string},
+  {default, "./log/ring"}
+ ]}.
+
 
 %% @doc Is enable elasticsearch
 {mapping,
  "gateway.log.is_enable_esearch",
- "gateway.log.is_enable_esearch",
+ "gateway.is_enable_esearch",
  [
   {datatype, {enum, [true, false]}},
   {default, false}
@@ -434,7 +474,7 @@
 %% @doc Node of Elasticsearch
 {mapping,
  "gateway.log.esearch.host",
- "gateway.log.esearch.host",
+ "gateway.esearch_host",
  [
   {default, "127.0.0.1"}
  ]}.
@@ -442,7 +482,7 @@
 %% @doc Elasticsearch listening port number
 {mapping,
  "gateway.log.esearch.port",
- "gateway.log.esearch.port",
+ "gateway.esearch_port",
  [
   {datatype, integer},
   {default, 9200}
@@ -451,7 +491,7 @@
 %% @doc Elasticsearch receive timeout
 {mapping,
  "gateway.log.esearch.timeout",
- "gateway.log.esearch.timeout",
+ "gateway.esearch_timeout",
  [
   {datatype, integer},
   {default, 5000}
@@ -460,12 +500,16 @@
 %% @doc Duration of stack objects
 {mapping,
  "gateway.log.esearch.esearch_bulk_duration",
- "gateway.log.esearch.esearch_bulk_duration",
+ "gateway.esearch_bulk_duration",
  [
   {datatype, integer},
   {default, 3000}
  ]}.
 
+
+%% --------------------------------------------------------------------
+%% GATEWAY - Other Directories
+%% --------------------------------------------------------------------
 %% @doc Directory of queue for monitoring "RING"
 {mapping,
  "gateway.queue_dir",
@@ -483,9 +527,93 @@
  ]}.
 
 
-%%======================================================================
-%% For vm.args
-%%======================================================================
+%% --------------------------------------------------------------------
+%% Other Libs
+%% --------------------------------------------------------------------
+%% @doc
+{mapping,
+ "leo_backend_db.profile",
+ "leo_backend_db.profile",
+ [
+  {datatype, {enum, [true, false]}},
+  {default, false}
+ ]}.
+
+%% @doc
+{mapping,
+ "leo_logger.profile",
+ "leo_logger.profile",
+ [
+  {datatype, {enum, [true, false]}},
+  {default, false}
+ ]}.
+
+%% @doc
+{mapping,
+ "leo_mq.profile",
+ "leo_mq.profile",
+ [
+  {datatype, {enum, [true, false]}},
+  {default, false}
+ ]}.
+
+%% @doc
+{mapping,
+ "leo_mq.backend_db",
+ "leo_mq.backend_db",
+ [
+  {datatype, atom},
+  {default, 'bitcask'}
+ ]}.
+
+%% @doc
+{mapping,
+ "leo_redundant_manager.profile",
+ "leo_redundant_manager.profile",
+ [
+  {datatype, {enum, [true, false]}},
+  {default, false}
+ ]}.
+
+%% @doc
+{mapping,
+ "leo_redundant_manager.notify_mf",
+ "leo_redundant_manager.notify_mf",
+ [
+  {default, []}
+ ]}.
+
+{translation, "leo_redundant_manager.notify_mf",
+ fun(_Conf) ->
+         [leo_manager_api, notify]
+ end}.
+
+%% @doc
+{mapping,
+ "leo_redundant_manager.sync_mf",
+ "leo_redundant_manager.sync_mf",
+ [
+  {default, false}
+ ]}.
+
+{translation, "leo_redundant_manager.sync_mf",
+ fun(_Conf) ->
+         [leo_manager_api, synchronize]
+ end}.
+
+%% @doc
+{mapping,
+ "leo_statistics.profile",
+ "leo_statistics.profile",
+ [
+  {datatype, {enum, [true, false]}},
+  {default, false}
+ ]}.
+
+
+%% --------------------------------------------------------------------
+%% VM.ARGS
+%% --------------------------------------------------------------------
 %%%% Tunables
 %% @doc Name of the riak node
 {mapping,
