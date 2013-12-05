@@ -419,7 +419,6 @@
 {translation, "gateway.log.log_appender",
  fun(Conf) ->
          Path = cuttlefish_util:conf_get_value("gateway.log.output_path", Conf),
-         io:format("~p~n", [Path]),
          {file, [{path, Path}]}
  end}.
 
