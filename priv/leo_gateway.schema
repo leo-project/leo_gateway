@@ -506,6 +506,13 @@
  ]}.
 
 {mapping,
+ "erlang.kernel_poll",
+ "vm_args.+K",
+ [
+  {default, "true"}
+ ]}.
+
+{mapping,
  "erlang.asyc_threads",
  "vm_args.+A",
  [
@@ -545,6 +552,14 @@
   {default, "256000"}
  ]}.
 
+%% @doc Raise the ETS table limit
+{mapping,
+ "erlang.hidden_flag",
+ "vm_args.-hidden",
+ [
+  {default, ""}
+ ]}.
+
 %% @doc Raise the default erlang process limit
 {mapping, "process_limit", "vm_args.+P",
  [
@@ -565,5 +580,5 @@
  "snmp_conf",
  "vm_args.-config",
  [
-  {default, "leo_gateway_snmp"}
+  {default, "./snmp/snmpa_gateway_0/leo_gateway_snmp"}
  ]}.
