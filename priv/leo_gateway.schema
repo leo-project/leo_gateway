@@ -39,8 +39,8 @@
  "sasl.sasl_error_log",
  "sasl.sasl_error_logger",
  [
-  {datatype, tuple},
-  {default, {file, "./log/sasl/sasl-error.log"}}
+  {datatype, string},
+  {default, "./log/sasl/sasl-error.log"}
  ]}.
 
 {translation, "sasl.sasl_error_logger",
@@ -90,6 +90,34 @@
   {default, 5}
  ]}.
 
+
+%%
+%% Manager
+%%
+%% @doc Nodes of manager
+{mapping,
+ "manager.some.var1",
+ "gateway.managers",
+ [
+  {datatype, atom},
+  {default, 'manager_0@127.0.0.1'}
+ ]}.
+
+{mapping,
+ "manager.some.var2",
+ "gateway.managers",
+ [
+  {datatype, atom},
+  {default, 'manager_1@127.0.0.1'}
+ ]}.
+
+{translation, "gateway.managers",
+ fun(Conf) ->
+         Manager_1 = cuttlefish_util:conf_get_value("manager.some.var1", Conf),
+         Manager_2 = cuttlefish_util:conf_get_value("manager.some.var2", Conf),
+         [Manager_1, Manager_2]
+ end}.
+
 %%
 %% Gateway
 %%
@@ -101,15 +129,6 @@
   {default, "0.16.5"}
  ]}.
 
-%% @TODO
-%% @doc
-{mapping,
- "gateway.manager",
- "gateway.manager",
- [
-  {datatype, atom},
-  {default, 'manager_0@127.0.0.1'}
- ]}.
 
 %% @doc Gateway’s HTTP API to use: [s3 | rest | embed]
 {mapping,
@@ -370,8 +389,7 @@
   {default, 30000}
  ]}.
 
-%% @TODO
-%% @doc
+%% @doc Log level
 {mapping,
  "gateway.log.log_level",
  "gateway.log.log_level",
@@ -380,7 +398,7 @@
   {default, 1}
  ]}.
 
-%% @doc
+%% @doc Is enable access log
 {mapping,
  "gateway.log.is_enable_access_log",
  "gateway.log.is_enable_access_log",
@@ -389,17 +407,23 @@
   {default, false}
  ]}.
 
-%% @TODO
-%% @doc
+%% @doc Directory of output error-log(s)
 {mapping,
- "gateway.log.log_appender",
+ "gateway.log.output_path",
  "gateway.log.log_appender",
  [
-  {datatype, atom},
-  {default, file}
+  {datatype, string},
+  {default, "./log/app"}
  ]}.
 
-%% @doc
+{translation, "gateway.log.log_appender",
+ fun(Conf) ->
+         Path = cuttlefish_util:conf_get_value("gateway.log.output_path", Conf),
+         io:format("~p~n", [Path]),
+         {file, [{path, Path}]}
+ end}.
+
+%% @doc Is enable elasticsearch
 {mapping,
  "gateway.log.is_enable_esearch",
  "gateway.log.is_enable_esearch",
@@ -408,7 +432,7 @@
   {default, false}
  ]}.
 
-%% @doc
+%% @doc Node of Elasticsearch
 {mapping,
  "gateway.log.esearch.host",
  "gateway.log.esearch.host",
@@ -416,7 +440,7 @@
   {default, "127.0.0.1"}
  ]}.
 
-%% @doc
+%% @doc Elasticsearch listening port number
 {mapping,
  "gateway.log.esearch.port",
  "gateway.log.esearch.port",
@@ -425,7 +449,7 @@
   {default, 9200}
  ]}.
 
-%% @doc
+%% @doc Elasticsearch receive timeout
 {mapping,
  "gateway.log.esearch.timeout",
  "gateway.log.esearch.timeout",
@@ -434,7 +458,7 @@
   {default, 5000}
  ]}.
 
-%% @doc
+%% @doc Duration of stack objects
 {mapping,
  "gateway.log.esearch.esearch_bulk_duration",
  "gateway.log.esearch.esearch_bulk_duration",
@@ -443,7 +467,7 @@
   {default, 3000}
  ]}.
 
-%% @doc
+%% @doc Directory of queue for monitoring "RING"
 {mapping,
  "gateway.queue_dir",
  "gateway.queue_dir",
@@ -451,7 +475,7 @@
   {default, "./work/queue"}
  ]}.
 
-%% @doc
+%% @doc Directory of SNMP agent configuration
 {mapping,
  "gateway.snmp_agent",
  "gateway.snmp_agent",
@@ -469,7 +493,7 @@
  "nodename",
  "vm_args.-name",
  [
-  {default, "dev1@127.0.0.1"}
+  {default, "gateway_0@127.0.0.1"}
  ]}.
 
 %% @doc Cookie for distributed node communication.  All nodes in the same cluster
@@ -478,14 +502,14 @@
  "distributed_cookie",
  "vm_args.-setcookie",
  [
-  {default, "riak"}
+  {default, "leofs"}
  ]}.
 
 {mapping,
  "erlang.asyc_threads",
  "vm_args.+A",
  [
-  {default, "64"}
+  {default, "32"}
  ]}.
 
 %% @doc Increase number of concurrent ports/sockets
@@ -525,7 +549,7 @@
 {mapping, "process_limit", "vm_args.+P",
  [
   {datatype, integer},
-  {default, 256000}
+  {default, 1048576}
  ]}.
 
 {translation, "vm_args.+P",
