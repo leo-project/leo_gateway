@@ -189,7 +189,11 @@ after_process_0({ok, _Pid} = Res) ->
     ok = leo_misc:init_env(),
 
     ManagerNodes0  = ?env_manager_nodes(leo_gateway),
-    ManagerNodes1 = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes0),
+    ManagerNodes1 = lists:map(fun(X) when is_list(X) ->
+                                      list_to_atom(X);
+                                 (X) ->
+                                      X
+                              end, ManagerNodes0),
 
     %% Retrieve http-options
     {ok, HttpOptions} = get_options(),
@@ -260,7 +264,11 @@ after_process_0(Error) ->
 after_process_1(SystemConf, MembersCur, MembersPrev) ->
     %% Launch Redundant-manager#2
     ManagerNodes    = ?env_manager_nodes(leo_gateway),
-    NewManagerNodes = lists:map(fun(X) -> list_to_atom(X) end, ManagerNodes),
+    NewManagerNodes = lists:map(fun(X) when is_list(X) ->
+                                        list_to_atom(X);
+                                   (X) ->
+                                        X
+                                end, ManagerNodes),
 
     RefSup = whereis(leo_gateway_sup),
     case whereis(leo_redundant_manager_sup) of

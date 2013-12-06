@@ -130,7 +130,10 @@ register_in_monitor(Pid, RequestedTimes) ->
 register_in_monitor([],_,_) ->
     {error, ?ERROR_COULD_NOT_CONNECT};
 register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
-    Node2 = list_to_atom(Node1),
+    Node2 = case is_list(Node1) of
+                true  -> list_to_atom(Node1);
+                false -> Node1
+            end,
     Ret = case leo_misc:node_existence(Node2) of
               true ->
                   case rpc:call(Node2, leo_manager_api, register,
