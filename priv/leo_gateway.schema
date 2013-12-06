@@ -440,7 +440,7 @@
 {translation, "leo_gateway.log_appender",
  fun(Conf) ->
          Path = cuttlefish_util:conf_get_value("log.app", Conf),
-         {file, [{path, Path}]}
+         [{file, [{path, Path}]}]
  end}.
 
 %% @doc Output log file(s) - members of storage-cluster
