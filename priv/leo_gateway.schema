@@ -88,13 +88,13 @@
  ]}.
 
 
-%%
-%% Manager
-%%
+%% --------------------------------------------------------------------
+%% MANAGER
+%% --------------------------------------------------------------------
 %% @doc Nodes of manager
 {mapping,
  "manager.1",
- "gateway.managers",
+ "leo_gateway.managers",
  [
   {datatype, atom},
   {default, 'manager_0@127.0.0.1'}
@@ -102,13 +102,13 @@
 
 {mapping,
  "manager.2",
- "gateway.managers",
+ "leo_gateway.managers",
  [
   {datatype, atom},
   {default, 'manager_1@127.0.0.1'}
  ]}.
 
-{translation, "gateway.managers",
+{translation, "leo_gateway.managers",
  fun(Conf) ->
          Manager_1 = cuttlefish_util:conf_get_value("manager.1", Conf),
          Manager_2 = cuttlefish_util:conf_get_value("manager.2", Conf),
@@ -120,17 +120,17 @@
 %% --------------------------------------------------------------------
 %% @doc LeoFS version
 {mapping,
- "gateway.system_version",
- "gateway.system_version",
+ "system_version",
+ "leo_gateway.system_version",
  [
-  {default, "0.16.5"}
+  {default, "0.16.8"}
  ]}.
 
 
 %% @doc Gateway’s HTTP API to use: [s3 | rest | embed]
 {mapping,
- "gateway.http.handler",
- "gateway.http.handler",
+ "http.handler",
+ "leo_gateway.http.handler",
  [
   {datatype, {enum, [s3, rest, embed]}},
   {default, s3}
@@ -138,8 +138,8 @@
 
 %% @doc Port number the Gateway uses for HTTP connections
 {mapping,
- "gateway.http.port",
- "gateway.http.port",
+ "http.port",
+ "leo_gateway.http.port",
  [
   {datatype, integer},
   {default, 8080}
@@ -147,8 +147,8 @@
 
 %% @doc Numbers of processes listening for connections
 {mapping,
- "gateway.http.num_of_acceptors",
- "gateway.http.num_of_acceptors",
+ "http.num_of_acceptors",
+ "leo_gateway.http.num_of_acceptors",
  [
   {datatype, integer},
   {default, 128}
@@ -156,8 +156,8 @@
 
 %% @doc Maximum number of requests allowed in a single keep-alive session
 {mapping,
- "gateway.http.max_keepalive",
- "gateway.http.max_keepalive",
+ "http.max_keepalive",
+ "leo_gateway.http.max_keepalive",
  [
   {datatype, integer},
   {default, 4096}
@@ -165,8 +165,8 @@
 
 %% @doc Total number of virtual directories
 {mapping,
- "gateway.http.layer_of_dirs",
- "gateway.http.layer_of_dirs",
+ "http.layer_of_dirs",
+ "leo_gateway.http.layer_of_dirs",
  [
   {datatype, integer},
   {default, 12}
@@ -174,8 +174,8 @@
 
 %% @doc Port number the Gateway uses for HTTPS connections
 {mapping,
- "gateway.http.ssl_port",
- "gateway.http.ssl_port",
+ "http.ssl_port",
+ "leo_gateway.http.ssl_port",
  [
   {datatype, integer},
   {default, 8443}
@@ -183,24 +183,24 @@
 
 %% @doc SSL Certificate file
 {mapping,
- "gateway.http.ssl_certfile",
- "gateway.http.ssl_certfile",
+ "http.ssl_certfile",
+ "leo_gateway.http.ssl_certfile",
  [
   {default, "./etc/server_cert.pem"}
  ]}.
 
 %% @doc SSL key
 {mapping,
- "gateway.http.ssl_keyfile",
- "gateway.http.ssl_keyfile",
+ "http.ssl_keyfile",
+ "leo_gateway.http.ssl_keyfile",
  [
   {default, "./etc/server_key.pem"}
  ]}.
 
 %% @doc Synchronized time of a bucket property (second)
 {mapping,
- "gateway.bucket_prop_sync_interval",
- "gateway.bucket_prop_sync_interval",
+ "bucket_prop_sync_interval",
+ "leo_gateway.bucket_prop_sync_interval",
  [
   {datatype, integer},
   {default, 300}
@@ -211,8 +211,8 @@
 %% --------------------------------------------------------------------
 %% @doc Total number of chunked objects
 {mapping,
- "gateway.large_object.max_chunked_objs",
- "gateway.large_object.max_chunked_objs",
+ "large_object.max_chunked_objs",
+ "leo_gateway.large_object.max_chunked_objs",
  [
   {datatype, integer},
   {default, 1000}
@@ -220,8 +220,8 @@
 
 %% @doc Maximum length of an object
 {mapping,
- "gateway.large_object.max_len_for_obj",
- "gateway.large_object.max_len_for_obj",
+ "large_object.max_len_for_obj",
+ "leo_gateway.large_object.max_len_for_obj",
  [
   {datatype, bytesize},
   {default, 524288000}
@@ -229,8 +229,8 @@
 
 %% @doc Length of a chunked object
 {mapping,
- "gateway.large_object.chunked_obj_len",
- "gateway.large_object.chunked_obj_len",
+ "large_object.chunked_obj_len",
+ "leo_gateway.large_object.chunked_obj_len",
  [
   {datatype, bytesize},
   {default, 5242880}
@@ -238,8 +238,8 @@
 
 %% @doc Beginning of length of a chunked object
 {mapping,
- "gateway.large_object.threshold_obj_len",
- "gateway.large_object.threshold_obj_len",
+ "large_object.threshold_obj_len",
+ "leo_gateway.large_object.threshold_obj_len",
  [
   {datatype, bytesize},
   {default, 5767168}
@@ -253,8 +253,8 @@
 %%      If this parameter is 'false', Stores objects into the Gateway’s memory.
 %%      When operating READ, the Etag of the cache is compared with a backend storage’s Etag.
 {mapping,
- "gateway.cache.http_cache",
- "gateway.cache.http_cache",
+ "cache.http_cache",
+ "leo_gateway.cache.http_cache",
  [
   {datatype, {enum, [true, false]}},
   {default, false}
@@ -262,8 +262,8 @@
 
 %% @doc A number of cache workers
 {mapping,
- "gateway.cache.cache_workers",
- "gateway.cache.cache_workers",
+ "cache.cache_workers",
+ "leo_gateway.cache.cache_workers",
  [
   {datatype, integer},
   {default, 16}
@@ -271,8 +271,8 @@
 
 %% @doc Memory cache capacity in bytes
 {mapping,
- "gateway.cache.cache_ram_capacity",
- "gateway.cache.cache_ram_capacity",
+ "cache.cache_ram_capacity",
+ "leo_gateway.cache.cache_ram_capacity",
  [
   {datatype, bytesize},
   {default, 1073741824}
@@ -280,8 +280,8 @@
 
 %% @doc Disk cache capacity in bytes
 {mapping,
- "gateway.cache.cache_disc_capacity",
- "gateway.cache.cache_disc_capacity",
+ "cache.cache_disc_capacity",
+ "leo_gateway.cache.cache_disc_capacity",
  [
   {datatype, bytesize},
   {default, 524288000}
@@ -289,8 +289,8 @@
 
 %% @doc When the length of the object exceeds this value, store the object on disk
 {mapping,
- "gateway.cache.cache_disc_threshold_len",
- "gateway.cache.cache_disc_threshold_len",
+ "cache.cache_disc_threshold_len",
+ "leo_gateway.cache.cache_disc_threshold_len",
  [
   {datatype, bytesize},
   {default, 1048576}
@@ -298,24 +298,24 @@
 
 %% @doc Directory for the disk cache data
 {mapping,
- "gateway.cache.cache_disc_dir_data",
- "gateway.cache.cache_disc_dir_data",
+ "cache.cache_disc_dir_data",
+ "leo_gateway.cache.cache_disc_dir_data",
  [
   {default, "./cache/data"}
  ]}.
 
 %% @doc Directory for the disk cache journal
 {mapping,
- "gateway.cache.cache_disc_dir_journal",
- "gateway.cache.cache_disc_dir_journal",
+ "cache.cache_disc_dir_journal",
+ "leo_gateway.cache.cache_disc_dir_journal",
  [
   {default, "./cache/journal"}
  ]}.
 
 %% @doc Cache Expire in seconds
 {mapping,
- "gateway.cache.cache_expire",
- "gateway.cache.cache_expire",
+ "cache.cache_expire",
+ "leo_gateway.cache.cache_expire",
  [
   {datatype, integer},
   {default, 300}
@@ -323,8 +323,8 @@
 
 %% @doc Cache Max Content Length in bytes
 {mapping,
- "gateway.cache.cache_max_content_len",
- "gateway.cache.cache_max_content_len",
+ "cache.cache_max_content_len",
+ "leo_gateway.cache.cache_max_content_len",
  [
   {datatype, bytesize},
   {default, 1048576}
@@ -333,8 +333,8 @@
 %% @doc Cache Content Type(s)
 %%      In case of "empty", all objects are cached.
 {mapping,
- "gateway.cache.cachable_content_type",
- "gateway.cache.cachable_content_type",
+ "cache.cachable_content_type",
+ "leo_gateway.cache.cachable_content_type",
  [
   {default, []}
  ]}.
@@ -342,8 +342,8 @@
 %% @doc Cache Content Pattern(s)
 %%      In case of "empty", all objects are cached.
 {mapping,
- "gateway.cache.cachable_path_pattern",
- "gateway.cache.cachable_path_pattern",
+ "cache.cachable_path_pattern",
+ "leo_gateway.cache.cachable_path_pattern",
  [
   {default, []}
  ]}.
@@ -354,8 +354,8 @@
 %% --------------------------------------------------------------------
 %% @doc Timeout value when requesting to a storage
 {mapping,
- "gateway.timeout.level_1",
- "gateway.timeout.level_1",
+ "timeout.level_1",
+ "leo_gateway.timeout.level_1",
  [
   {datatype, {duration, ms}},
   {default, 5000}
@@ -363,8 +363,8 @@
 
 %% @doc Timeout value when requesting to a storage
 {mapping,
- "gateway.timeout.level_2",
- "gateway.timeout.level_2",
+ "timeout.level_2",
+ "leo_gateway.timeout.level_2",
  [
   {datatype, {duration, ms}},
   {default, 7000}
@@ -372,8 +372,8 @@
 
 %% @doc Timeout value when requesting to a storage
 {mapping,
- "gateway.timeout.level_3",
- "gateway.timeout.level_3",
+ "timeout.level_3",
+ "leo_gateway.timeout.level_3",
  [
   {datatype, {duration, ms}},
   {default, 10000}
@@ -381,8 +381,8 @@
 
 %% @doc Timeout value when requesting to a storage
 {mapping,
- "gateway.timeout.level_4",
- "gateway.timeout.level_4",
+ "timeout.level_4",
+ "leo_gateway.timeout.level_4",
  [
   {datatype, {duration, ms}},
   {default, 20000}
@@ -390,8 +390,8 @@
 
 %% @doc Timeout value when requesting to a storage
 {mapping,
- "gateway.timeout.level_5",
- "gateway.timeout.level_5",
+ "timeout.level_5",
+ "leo_gateway.timeout.level_5",
  [
   {datatype, {duration, ms}},
   {default, 30000}
@@ -403,8 +403,8 @@
 %% --------------------------------------------------------------------
 %% @doc Log level
 {mapping,
- "gateway.log.log_level",
- "gateway.log_level",
+ "log.log_level",
+ "leo_gateway.log_level",
  [
   {datatype, integer}, %% >> enum
   {default, 1}
@@ -412,8 +412,8 @@
 
 %% @doc Is enable access log
 {mapping,
- "gateway.log.is_enable_access_log",
- "gateway.is_enable_access_log",
+ "log.is_enable_access_log",
+ "leo_gateway.is_enable_access_log",
  [
   {datatype, {enum, [true, false]}},
   {default, false}
@@ -421,8 +421,8 @@
 
 %% @doc Output log file(s) - erlang
 {mapping,
- "gateway.log.erlang",
- "gateway.log_dir",
+ "log.erlang",
+ "leo_gateway.log_dir",
  [
   {datatype, string},
   {default, "./log/erlang"}
@@ -430,22 +430,22 @@
 
 %% @doc Output log file(s) - app
 {mapping,
- "gateway.log.app",
- "gateway.log_appender",
+ "log.app",
+ "leo_gateway.log_appender",
  [
   {datatype, string},
   {default, "./log/app"}
  ]}.
 
-{translation, "gateway.log_appender",
+{translation, "leo_gateway.log_appender",
  fun(Conf) ->
-         Path = cuttlefish_util:conf_get_value("gateway.log.app", Conf),
+         Path = cuttlefish_util:conf_get_value("log.app", Conf),
          {file, [{path, Path}]}
  end}.
 
 %% @doc Output log file(s) - members of storage-cluster
 {mapping,
- "storage.log.member_dir",
+ "log.member_dir",
  "leo_redundant_manager.log_dir_member",
  [
   {datatype, string},
@@ -454,7 +454,7 @@
 
 %% @doc Output log file(s) - ring
 {mapping,
- "storage.log.ring_dir",
+ "log.ring_dir",
  "leo_redundant_manager.log_dir_ring",
  [
   {datatype, string},
@@ -464,8 +464,8 @@
 
 %% @doc Is enable elasticsearch
 {mapping,
- "gateway.log.is_enable_esearch",
- "gateway.is_enable_esearch",
+ "log.is_enable_esearch",
+ "leo_gateway.is_enable_esearch",
  [
   {datatype, {enum, [true, false]}},
   {default, false}
@@ -473,16 +473,16 @@
 
 %% @doc Node of Elasticsearch
 {mapping,
- "gateway.log.esearch.host",
- "gateway.esearch_host",
+ "log.esearch.host",
+ "leo_gateway.esearch_host",
  [
   {default, "127.0.0.1"}
  ]}.
 
 %% @doc Elasticsearch listening port number
 {mapping,
- "gateway.log.esearch.port",
- "gateway.esearch_port",
+ "log.esearch.port",
+ "leo_gateway.esearch_port",
  [
   {datatype, integer},
   {default, 9200}
@@ -490,8 +490,8 @@
 
 %% @doc Elasticsearch receive timeout
 {mapping,
- "gateway.log.esearch.timeout",
- "gateway.esearch_timeout",
+ "log.esearch.timeout",
+ "leo_gateway.esearch_timeout",
  [
   {datatype, integer},
   {default, 5000}
@@ -499,8 +499,8 @@
 
 %% @doc Duration of stack objects
 {mapping,
- "gateway.log.esearch.esearch_bulk_duration",
- "gateway.esearch_bulk_duration",
+ "log.esearch.esearch_bulk_duration",
+ "leo_gateway.esearch_bulk_duration",
  [
   {datatype, integer},
   {default, 3000}
@@ -512,16 +512,16 @@
 %% --------------------------------------------------------------------
 %% @doc Directory of queue for monitoring "RING"
 {mapping,
- "gateway.queue_dir",
- "gateway.queue_dir",
+ "queue_dir",
+ "leo_gateway.queue_dir",
  [
   {default, "./work/queue"}
  ]}.
 
 %% @doc Directory of SNMP agent configuration
 {mapping,
- "gateway.snmp_agent",
- "gateway.snmp_agent",
+ "snmp_agent",
+ "leo_gateway.snmp_agent",
  [
   {default, "./snmp/snmpa_gateway_0/LEO-GATEWAY"}
  ]}.
