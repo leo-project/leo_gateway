@@ -785,11 +785,15 @@ delete_bucket_1(AccessKeyId, Bucket1) ->
 
     ManagerNodes = ?env_manager_nodes(leo_gateway),
     delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2).
-    
+
 delete_bucket_2([],_,_) ->
     {error, ?ERR_TYPE_INTERNAL_ERROR};
 delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
-    case rpc:call(list_to_atom(Node), leo_manager_api, delete_bucket,
+    Node_1 = case is_list(Node) of
+                 true  -> list_to_atom(Node);
+                 false -> Node
+             end,
+    case rpc:call(Node_1, leo_manager_api, delete_bucket,
                   [AccessKeyId, Bucket], ?DEF_TIMEOUT) of
         ok ->
             ok;
