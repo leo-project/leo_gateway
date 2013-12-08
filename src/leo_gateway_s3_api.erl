@@ -208,8 +208,8 @@ put_object(Req, Key, Params) ->
 put_object(?BIN_EMPTY, Req, Key, Params) ->
     {Size, _} = cowboy_req:body_length(Req),
 
-    case (Size >= Params#req_params.threshold_obj_len) of
-        true when Size >= Params#req_params.max_len_for_obj ->
+    case (Size >= Params#req_params.threshold_of_chunk_len) of
+        true when Size >= Params#req_params.max_len_of_obj ->
             ?reply_bad_request([?SERVER_HEADER], Req);
         true when Params#req_params.is_upload == false ->
             leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
@@ -360,9 +360,9 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                                             is_cached         = true,
                                             is_dir            = IsDir,
                                             max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                            max_len_for_obj   = Props#http_options.max_len_for_obj,
+                                            max_len_of_obj    = Props#http_options.max_len_of_obj,
                                             chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                            threshold_obj_len = Props#http_options.threshold_obj_len}),
+                                            threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len}),
             AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
             handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
         _ ->

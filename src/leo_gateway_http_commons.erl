@@ -328,8 +328,8 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
              {ok, any()}).
 put_object(Req, Key, #req_params{bucket = Bucket,
                                  is_upload = IsUpload,
-                                 max_len_for_obj = MaxLenForObj,
-                                 threshold_obj_len = ThresholdObjLen} = Params) ->
+                                 max_len_of_obj = MaxLenForObj,
+                                 threshold_of_chunk_len = ThresholdObjLen} = Params) ->
     {Size, _} = cowboy_req:body_length(Req),
     case (Size >= ThresholdObjLen) of
         true when Size >= MaxLenForObj ->

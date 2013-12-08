@@ -431,10 +431,10 @@ get_options() ->
 
     %% Retrieve large-object-related properties:
     LargeObjectProp = ?env_large_object_properties(),
-    MaxChunkedObjs  = leo_misc:get_value('max_chunked_objs',  LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
-    MaxObjLen       = leo_misc:get_value('max_len_for_obj',   LargeObjectProp, ?DEF_LOBJ_MAX_LEN_FOR_OBJ),
-    ChunkedObjLen   = leo_misc:get_value('chunked_obj_len',   LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
-    ThresholdObjLen = leo_misc:get_value('threshold_obj_len', LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OBJ_LEN),
+    MaxChunkedObjs  = leo_misc:get_value('max_chunked_objs',       LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
+    MaxObjLen       = leo_misc:get_value('max_len_of_obj',         LargeObjectProp, ?DEF_LOBJ_MAX_LEN_OF_OBJ),
+    ChunkedObjLen   = leo_misc:get_value('chunked_obj_len',        LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    ThresholdObjLen = leo_misc:get_value('threshold_of_chunk_len', LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN),
 
     %% Retrieve timeout-values
     lists:foreach(fun({K, T}) ->
@@ -460,9 +460,9 @@ get_options() ->
                                 cachable_content_type    = CachableContentTypes1,
                                 cachable_path_pattern    = CachablePathPatterns1,
                                 max_chunked_objs         = MaxChunkedObjs,
-                                max_len_for_obj          = MaxObjLen,
+                                max_len_of_obj           = MaxObjLen,
                                 chunked_obj_len          = ChunkedObjLen,
-                                threshold_obj_len        = ThresholdObjLen},
+                                threshold_of_chunk_len   = ThresholdObjLen},
     ?info("start/3", "handler: ~p",                  [HttpHandler]),
     ?info("start/3", "port: ~p",                     [Port]),
     ?info("start/3", "ssl port: ~p",                 [SSLPort]),
@@ -482,9 +482,9 @@ get_options() ->
     ?info("start/3", "cacheable_content_types: ~p",  [CachableContentTypes]),
     ?info("start/3", "cacheable_path_patterns: ~p",  [CachablePathPatterns]),
     ?info("start/3", "max_chunked_obj: ~p",          [MaxChunkedObjs]),
-    ?info("start/3", "max_len_for_obj: ~p",          [MaxObjLen]),
+    ?info("start/3", "max_len_of_obj: ~p",           [MaxObjLen]),
     ?info("start/3", "chunked_obj_len: ~p",          [ChunkedObjLen]),
-    ?info("start/3", "threshold_obj_len: ~p",        [ThresholdObjLen]),
+    ?info("start/3", "threshold_of_chunk_len: ~p",   [ThresholdObjLen]),
     {ok, HttpOptions}.
 
 

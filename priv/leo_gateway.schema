@@ -220,8 +220,8 @@
 
 %% @doc Maximum length of an object
 {mapping,
- "large_object.max_len_for_obj",
- "leo_gateway.large_object.max_len_for_obj",
+ "large_object.max_len_of_obj",
+ "leo_gateway.large_object.max_len_of_obj",
  [
   {datatype, bytesize},
   {default, 524288000}
@@ -236,10 +236,10 @@
   {default, 5242880}
  ]}.
 
-%% @doc Beginning of length of a chunked object
+%% @doc Threshold of length of a chunked object
 {mapping,
- "large_object.threshold_obj_len",
- "leo_gateway.large_object.threshold_obj_len",
+ "large_object.threshold_of_chunk_len",
+ "leo_gateway.large_object.threshold_of_chunk_len",
  [
   {datatype, bytesize},
   {default, 5767168}
