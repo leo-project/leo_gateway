@@ -40,6 +40,18 @@
          delete_object/3, head_object/3,
          range_object/3]).
 
+-record(req_large_obj, {
+          handler :: pid(),
+          key     :: binary(),
+          length  :: pos_integer(),
+          chunked_size         :: pos_integer(),
+          reading_chunked_size :: pos_integer()
+          %% total_length         :: pos_integer(),
+          %% total_chunks         :: pos_integer()
+         }).
+
+
+
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
@@ -423,62 +435,76 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
 -spec(put_large_object(any(), binary(), pos_integer(), #req_params{}) ->
              {ok, any()}).
 put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
-                                             chunked_obj_len=ChunkedSize})->
-    {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
+                                             chunked_obj_len = ChunkedSize,
+                                             reading_chunked_obj_len = ReadingChunkedSize})->
+    %% launch 'large_object_handler'
+    {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key, ChunkedSize),
 
     %% remove a registered object with 'touch-command'
     %% from the cache
-    _ = leo_cache_api:delete(Key),
+    catch leo_cache_api:delete(Key),
 
-    Ret2 = case catch put_large_object(cowboy_req:stream_body(ChunkedSize, Req),
-                                       Key, Size, ChunkedSize, 0, 1, Pid) of
-               {'EXIT', Cause} ->
-                   ?error("put_large_object/4", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-                   ?reply_internal_error([?SERVER_HEADER], Req);
-               {error, _} ->
+    Ret2 = case put_large_object_1(cowboy_req:stream_body(ReadingChunkedSize, Req),
+                                   #req_large_obj{handler = Pid,
+                                                  key     = Key,
+                                                  length  = Size,
+                                                  chunked_size = ChunkedSize,
+                                                  reading_chunked_size = ReadingChunkedSize}) of
+               {error, _Cause} ->
+                   ok = leo_gateway_large_object_handler:rollback(Pid),
                    ?reply_internal_error([?SERVER_HEADER], Req);
                Ret1 ->
+                   ?access_log_put(Bucket, Key, Size, 0),
                    Ret1
            end,
-
-    ?access_log_put(Bucket, Key, Size, 0),
     catch leo_gateway_large_object_handler:stop(Pid),
     Ret2.
 
-put_large_object({ok, Data, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
-    DataSize = byte_size(Data),
-    catch leo_gateway_large_object_handler:put(Pid, TotalChunks, DataSize, Data),
-    put_large_object(cowboy_req:stream_body(ChunkedSize, Req),
-                     Key, Size, ChunkedSize, TotalSize + DataSize, TotalChunks + 1, Pid);
+%% @private
+put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
+                                                   reading_chunked_size = ReadingChunkedSize} = ReqLargeObj) ->
+    case catch leo_gateway_large_object_handler:put(Handler, Data) of
+        ok ->
+            put_large_object_1(cowboy_req:stream_body(ReadingChunkedSize, Req), ReqLargeObj);
+        {'EXIT', Cause} ->
+            {error, Cause};
+        {error, Cause} ->
+            {error, Cause}
+    end;
 
-put_large_object({done, Req}, Key, Size, ChunkedSize, TotalSize, TotalChunks, Pid) ->
-    TotalChunks1 = TotalChunks -1,
-    case catch leo_gateway_large_object_handler:result(Pid) of
-        {ok, Digest0} when Size == TotalSize ->
-            Digest1 = leo_hex:raw_binary_to_integer(Digest0),
-            case leo_gateway_rpc_handler:put(
-                   Key, ?BIN_EMPTY, Size, ChunkedSize, TotalChunks1, Digest1) of
+put_large_object_1({done, Req}, #req_large_obj{handler = Handler,
+                                               key = Key,
+                                               length = Size,
+                                               chunked_size = ChunkedSize}) ->
+    case catch leo_gateway_large_object_handler:result(Handler) of
+        {ok, #large_obj_info{length = TotalSize,
+                             num_of_chunks = TotalChunks,
+                             md5_context   = Digest}} when Size == TotalSize ->
+            Digest_1 = leo_hex:raw_binary_to_integer(Digest),
+
+            case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
+                                             ChunkedSize, TotalChunks, Digest_1) of
                 {ok, _ETag} ->
                     Header = [?SERVER_HEADER,
-                              {?HTTP_HEAD_RESP_ETAG, ?http_etag(Digest1)}],
+                              {?HTTP_HEAD_RESP_ETAG, ?http_etag(Digest_1)}],
                     ?reply_ok(Header, Req);
                 {error, ?ERR_TYPE_INTERNAL_ERROR} ->
                     ?reply_internal_error([?SERVER_HEADER], Req);
                 {error, timeout} ->
                     ?reply_timeout([?SERVER_HEADER], Req)
             end;
+        {ok, _} ->
+            {error, "Not match object length"};
         {_, Cause} ->
-            ?error("put_large_object/7", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-            ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks1),
-            ?reply_internal_error([?SERVER_HEADER], Req)
+            ?error("put_large_object/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {error, Cause}
     end;
 
 
 %% An error occurred while reading the body, connection is gone.
-put_large_object({error, Cause}, Key, _Size, _ChunkedSize, _TotalSize, TotalChunks, Pid) ->
-    ?error("put_large_object/7", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-    ok = leo_gateway_large_object_handler:rollback(Pid, TotalChunks),
-    {error, rollbacked_request}.
+put_large_object_1({error, Cause}, #req_large_obj{key = Key}) ->
+    ?error("put_large_object/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    {error, Cause}.
 
 
 %% @doc DELETE an object

@@ -101,6 +101,7 @@ get_node_status() ->
          {max_chunked_objs,         leo_misc:get_value('max_chunked_objs',         LObjProps,  ?DEF_LOBJ_MAX_CHUNKED_OBJS)},
          {max_len_of_obj,           leo_misc:get_value('max_len_of_obj',           LObjProps,  ?DEF_LOBJ_MAX_LEN_OF_OBJ)},
          {chunked_obj_len,          leo_misc:get_value('chunked_obj_len',          LObjProps,  ?DEF_LOBJ_CHUNK_OBJ_LEN)},
+         {reading_chunked_obj_len,  leo_misc:get_value('reading_chunked_obj_len',  LObjProps,  ?DEF_LOBJ_READING_CHUNK_OBJ_LEN)},
          {threshold_of_chunk_len,   leo_misc:get_value('threshold_of_chunk_len',   LObjProps,  ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN)}
         ],
     {ok, [{type,          gateway},

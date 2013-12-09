@@ -249,6 +249,15 @@
   {default, 5767168}
  ]}.
 
+%% @doc Reading length of a chunked object
+{mapping,
+ "large_object.reading_chunked_obj_len",
+ "leo_gateway.large_object.reading_chunked_obj_len",
+ [
+  {datatype, bytesize},
+  {default, 5242880}
+ ]}.
+
 
 %% --------------------------------------------------------------------
 %% GATEWAY - CACHE

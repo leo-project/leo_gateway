@@ -362,7 +362,8 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                                             max_chunked_objs  = Props#http_options.max_chunked_objs,
                                             max_len_of_obj    = Props#http_options.max_len_of_obj,
                                             chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                            threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len}),
+                                            reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                                            threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
             AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
             handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
         _ ->

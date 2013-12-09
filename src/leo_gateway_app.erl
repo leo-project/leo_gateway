@@ -226,7 +226,6 @@ after_process_0({ok, _Pid} = Res) ->
             ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
             %% Launch http-handler(s)
-            {ok, HttpOptions} = get_options(),
             Handler = HttpOptions#http_options.handler,
             ok = Handler:start(leo_gateway_sup, HttpOptions)
     end,
@@ -430,11 +429,17 @@ get_options() ->
                             end,
 
     %% Retrieve large-object-related properties:
-    LargeObjectProp = ?env_large_object_properties(),
-    MaxChunkedObjs  = leo_misc:get_value('max_chunked_objs',       LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
-    MaxObjLen       = leo_misc:get_value('max_len_of_obj',         LargeObjectProp, ?DEF_LOBJ_MAX_LEN_OF_OBJ),
-    ChunkedObjLen   = leo_misc:get_value('chunked_obj_len',        LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
-    ThresholdObjLen = leo_misc:get_value('threshold_of_chunk_len', LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN),
+    LargeObjectProp   = ?env_large_object_properties(),
+    MaxChunkedObjs    = leo_misc:get_value('max_chunked_objs',
+                                           LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
+    MaxObjLen         = leo_misc:get_value('max_len_of_obj',
+                                           LargeObjectProp, ?DEF_LOBJ_MAX_LEN_OF_OBJ),
+    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
+                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    ReadingChunkedLen = leo_misc:get_value('reading_chunked_obj_len',
+                                           LargeObjectProp, ?DEF_LOBJ_READING_CHUNK_OBJ_LEN),
+    ThresholdChunkLen = leo_misc:get_value('threshold_of_chunk_len',
+                                           LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN),
 
     %% Retrieve timeout-values
     lists:foreach(fun({K, T}) ->
@@ -462,7 +467,8 @@ get_options() ->
                                 max_chunked_objs         = MaxChunkedObjs,
                                 max_len_of_obj           = MaxObjLen,
                                 chunked_obj_len          = ChunkedObjLen,
-                                threshold_of_chunk_len   = ThresholdObjLen},
+                                reading_chunked_obj_len  = ReadingChunkedLen,
+                                threshold_of_chunk_len   = ThresholdChunkLen},
     ?info("start/3", "handler: ~p",                  [HttpHandler]),
     ?info("start/3", "port: ~p",                     [Port]),
     ?info("start/3", "ssl port: ~p",                 [SSLPort]),
@@ -484,7 +490,8 @@ get_options() ->
     ?info("start/3", "max_chunked_obj: ~p",          [MaxChunkedObjs]),
     ?info("start/3", "max_len_of_obj: ~p",           [MaxObjLen]),
     ?info("start/3", "chunked_obj_len: ~p",          [ChunkedObjLen]),
-    ?info("start/3", "threshold_of_chunk_len: ~p",   [ThresholdObjLen]),
+    ?info("start/3", "reading_chunked_obj_len: ~p",  [ReadingChunkedLen]),
+    ?info("start/3", "threshold_of_chunk_len: ~p",   [ThresholdChunkLen]),
     {ok, HttpOptions}.
 
 

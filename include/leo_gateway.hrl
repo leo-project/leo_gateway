@@ -62,6 +62,13 @@
 -define(TIMEOUT_L5_SEC,   30000).
 
 
+%% large-object
+-record(large_obj_info, {key = <<>>         :: binary(),
+                         length = 0         :: pos_integer(),
+                         num_of_chunks = 0  :: pos_integer(),
+                         md5_context = <<>> :: binary()
+                        }).
+
 %% access-log
 -define(LOG_GROUP_ID_ACCESS, 'log_grp_access_log').
 -define(LOG_ID_ACCESS,       'log_id_access_log').
