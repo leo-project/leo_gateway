@@ -93,27 +93,25 @@
 %% --------------------------------------------------------------------
 %% @doc Nodes of manager
 {mapping,
- "manager.1",
+ "managers",
  "leo_gateway.managers",
  [
-  {datatype, atom},
-  {default, 'manager_0@127.0.0.1'}
- ]}.
-
-{mapping,
- "manager.2",
- "leo_gateway.managers",
- [
-  {datatype, atom},
-  {default, 'manager_1@127.0.0.1'}
+  {datatype, string}
  ]}.
 
 {translation, "leo_gateway.managers",
  fun(Conf) ->
-         Manager_1 = cuttlefish_util:conf_get_value("manager.1", Conf),
-         Manager_2 = cuttlefish_util:conf_get_value("manager.2", Conf),
-         [Manager_1, Manager_2]
+         Managers = cuttlefish_util:conf_get_value("managers", Conf),
+         case string:tokens(Managers, "[ , ]") of
+             [] ->
+                 ['manager_0@127.0.0.1', 'manager_1@127.0.0.1'];
+             Tokens ->
+                 lists:map(fun(X) ->
+                                   list_to_atom(X)
+                           end, Tokens)
+         end
  end}.
+
 
 %% --------------------------------------------------------------------
 %% GATEWAY
@@ -171,6 +169,12 @@
   {datatype, integer},
   {default, 12}
  ]}.
+
+{translation, "leo_gateway.http.layer_of_dirs",
+ fun(Conf) ->
+         MaxDirs = cuttlefish_util:conf_get_value("http.layer_of_dirs", Conf),
+         {1, MaxDirs}
+ end}.
 
 %% @doc Port number the Gateway uses for HTTPS connections
 {mapping,
@@ -333,20 +337,34 @@
 %% @doc Cache Content Type(s)
 %%      In case of "empty", all objects are cached.
 {mapping,
- "cache.cachable_content_type",
+ "cache.cachable_content_types",
  "leo_gateway.cache.cachable_content_type",
  [
+  {datatype, string},
   {default, []}
  ]}.
+
+{translation, "leo_gateway.cache.cachable_content_type",
+ fun(Conf) ->
+         Types = cuttlefish_util:conf_get_value("cache.cachable_content_types", Conf),
+         string:tokens(Types, "[ , ]")
+ end}.
 
 %% @doc Cache Content Pattern(s)
 %%      In case of "empty", all objects are cached.
 {mapping,
- "cache.cachable_path_pattern",
+ "cache.cachable_path_patterns",
  "leo_gateway.cache.cachable_path_pattern",
  [
+  {datatype, string},
   {default, []}
  ]}.
+
+{translation, "leo_gateway.cache.cachable_path_pattern",
+ fun(Conf) ->
+         Patterns = cuttlefish_util:conf_get_value("cache.cachable_path_patterns", Conf),
+         string:tokens(Patterns, "[ , ]")
+ end}.
 
 
 %% --------------------------------------------------------------------
@@ -357,7 +375,7 @@
  "timeout.level_1",
  "leo_gateway.timeout.level_1",
  [
-  {datatype, {duration, ms}},
+  {datatype, integer},
   {default, 5000}
  ]}.
 
@@ -366,7 +384,7 @@
  "timeout.level_2",
  "leo_gateway.timeout.level_2",
  [
-  {datatype, {duration, ms}},
+  {datatype, integer},
   {default, 7000}
  ]}.
 
@@ -375,7 +393,7 @@
  "timeout.level_3",
  "leo_gateway.timeout.level_3",
  [
-  {datatype, {duration, ms}},
+  {datatype, integer},
   {default, 10000}
  ]}.
 
@@ -384,7 +402,7 @@
  "timeout.level_4",
  "leo_gateway.timeout.level_4",
  [
-  {datatype, {duration, ms}},
+  {datatype, integer},
   {default, 20000}
  ]}.
 
@@ -393,7 +411,7 @@
  "timeout.level_5",
  "leo_gateway.timeout.level_5",
  [
-  {datatype, {duration, ms}},
+  {datatype, integer},
   {default, 30000}
  ]}.
 
