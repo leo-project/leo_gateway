@@ -23,14 +23,14 @@
 {application, leo_gateway,
  [
   {description, "LeoFS Gateway Server"},
-  {vsn, "0.16.5"},
+  {vsn, "0.16.8"},
   {id, "leo_gateway"},
   {registered, []},
   {applications, [kernel, stdlib, crypto, ranch, asn1]},
   {mod, {leo_gateway_app, []}},
   {env, [
          %% System Ver
-         {system_version, "0.16.5" },
+         {system_version, "0.16.8" },
 
          %% Gateway Properties:
          {http, [
@@ -56,10 +56,11 @@
 
          %% Large-object-related properties:
          {large_object, [
-                         {max_chunked_objs,  1000 },
-                         {max_len_for_obj,   524288000 },
-                         {chunked_obj_len,   5242880   },
-                         {threshold_obj_len, 5767168 }
+                         {max_chunked_objs,       1000 },
+                         {max_len_of_obj,         524288000 },
+                         {chunked_obj_len,        5242880   },
+                         {threshold_of_chunk_len, 5767168   },
+                         {reading_chunked_obj_len,5242880   }
                         ]},
 
          %% Cache-related properties:
