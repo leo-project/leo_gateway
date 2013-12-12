@@ -208,8 +208,8 @@ put_object(Req, Key, Params) ->
 put_object(?BIN_EMPTY, Req, Key, Params) ->
     {Size, _} = cowboy_req:body_length(Req),
 
-    case (Size >= Params#req_params.threshold_obj_len) of
-        true when Size >= Params#req_params.max_len_for_obj ->
+    case (Size >= Params#req_params.threshold_of_chunk_len) of
+        true when Size >= Params#req_params.max_len_of_obj ->
             ?reply_bad_request([?SERVER_HEADER], Req);
         true when Params#req_params.is_upload == false ->
             leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
@@ -360,9 +360,10 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                                             is_cached         = true,
                                             is_dir            = IsDir,
                                             max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                            max_len_for_obj   = Props#http_options.max_len_for_obj,
+                                            max_len_of_obj    = Props#http_options.max_len_of_obj,
                                             chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                            threshold_obj_len = Props#http_options.threshold_obj_len}),
+                                            reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                                            threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
             AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
             handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
         _ ->
@@ -707,24 +708,12 @@ auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs) ->
                             list_to_binary(Ret)
                     end,
 
-            URI = case (Len > 0) of
-                      true when  QStr3 == ?HTTP_QS_BIN_UPLOADS ->
-                          << RawUri/binary, "?", QStr3/binary >>;
-                      true ->
-                          case (nomatch /= binary:match(QStr3, ?HTTP_QS_BIN_UPLOAD_ID)) of
-                              true  -> << RawUri/binary, "?", QStr3/binary >>;
-                              false -> RawUri
-                          end;
-                      _ ->
-                          RawUri
-                  end,
-
             SignParams = #sign_params{http_verb    = HTTPMethod,
                                       content_md5  = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
                                       content_type = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
                                       date         = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket       = Bucket,
-                                      uri          = URI,
+                                      uri          = RawUri,
                                       query_str    = QStr3,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
@@ -797,11 +786,15 @@ delete_bucket_1(AccessKeyId, Bucket1) ->
 
     ManagerNodes = ?env_manager_nodes(leo_gateway),
     delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2).
-    
+
 delete_bucket_2([],_,_) ->
     {error, ?ERR_TYPE_INTERNAL_ERROR};
 delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
-    case rpc:call(list_to_atom(Node), leo_manager_api, delete_bucket,
+    Node_1 = case is_list(Node) of
+                 true  -> list_to_atom(Node);
+                 false -> Node
+             end,
+    case rpc:call(Node_1, leo_manager_api, delete_bucket,
                   [AccessKeyId, Bucket], ?DEF_TIMEOUT) of
         ok ->
             ok;

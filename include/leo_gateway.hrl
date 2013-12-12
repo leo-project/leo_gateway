@@ -37,7 +37,11 @@
 -endif.
 
 %% error
--define(ERROR_COULD_NOT_CONNECT, "could not connect").
+-define(ERROR_COULD_NOT_CONNECT, "Could not connect").
+-define(ERROR_NOT_MATCH_LENGTH,  "Not match object length").
+-define(ERROR_FAIL_PUT_OBJ,      "Fail put an object").
+-define(ERROR_FAIL_RETRIEVE_OBJ, "Fail retrieve an object").
+
 
 %% @pending
 %% -define(MSG_INCOMPLETE_BODY,   {400, 'incomplete body'  }).
@@ -61,6 +65,13 @@
 -define(TIMEOUT_L4_SEC,   20000).
 -define(TIMEOUT_L5_SEC,   30000).
 
+
+%% large-object
+-record(large_obj_info, {key = <<>>         :: binary(),
+                         length = 0         :: pos_integer(),
+                         num_of_chunks = 0  :: pos_integer(),
+                         md5_context = <<>> :: binary()
+                        }).
 
 %% access-log
 -define(LOG_GROUP_ID_ACCESS, 'log_grp_access_log').

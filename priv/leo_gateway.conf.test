@@ -1,0 +1,255 @@
+#======================================================================
+# LeoFS - Gateway Configuration
+#
+# See: http://www.leofs.org/docs/configuration.html#leofs-gateway
+#======================================================================
+## --------------------------------------------------------------------
+## SASL
+## --------------------------------------------------------------------
+## See: http://www.erlang.org/doc/man/sasl_app.html
+##
+## The following configuration parameters are defined for
+## the SASL application. See app(4) for more information
+## about configuration parameters
+
+## SASL error log path
+sasl.sasl_error_log = /var/leofs/log/sasl/sasl-error.log
+
+## Restricts the error logging performed by the specified sasl_error_logger
+## to error reports, progress reports, or both.
+## errlog_type = [error | progress | all]
+sasl.errlog_type = error
+
+## Specifies in which directory the files are stored.
+## If this parameter is undefined or false, the error_logger_mf_h is not installed.
+sasl.error_logger_mf_dir = /var/test/log/sasl
+
+## Specifies how large each individual file can be.
+## If this parameter is undefined, the error_logger_mf_h is not installed.
+sasl.error_logger_mf_maxbytes = 50000000
+
+## Specifies how many files are used.
+## If this parameter is undefined, the error_logger_mf_h is not installed.
+sasl.error_logger_mf_maxfiles = 16
+
+## --------------------------------------------------------------------
+## Manager's Node(s)
+## --------------------------------------------------------------------
+## Name of Manager node(s)
+managers = [manager_0@10.1.2.3, manager_1@10.1.2.4]
+
+## --------------------------------------------------------------------
+## GATEWAY
+## --------------------------------------------------------------------
+## LeoFS version
+system_version = 0.16.8.1
+
+
+## Gateway’s HTTP API to use: [s3 | rest | embed]
+http.handler = rest
+
+## Port number the Gateway uses for HTTP connections
+http.port = 18080
+
+## Numbers of processes listening for connections
+http.num_of_acceptors = 256
+
+## Maximum number of requests allowed in a single keep-alive session
+http.max_keepalive = 1024
+
+## Total number of virtual directories
+http.layer_of_dirs = 24
+
+## Port number the Gateway uses for HTTPS connections
+http.ssl_port     = 443
+
+## SSL Certificate file
+http.ssl_certfile = test/etc/server_cert.pem
+
+## SSL key
+http.ssl_keyfile  = test/etc/server_key.pem
+
+## Synchronized time of a bucket property (second)
+bucket_prop_sync_interval = 100
+
+## --------------------------------------------------------------------
+## GATEWAY - Large Object
+## --------------------------------------------------------------------
+## Total number of chunked objects
+large_object.max_chunked_objs = 3000
+
+## Maximum length of an object
+large_object.max_len_of_obj = 5368709120
+
+## Length of a chunked object
+large_object.chunked_obj_len = 1048576
+
+## Threshold of length of a chunked object
+large_object.threshold_of_chunk_len = 1572864
+
+## Reading length of a chuncked object
+##   * If happening timeout when copying a large object,
+##     you will solve to set this value as less than 5MB.
+##   * default: "large_object.chunked_obj_len" (5242880 - 5MB)
+large_object.reading_chunked_obj_len = 524288
+
+## --------------------------------------------------------------------
+## GATEWAY - Cache
+## --------------------------------------------------------------------
+## If this parameter is 'true', Gateway turns on HTTP-based cache server, like Varnish OR Squid.
+## If this parameter is 'false', Stores objects into the Gateway’s memory.
+## When operating READ, the Etag of the cache is compared with a backend storage’s Etag.
+cache.http_cache = true
+
+## A number of cache workers
+cache.cache_workers = 64
+
+## Memory cache capacity in bytes
+cache.cache_ram_capacity  = 17179869184
+
+## Disk cache capacity in bytes
+cache.cache_disc_capacity = 34359738368
+
+## When the length of the object exceeds this value, store the object on disk
+cache.cache_disc_threshold_len = 8388608
+
+## Directory for the disk cache data
+cache.cache_disc_dir_data    = /var/lefs/cache/data
+
+## Directory for the disk cache journal
+cache.cache_disc_dir_journal = /var/leofs/cache/journal
+
+## Cache Expire in seconds
+cache.cache_expire = 600
+
+## Cache Max Content Length in bytes
+cache.cache_max_content_len = 8388608
+
+## Cache Content Type(s)
+## In case of "empty", all objects are cached.
+cache.cachable_content_types = [image/png, image/jpg]
+## cache.cachable_content_types = []
+
+## Cache Path Pattern(s) (regular expression)
+## In case of "empty", all objects are cached.
+cache.cachable_path_patterns = [/img/.+, /css/.+]
+## cache.cachable_path_patterns = []
+
+
+## --------------------------------------------------------------------
+## GATEWAY - Timeout
+## --------------------------------------------------------------------
+## Timeout value when requesting to a storage
+## 0 to 65,535 bytes
+timeout.level_1 = 3000
+
+## 65,535 to 131,071 bytes
+timeout.level_2 = 4000
+
+## 131,072 to 524,287 bytes
+timeout.level_3 = 5000
+
+## 524,288 to 1,048,576 bytes
+timeout.level_4 = 6000
+
+## 1,048,576 bytes and over
+timeout.level_5 = 7000
+
+
+## --------------------------------------------------------------------
+## GATEWAY - Log
+## --------------------------------------------------------------------
+##
+## Log level: [0:debug, 1:info, 2:warn, 3:error]
+log.log_level = 2
+
+## Is enable access-log [true, false]
+log.is_enable_access_log = true
+
+## Output log file(s) - Erlang's log
+log.erlang = /var/leofs/log/erlang
+
+## Output log file(s) - app
+log.app = /var/leofs/log/app
+
+## Output log file(s) - members of storage-cluster
+log.member_dir = /var/leofs/log/ring
+
+## Output log file(s) - ring
+log.ring_dir = /var/leofs/log/ring
+
+## Is enable Elasticsearch for access-log
+log.is_enable_esearch = true
+
+## Node of Elasticsearch
+log.esearch.host = esearch_host
+
+## Elasticsearch listening port
+log.esearch.port = 9000
+
+## Elasticsearch receive timeout
+log.esearch.timeout = 3000
+
+## Duration of stack objects
+log.esearch.esearch_bulk_duration = 1000
+
+
+## --------------------------------------------------------------------
+## GATEWAY - Other Directories
+## --------------------------------------------------------------------
+## Directory of queue for monitoring "RING"
+queue_dir  = /var/leofs/work/queue
+
+## Directory of SNMP agent configuration
+snmp_agent = /var/leofs/snmp/snmpa_gateway_0/LEO-GATEWAY
+
+
+## --------------------------------------------------------------------
+## Other Libs
+## --------------------------------------------------------------------
+## Enable profiler - leo_backend_db
+leo_backend_db.profile = true
+
+## Enable profiler - leo_logger
+leo_logger.profile = true
+
+## Enable profiler - leo_mq
+leo_mq.profile = true
+
+## Enable profiler - leo_redundant_manager
+leo_redundant_manager.profile = true
+
+## Enable profiler - leo_statistics
+leo_statistics.profile = true
+
+
+#======================================================================
+# For vm.args
+#======================================================================
+## Name of the leofs-gateway node
+nodename = gateway_0@192.168.1.5
+
+## Cookie for distributed node communication.  All nodes in the same cluster
+## should use the same cookie or they will not be able to communicate.
+distributed_cookie = leofs-v0.16.8
+
+## Enable kernel poll
+erlang.kernel_poll = false
+
+## Number of async threads
+erlang.asyc_threads = 64
+
+## Increase number of concurrent ports/sockets
+erlang.max_ports = 32000
+
+## Set the location of crash dumps
+erlang.crash_dump = /var/leofs/log/erl_crash.dump
+
+## Raise the ETS table limit
+erlang.max_ets_tables = 128000
+
+## Raise the default erlang process limit
+process_limit = 10000
+
+## Path of SNMP-agent configuration
+snmp_conf = /var/leofs/snmp/snmpa_gateway_0/leo_gateway_snmp

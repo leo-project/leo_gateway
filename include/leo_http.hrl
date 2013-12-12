@@ -129,10 +129,11 @@
 -define(DEF_CACHE_DISC_DIR_JOURNAL,   "./cache/journal").
 -define(DEF_CACHE_EXPIRE,             300).
 -define(DEF_CACHE_MAX_CONTENT_LEN,    1000000).
--define(DEF_LOBJ_MAX_CHUNKED_OBJS,    1000).
--define(DEF_LOBJ_MAX_LEN_FOR_OBJ,     524288000).
--define(DEF_LOBJ_CHUNK_OBJ_LEN,       5242880).
--define(DEF_LOBJ_THRESHOLD_OBJ_LEN,   5767168).
+-define(DEF_LOBJ_MAX_CHUNKED_OBJS,       1000).
+-define(DEF_LOBJ_MAX_LEN_OF_OBJ,         524288000).
+-define(DEF_LOBJ_CHUNK_OBJ_LEN,          5242880).
+-define(DEF_LOBJ_READING_CHUNK_OBJ_LEN,  5242880). %% since v0.16.8
+-define(DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN, 5767168).
 
 
 %% Macros
@@ -237,9 +238,10 @@
           cachable_path_pattern = []   :: list(),         %% cachable path patterns
           %% for large-object
           max_chunked_objs = 0         :: pos_integer(),  %% max chunked objects
-          max_len_for_obj = 0          :: pos_integer(),  %% max length a object (byte)
+          max_len_of_obj = 0           :: pos_integer(),  %% max length a object (byte)
           chunked_obj_len = 0          :: pos_integer(),  %% chunked object length for large object (byte)
-          threshold_obj_len = 0        :: pos_integer()   %% threshold object length for large object (byte)
+          reading_chunked_obj_len = 0  :: pos_integer(),  %% creading hunked object length for large object (byte)
+          threshold_of_chunk_len = 0   :: pos_integer()   %% threshold of chunk length for large object (byte)
          }).
 
 -record(req_params, {
@@ -257,14 +259,15 @@
           is_cached = false          :: boolean(),      %% is cached?
           is_dir = false             :: boolean(),      %% is directory?
           %% for large-object
-          is_upload = false          :: boolean(),      %% is upload operation? (for multipart upload)
-          upload_id = <<>>           :: binary(),       %% upload id for multipart upload
-          upload_part_num = 0        :: pos_integer(),  %% upload part number for multipart upload
-          max_chunked_objs = 0       :: pos_integer(),  %% max chunked objects
-          max_len_for_multipart = 0  :: pos_integer(),  %% max length a multipart object (byte)
-          max_len_for_obj = 0        :: pos_integer(),  %% max length a object (byte)
-          chunked_obj_len = 0        :: pos_integer(),  %% chunked object length for large-object (byte)
-          threshold_obj_len = 0      :: pos_integer()   %% threshold object length for large-object (byte)
+          is_upload = false            :: boolean(),      %% is upload operation? (for multipart upload)
+          upload_id = <<>>             :: binary(),       %% upload id for multipart upload
+          upload_part_num = 0          :: pos_integer(),  %% upload part number for multipart upload
+          max_chunked_objs = 0         :: pos_integer(),  %% max chunked objects
+          max_len_for_multipart = 0    :: pos_integer(),  %% max length a multipart object (byte)
+          max_len_of_obj = 0           :: pos_integer(),  %% max length a object (byte)
+          chunked_obj_len = 0          :: pos_integer(),  %% chunked object length for large-object (byte)
+          reading_chunked_obj_len = 0  :: pos_integer(),  %% creading hunked object length for large object (byte)
+          threshold_of_chunk_len = 0   :: pos_integer()   %% threshold of chunk length for large-object (byte)
          }).
 
 -record(cache, {
