@@ -204,6 +204,8 @@ invoke([#redundant_node{node      = Node,
         {value, {ok, _Meta} = Ret} ->
             Ret;
         %% error
+        {value, {error, Cause} = Ret} ->
+            Ret;
         Error ->
             E = handle_error(Node, Mod, Method, Args, Error),
             invoke(T, Mod, Method, Args, [E|Errors])
