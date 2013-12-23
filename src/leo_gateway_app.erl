@@ -432,14 +432,13 @@ get_options() ->
     LargeObjectProp   = ?env_large_object_properties(),
     MaxChunkedObjs    = leo_misc:get_value('max_chunked_objs',
                                            LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
-    MaxObjLen         = leo_misc:get_value('max_len_of_obj',
-                                           LargeObjectProp, ?DEF_LOBJ_MAX_LEN_OF_OBJ),
     ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
                                            LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     ReadingChunkedLen = leo_misc:get_value('reading_chunked_obj_len',
                                            LargeObjectProp, ?DEF_LOBJ_READING_CHUNK_OBJ_LEN),
     ThresholdChunkLen = leo_misc:get_value('threshold_of_chunk_len',
                                            LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN),
+    MaxObjLen = MaxChunkedObjs * ChunkedObjLen,
 
     %% Retrieve timeout-values
     lists:foreach(fun({K, T}) ->
