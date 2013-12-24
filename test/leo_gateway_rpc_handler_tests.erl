@@ -116,7 +116,7 @@ head_object_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head,
                                         fun(_Addr, _Key) ->
-                                                {error, foobar}
+                                                {error, internal_server_error}
                                         end]),
     Res = leo_gateway_rpc_handler:head(<<"bucket/key">>),
     ?assertEqual({error, internal_server_error}, Res),
@@ -163,7 +163,7 @@ get_object_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get,
                                         fun(_Addr, _Key, _ReqId) ->
-                                                {error, foobar}
+                                                {error, internal_server_error}
                                         end]),
     Res = leo_gateway_rpc_handler:get(<<"bucket/key">>),
     ?assertEqual({error, internal_server_error}, Res),
@@ -212,7 +212,7 @@ get_object_with_etag_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get,
                                         fun(_Addr, _Key, _Etag, _ReqId) ->
-                                                {error, foobar}
+                                                {error, internal_server_error}
                                         end]),
     Res = leo_gateway_rpc_handler:get(<<"bucket/key">>, 123),
     ?assertEqual({error, internal_server_error}, Res),
@@ -272,7 +272,7 @@ delete_object_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, delete,
                                         fun(_, _) ->
-                                                {error, foobar}
+                                                {error, internal_server_error}
                                         end]),
     Res = leo_gateway_rpc_handler:delete(<<"bucket/key">>),
     ?assertEqual({error, internal_server_error}, Res),
@@ -311,7 +311,7 @@ put_object_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put,
                                         fun(_, _) ->
-                                                {error, foobar}
+                                                {error, internal_server_error}
                                         end]),
     Res = leo_gateway_rpc_handler:put(<<"bucket/key">>, <<"body">>, 4),
     ?assertEqual({error, internal_server_error}, Res),
