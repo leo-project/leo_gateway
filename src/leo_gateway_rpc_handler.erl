@@ -34,7 +34,8 @@
          get/3,
          delete/1,
          put/2, put/3, put/4, put/6, put/7,
-         invoke/5
+         invoke/5,
+         get_request_parameters/2
         ]).
 
 -include("leo_gateway.hrl").
