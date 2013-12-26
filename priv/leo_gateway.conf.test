@@ -42,7 +42,7 @@ managers = [manager_0@10.1.2.3, manager_1@10.1.2.4]
 ## GATEWAY
 ## --------------------------------------------------------------------
 ## LeoFS version
-system_version = 0.16.8.1
+system_version = 1.0.0
 
 
 ## Gateway’s HTTP API to use: [s3 | rest | embed]
