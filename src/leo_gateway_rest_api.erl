@@ -202,12 +202,19 @@ handle_2(Req, ?HTTP_POST, Path, Params, State) ->
     handle_2(Req, ?HTTP_PUT, Path, Params, State);
 handle_2(Req1, HTTPMethod, Path, Params, State) ->
     case catch leo_gateway_http_req_handler:handle(HTTPMethod, Req1, Path, Params) of
-        {'EXIT', Cause} ->
+        {ok, Req2} ->
+            Req3 = cowboy_req:compact(Req2),
+            {ok, Req3, State};
+        {error, not_found} ->
+            {ok, Req2} = ?reply_not_found([?SERVER_HEADER], Req1),
+            {ok, Req2, State};
+        {error, Cause} ->
             ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Req1),
             {ok, Req2, State};
-        {ok, Req2} ->
-            Req3 = cowboy_req:compact(Req2),
-            {ok, Req3, State}
+        {'EXIT', Cause} ->
+            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Req1),
+            {ok, Req2, State}
     end.
 

@@ -303,12 +303,12 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Retrieve chunked objects
 %% @private
 -spec(handle_loop(binary(), integer(), any(), #metadata{}, any()) ->
-             {ok, any()}).
+             {ok, any()} | {error, any()}).
 handle_loop(Key, Total, Req, Meta, Ref) ->
     handle_loop(Key, Key, Total, 0, Req, Meta, Ref).
 
 -spec(handle_loop(binary(), binary(), integer(), integer(), any(), #metadata{}, any()) ->
-             {ok, any()}).
+             {ok, any()} | {error, any()}).
 handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Meta, _Ref) ->
     {ok, Req};
 

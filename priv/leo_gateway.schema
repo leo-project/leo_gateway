@@ -121,7 +121,8 @@
  "system_version",
  "leo_gateway.system_version",
  [
-  {default, "0.16.8"}
+  {datatype, string},
+  {default, "undefined"}
  ]}.
 
 
@@ -220,15 +221,6 @@
  [
   {datatype, integer},
   {default, 1000}
- ]}.
-
-%% @doc Maximum length of an object
-{mapping,
- "large_object.max_len_of_obj",
- "leo_gateway.large_object.max_len_of_obj",
- [
-  {datatype, bytesize},
-  {default, 524288000}
  ]}.
 
 %% @doc Length of a chunked object
