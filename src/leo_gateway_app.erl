@@ -51,10 +51,10 @@
                 _ = get_system_config_from_manager([]),
                 _ = get_members_from_manager([]),
 
-                [{ok, [#system_conf{n = 1,
-                                    w = 1,
-                                    r = 1,
-                                    d = 1}]
+                [{ok, [#?SYSTEM_CONF{n = 1,
+                                     w = 1,
+                                     r = 1,
+                                     d = 1}]
                  },
                  {ok, {[#member{node  = 'node_0',
                                 state = 'running'}],
@@ -258,7 +258,7 @@ after_process_0(Error) ->
 
 %% @doc After process of start_link
 %% @private
--spec(after_process_1(#system_conf{}, list(#member{}), list(#member{})) ->
+-spec(after_process_1(#?SYSTEM_CONF{}, list(#member{}), list(#member{})) ->
              ok).
 after_process_1(SystemConf, MembersCur, MembersPrev) ->
     %% Launch Redundant-manager#2
@@ -281,13 +281,13 @@ after_process_1(SystemConf, MembersCur, MembersPrev) ->
             {ok, _} = leo_redundant_manager_sup:start_link(
                         gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
     end,
-    ok = leo_redundant_manager_api:set_options([{n, SystemConf#system_conf.n},
-                                                {r, SystemConf#system_conf.r},
-                                                {w, SystemConf#system_conf.w},
-                                                {d, SystemConf#system_conf.d},
-                                                {bit_of_ring, SystemConf#system_conf.bit_of_ring},
-                                                {level_1, SystemConf#system_conf.level_1},
-                                                {level_2, SystemConf#system_conf.level_2}]),
+    ok = leo_redundant_manager_api:set_options([{n, SystemConf#?SYSTEM_CONF.n},
+                                                {r, SystemConf#?SYSTEM_CONF.r},
+                                                {w, SystemConf#?SYSTEM_CONF.w},
+                                                {d, SystemConf#?SYSTEM_CONF.d},
+                                                {bit_of_ring, SystemConf#?SYSTEM_CONF.bit_of_ring},
+                                                {num_of_dc_replicas,   SystemConf#?SYSTEM_CONF.num_of_dc_replicas},
+                                                {num_of_rack_replicas, SystemConf#?SYSTEM_CONF.num_of_rack_replicas}]),
 
     {ok,_MembersChecksum} = leo_redundant_manager_api:synchronize(
                               ?SYNC_TARGET_MEMBER, [{?VER_CUR,  MembersCur },
@@ -313,7 +313,7 @@ after_process_1(SystemConf, MembersCur, MembersPrev) ->
 %% @doc Retrieve system-configuration from manager-node(s)
 %% @private
 -spec(get_system_config_from_manager(list()) ->
-             {ok, #system_conf{}} | {error, any()}).
+             {ok, #?SYSTEM_CONF{}} | {error, any()}).
 get_system_config_from_manager([]) ->
     {error, 'could_not_get_system_config'};
 get_system_config_from_manager([Manager|T]) ->
