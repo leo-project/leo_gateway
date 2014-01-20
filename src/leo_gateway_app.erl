@@ -293,7 +293,7 @@ after_process_1(SystemConf, MembersCur, MembersPrev) ->
                               ?SYNC_TARGET_MEMBER, [{?VER_CUR,  MembersCur },
                                                     {?VER_PREV, MembersPrev}]),
     {ok,_,_} = leo_redundant_manager_api:create(),
-    ok = leo_membership:set_proc_auditor(leo_gateway_api),
+    ok = leo_membership_cluster_local:set_proc_auditor(leo_gateway_api),
 
     %% Register in THIS-Process
     ok = leo_gateway_api:register_in_monitor(first),

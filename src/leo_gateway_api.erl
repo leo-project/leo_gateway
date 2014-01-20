@@ -174,7 +174,7 @@ purge(Path) ->
              ok).
 update_manager_nodes(Managers) ->
     ?update_env_manager_nodes(leo_gateway, Managers),
-    ok = leo_membership:update_manager_nodes(Managers),
+    ok = leo_membership_cluster_local:update_manager_nodes(Managers),
     leo_s3_libs:update_providers(Managers).
 
 
