@@ -177,33 +177,33 @@
 
 %% access-log
 %%
--define(ESEARCH_LOG_IDX_PREFIX, <<"leoaccesslog-">>).
--define(esearch_index(_GregorianSeconds),
-        begin
-            {{Year, Month, Date},_} =
-                calendar:gregorian_seconds_to_datetime(_GregorianSeconds),
-            io_lib:format("~4..0w.~2..0w.~2..0w", [Year, Month, Date])
-        end).
--define(esearch_doc(_Method, _Bucket, _Path, _Size, _Response),
-        begin
-            _GregorianSec = calendar:datetime_to_gregorian_seconds(
-                              calendar:now_to_universal_time(os:timestamp())),
-            _Timestamp = list_to_binary(leo_date:date_format('utc', _GregorianSec)),
-            _Index = list_to_binary(?esearch_index(_GregorianSec)),
 
-            leo_logger_client_esearch:append(
-              {?LOG_ID_ESEARCH,
-               #message_log{message = [{<<"@timestamp">>, _Timestamp},
-                                       {<<"method">>,     _Method},
-                                       {<<"bucket">>,     _Bucket},
-                                       {<<"path">>,       _Path},
-                                       {<<"size">>,       _Size},
-                                       {<<"response">>,   _Response},
-                                       {<<"gateway">>,    list_to_binary(atom_to_list(node()))}
-                                      ],
-                            esearch = [{?ESEARCH_DOC_INDEX, <<?ESEARCH_LOG_IDX_PREFIX/binary, _Index/binary>>},
-                                       {?ESEARCH_DOC_TYPE,  _Bucket}]}})
-        end).
+%% -define(ESEARCH_LOG_IDX_PREFIX, <<"leoaccesslog-">>).
+%% -define(esearch_index(_GregorianSeconds),
+%%         begin
+%%             {{Year, Month, Date},_} =
+%%                 calendar:gregorian_seconds_to_datetime(_GregorianSeconds),
+%%             io_lib:format("~4..0w.~2..0w.~2..0w", [Year, Month, Date])
+%%         end).
+%% -define(esearch_doc(_Method, _Bucket, _Path, _Size, _Response),
+%%         begin
+%%             _GregorianSec = calendar:datetime_to_gregorian_seconds(
+%%                               calendar:now_to_universal_time(os:timestamp())),
+%%             _Timestamp = list_to_binary(leo_date:date_format('utc', _GregorianSec)),
+%%             _Index = list_to_binary(?esearch_index(_GregorianSec)),
+%%             leo_logger_client_esearch:append(
+%%               {?LOG_ID_ESEARCH,
+%%                #message_log{message = [{<<"@timestamp">>, _Timestamp},
+%%                                        {<<"method">>,     _Method},
+%%                                        {<<"bucket">>,     _Bucket},
+%%                                        {<<"path">>,       _Path},
+%%                                        {<<"size">>,       _Size},
+%%                                        {<<"response">>,   _Response},
+%%                                        {<<"gateway">>,    list_to_binary(atom_to_list(node()))}
+%%                                       ],
+%%                             esearch = [{?ESEARCH_DOC_INDEX, <<?ESEARCH_LOG_IDX_PREFIX/binary, _Index/binary>>},
+%%                                        {?ESEARCH_DOC_TYPE,  _Bucket}]}})
+%%         end).
 
 -define(access_log_get(_Bucket, _Path, _Size, _Response),
         begin
@@ -215,8 +215,8 @@
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response]}}),
-            ?esearch_doc(<<"GET">>, _Bucket, _Path, _Size, _Response)
+                                       _Response]}})
+            %% ?esearch_doc(<<"GET">>, _Bucket, _Path, _Size, _Response)
         end).
 -define(access_log_put(_Bucket, _Path, _Size, _Response),
         begin
@@ -230,8 +230,8 @@
                                        leo_date:clock(),
                                        _Response
                                       ]}
-              }),
-            ?esearch_doc(<<"PUT">>, _Bucket, _Path, _Size, _Response)
+              })
+            %% ?esearch_doc(<<"PUT">>, _Bucket, _Path, _Size, _Response)
         end).
 -define(access_log_delete(_Bucket, _Path, _Size, _Response),
         begin
@@ -245,8 +245,8 @@
                                        leo_date:clock(),
                                        _Response
                                       ]}
-              }),
-            ?esearch_doc(<<"DELETE">>, _Bucket, _Path, _Size, _Response)
+              })
+            %% ?esearch_doc(<<"DELETE">>, _Bucket, _Path, _Size, _Response)
         end).
 -define(access_log_head(_Bucket, _Path, _Response),
         begin
@@ -260,7 +260,7 @@
                                        leo_date:clock(),
                                        _Response
                                       ]}
-              }),
-            ?esearch_doc(<<"HEAD">>, _Bucket, _Path, 0, _Response)
+              })
+            %% ?esearch_doc(<<"HEAD">>, _Bucket, _Path, 0, _Response)
         end).
 

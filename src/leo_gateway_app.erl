@@ -98,29 +98,29 @@ start(_Type, _StartArgs) ->
     end,
 
     %% access-logger (log search)
-    case application:get_env(leo_gateway, is_enable_esearch) of
-        {ok, true} ->
-            ESHost = case application:get_env(leo_gateway, esearch_host) of
-                         {ok, V1} -> V1;
-                         _ -> ?DEF_ESEARCH_HOST
-                     end,
-            ESPort = case application:get_env(leo_gateway, esearch_port) of
-                         {ok, V2} -> V2;
-                         _ -> ?DEF_ESEARCH_PORT
-                     end,
-            ESTimeout = case application:get_env(leo_gateway, esearch_timeout) of
-                            {ok, V3} -> V3;
-                            _ -> ?DEF_ESEARCH_TIMEOUT
-                        end,
-            ESBulkDuration = case application:get_env(leo_gateway, esearch_bulk_duration) of
-                                 {ok, V4} -> V4;
-                                 _ -> ?DEF_ESEARCH_BULK_DURATION
-                             end,
-            ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
-                                               ESHost, ESPort, ESTimeout, ESBulkDuration);
-        _ ->
-            void
-    end,
+    %% case application:get_env(leo_gateway, is_enable_esearch) of
+    %%     {ok, true} ->
+    %%         ESHost = case application:get_env(leo_gateway, esearch_host) of
+    %%                      {ok, V1} -> V1;
+    %%                      _ -> ?DEF_ESEARCH_HOST
+    %%                  end,
+    %%         ESPort = case application:get_env(leo_gateway, esearch_port) of
+    %%                      {ok, V2} -> V2;
+    %%                      _ -> ?DEF_ESEARCH_PORT
+    %%                  end,
+    %%         ESTimeout = case application:get_env(leo_gateway, esearch_timeout) of
+    %%                         {ok, V3} -> V3;
+    %%                         _ -> ?DEF_ESEARCH_TIMEOUT
+    %%                     end,
+    %%         ESBulkDuration = case application:get_env(leo_gateway, esearch_bulk_duration) of
+    %%                              {ok, V4} -> V4;
+    %%                              _ -> ?DEF_ESEARCH_BULK_DURATION
+    %%                          end,
+    %%         ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
+    %%                                            ESHost, ESPort, ESTimeout, ESBulkDuration);
+    %%     _ ->
+    %%         void
+    %% end,
 
     %% Launch Supervisor
     Res = leo_gateway_sup:start_link(),
