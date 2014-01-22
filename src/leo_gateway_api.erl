@@ -86,7 +86,7 @@ get_node_status() ->
          {handler,                  leo_misc:get_value('handler',                  HttpProps,  ?DEF_HTTTP_HANDLER)},
          {port,                     leo_misc:get_value('port',                     HttpProps,  ?DEF_HTTP_PORT)},
          {ssl_port,                 leo_misc:get_value('ssl_port',                 HttpProps,  ?DEF_HTTP_SSL_PORT)},
-         {acceptors,                leo_misc:get_value('num_of_acceptors',         HttpProps,  ?DEF_HTTP_NUM_OF_ACCEPTORS)},
+         {num_of_acceptors,         leo_misc:get_value('num_of_acceptors',         HttpProps,  ?DEF_HTTP_NUM_OF_ACCEPTORS)},
          {http_cache,               leo_misc:get_value('http_cache',               CacheProps, ?DEF_HTTP_CACHE)},
          {cache_workers,            leo_misc:get_value('cache_workers',            CacheProps, ?DEF_CACHE_WORKERS)},
          {cache_ram_capacity,       leo_misc:get_value('cache_ram_capacity',       CacheProps, ?DEF_CACHE_RAM_CAPACITY)},
@@ -174,7 +174,7 @@ purge(Path) ->
              ok).
 update_manager_nodes(Managers) ->
     ?update_env_manager_nodes(leo_gateway, Managers),
-    ok = leo_membership:update_manager_nodes(Managers),
+    ok = leo_membership_cluster_local:update_manager_nodes(Managers),
     leo_s3_libs:update_providers(Managers).
 
 

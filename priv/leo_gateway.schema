@@ -481,51 +481,6 @@
  ]}.
 
 
-%% @doc Is enable elasticsearch
-{mapping,
- "log.is_enable_esearch",
- "leo_gateway.is_enable_esearch",
- [
-  {datatype, {enum, [true, false]}},
-  {default, false}
- ]}.
-
-%% @doc Node of Elasticsearch
-{mapping,
- "log.esearch.host",
- "leo_gateway.esearch_host",
- [
-  {default, "127.0.0.1"}
- ]}.
-
-%% @doc Elasticsearch listening port number
-{mapping,
- "log.esearch.port",
- "leo_gateway.esearch_port",
- [
-  {datatype, integer},
-  {default, 9200}
- ]}.
-
-%% @doc Elasticsearch receive timeout
-{mapping,
- "log.esearch.timeout",
- "leo_gateway.esearch_timeout",
- [
-  {datatype, integer},
-  {default, 5000}
- ]}.
-
-%% @doc Duration of stack objects
-{mapping,
- "log.esearch.esearch_bulk_duration",
- "leo_gateway.esearch_bulk_duration",
- [
-  {datatype, integer},
-  {default, 3000}
- ]}.
-
-
 %% --------------------------------------------------------------------
 %% GATEWAY - Other Directories
 %% --------------------------------------------------------------------
@@ -698,13 +653,13 @@
   {default, "256000"}
  ]}.
 
-%% @doc Raise the ETS table limit
-{mapping,
- "erlang.hidden_flag",
- "vm_args.-hidden",
- [
-  {default, ""}
- ]}.
+%% %% @doc Raise the ETS table limit
+%% {mapping,
+%%  "erlang.hidden_flag",
+%%  "vm_args.-hidden",
+%%  [
+%%   {default, ""}
+%%  ]}.
 
 %% @doc Raise the default erlang process limit
 {mapping, "process_limit", "vm_args.+P",

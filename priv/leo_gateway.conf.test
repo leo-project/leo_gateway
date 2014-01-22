@@ -175,21 +175,6 @@ log.member_dir = /var/leofs/log/ring
 ## Output log file(s) - ring
 log.ring_dir = /var/leofs/log/ring
 
-## Is enable Elasticsearch for access-log
-log.is_enable_esearch = true
-
-## Node of Elasticsearch
-log.esearch.host = esearch_host
-
-## Elasticsearch listening port
-log.esearch.port = 9000
-
-## Elasticsearch receive timeout
-log.esearch.timeout = 3000
-
-## Duration of stack objects
-log.esearch.esearch_bulk_duration = 1000
-
 
 ## --------------------------------------------------------------------
 ## GATEWAY - Other Directories
