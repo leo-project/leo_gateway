@@ -843,15 +843,18 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                                   %% directory.
                                   {lists:append([Acc,
                                                  "<CommonPrefixes><Prefix>",
-                                                 Prefix,
-                                                 Entry,
+                                                 xmerl_lib:export_text(Prefix),
+                                                 xmerl_lib:export_text(Entry),
                                                  "</Prefix></CommonPrefixes>"]),
                                    EntryKeyBin};
                               _ ->
                                   %% file.
                                   {lists:append([Acc,
                                                  "<Contents>",
-                                                 "<Key>", Prefix, Entry, "</Key>",
+                                                 "<Key>", 
+                                                 xmerl_lib:export_text(Prefix),
+                                                 xmerl_lib:export_text(Entry),
+                                                 "</Key>",
                                                  "<LastModified>", leo_http:web_date(TS),
                                                  "</LastModified>",
                                                  "<ETag>", leo_hex:integer_to_hex(CS, 32),
@@ -869,7 +872,7 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                   end
           end,
     {List, NextMarker}= lists:foldl(Fun, {[], <<>>}, MetadataList),
-    io_lib:format(?XML_OBJ_LIST, [Prefix, NextMarker, integer_to_list(MaxKeys), TruncatedStr, List]).
+    io_lib:format(?XML_OBJ_LIST, [xmerl_lib:export_text(Prefix), xmerl_lib:export_text(NextMarker), integer_to_list(MaxKeys), TruncatedStr, List]).
 
 generate_bucket_xml(MetadataList) ->
     Fun = fun(#?BUCKET{name = BucketBin,
@@ -880,7 +883,9 @@ generate_bucket_xml(MetadataList) ->
                           Acc;
                       false ->
                           lists:append([Acc,
-                                        "<Bucket><Name>", Bucket, "</Name>",
+                                        "<Bucket><Name>", 
+                                        xmerl_lib:export_text(Bucket),
+                                        "</Name>",
                                         "<CreationDate>", leo_http:web_date(CreatedAt),
                                         "</CreationDate></Bucket>"])
                   end
