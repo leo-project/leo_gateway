@@ -37,9 +37,9 @@
 %% INVALID OPERATION
 %%--------------------------------------------------------------------
 %% @doc Constraint violation.
-handle(_HTTPMethod, Req,_Key, #req_params{token_length = Len,
+handle(_HTTPMethod, Req, Key, #req_params{token_length = Len,
                                           max_layers   = Max}) when Len > Max ->
-    ?reply_not_found([?SERVER_HEADER], Req);
+    ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
 
 %% ---------------------------------------------------------------------
 %% For BUCKET-OPERATION
@@ -125,6 +125,6 @@ handle(?HTTP_HEAD, Req, Key, #req_params{handler = Handler} = Params) ->
 
 %% @doc invalid request.
 %% @private
-handle(_, Req, _, _) ->
-    ?reply_bad_request([?SERVER_HEADER], Req).
+handle(_, Req, Key, _) ->
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 

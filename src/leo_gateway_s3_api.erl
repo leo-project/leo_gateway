@@ -123,11 +123,11 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
         {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 %% @doc Put a bucket
@@ -144,9 +144,9 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -158,11 +158,11 @@ delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
         ok ->
             ?reply_no_content([?SERVER_HEADER], Req);
         not_found ->
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -174,11 +174,11 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         not_found ->
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error_without_body([?SERVER_HEADER], Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout_without_body([?SERVER_HEADER], Req)
     end.
 
 
@@ -210,7 +210,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 
     case (Size >= Params#req_params.threshold_of_chunk_len) of
         true when Size >= Params#req_params.max_len_of_obj ->
-            ?reply_bad_request([?SERVER_HEADER], Req);
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge, ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
         true when Params#req_params.is_upload == false ->
             leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
         false ->
@@ -245,11 +245,11 @@ put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
         {ok, Meta, RespObject} ->
             put_object_1(Directive, Req, Key, Meta, RespObject);
         {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 %% @doc POST/PUT operation on Objects. COPY
@@ -263,9 +263,9 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
             put_object_2(Req, Key, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 %% @doc POST/PUT operation on Objects. REPLACE
@@ -283,9 +283,9 @@ put_object_3(Req, Meta) ->
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Meta#metadata.key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Meta#metadata.key, <<>>, Req)
     end.
 
 
@@ -367,18 +367,18 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
             AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
             handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
         _ ->
-            {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Req2),
+            {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Path2, <<>>, Req2),
             {ok, Req3, State}
     end.
 
 
 %% @doc Handle a request (sub)
 %% @private
-handle_2({error, not_found}, Req,_,_,_,State) ->
-    {ok, Req1} = ?reply_not_found([?SERVER_HEADER], Req),
+handle_2({error, not_found}, Req,_,Key,_,State) ->
+    {ok, Req1} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req1, State};
-handle_2({error, _Cause}, Req,_,_,_,State) ->
-    {ok, Req1} = ?reply_forbidden([?SERVER_HEADER], Req),
+handle_2({error, _Cause}, Req,_,Key,_,State) ->
+    {ok, Req1} = ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req1, State};
 
 %% For Multipart Upload - Initiation
@@ -402,21 +402,21 @@ handle_2({ok,_AccessKeyId}, Req1, ?HTTP_POST, _, #req_params{path = Path1,
 
                 ?reply_ok([?SERVER_HEADER], XML, Req1);
             {error, timeout} ->
-                ?reply_timeout([?SERVER_HEADER], Req1);
+                ?reply_timeout([?SERVER_HEADER], Path1, <<>>, Req1);
             {error, Cause} ->
                 ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
-                ?reply_internal_error([?SERVER_HEADER], Req1)
+                ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req1)
         end,
     {ok, Req2, State};
 
 %% For Multipart Upload - Upload a part of an object
 %%
-handle_2({ok,_AccessKeyId}, Req1, ?HTTP_PUT, _,
+handle_2({ok,_AccessKeyId}, Req1, ?HTTP_PUT, Key,
          #req_params{upload_id = UploadId,
                      upload_part_num  = PartNum,
                      max_chunked_objs = MaxChunkedObjs}, State) when UploadId /= <<>>,
                                                                      PartNum > MaxChunkedObjs ->
-    {ok, Req2} = ?reply_bad_request([?SERVER_HEADER], Req1),
+    {ok, Req2} = ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge, ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req1),
     {ok, Req2, State};
 
 handle_2({ok,_AccessKeyId}, Req1, ?HTTP_PUT, _,
@@ -434,11 +434,11 @@ handle_2({ok,_AccessKeyId}, Req1, ?HTTP_PUT, _,
             {ok, _Metadata} ->
                 put_object(?BIN_EMPTY, Req1, Key2, Params);
             {error, not_found} ->
-                ?reply_not_found([?SERVER_HEADER], Req1);
+                ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req1);
             {error, timeout} ->
-                ?reply_timeout([?SERVER_HEADER], Req1);
+                ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req1);
             {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                ?reply_internal_error([?SERVER_HEADER], Req1)
+                ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1)
         end,
     {ok, Req2, State};
 
@@ -472,7 +472,7 @@ handle_2({ok, AccessKeyId}, Req1, HTTPMethod, Path, Params, State) ->
                  HTTPMethod, Req1, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Cause} ->
             ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Req1),
+            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State};
         {ok, Req2} ->
             Req3 = cowboy_req:compact(Req2),
@@ -492,10 +492,10 @@ handle_multi_upload_1(true, Req, Path, UploadId) ->
             Ret = cowboy_req:body(Req),
             handle_multi_upload_2(Ret, Req, Path);
         _ ->
-            ?reply_forbidden([?SERVER_HEADER], Req)
+            ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_1(false, Req,_Path,_UploadId) ->
-    ?reply_forbidden([?SERVER_HEADER], Req).
+handle_multi_upload_1(false, Req, Path,_UploadId) ->
+    ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req).
 
 handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
     %% trim spaces
@@ -519,15 +519,15 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
                     ?reply_ok([?SERVER_HEADER], XML, Req);
                 {error, Cause} ->
                     ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
-                    ?reply_internal_error([?SERVER_HEADER], Req)
+                    ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req)
             end;
         {error, Cause} ->
             ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
-            ?reply_internal_error([?SERVER_HEADER], Req)
+            ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req)
     end;
 handle_multi_upload_2({error, Cause}, Req, Path) ->
     ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-    ?reply_internal_error([?SERVER_HEADER], Req).
+    ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 
 %% @doc Retrieve Metadatas for uploaded objects (Multipart)
 %% @private

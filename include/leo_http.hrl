@@ -135,6 +135,23 @@
 -define(DEF_LOBJ_READING_CHUNK_OBJ_LEN,  5242880). %% since v0.16.8
 -define(DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN, 5767168).
 
+%% error codes used in a error response
+-define(XML_ERROR_CODE_EntityTooLarge,  "EntityTooLarge").
+-define(XML_ERROR_CODE_InvalidArgument, "InvalidArgument").
+-define(XML_ERROR_CODE_AccessDenied,    "AccessDenied").
+-define(XML_ERROR_CODE_NoSuchKey,       "NoSuchKey").
+-define(XML_ERROR_CODE_InvalidRange,    "InvalidRange").
+-define(XML_ERROR_CODE_InternalError,   "InternalError").
+-define(XML_ERROR_CODE_ServiceUnavailable, "ServiceUnavailable").
+
+%% error messages used in a error response
+-define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
+-define(XML_ERROR_MSG_InvalidArgument, "Invalid Argument").
+-define(XML_ERROR_MSG_AccessDenied,    "Access Denied").
+-define(XML_ERROR_MSG_NoSuchKey,       "The specified key does not exist.").
+-define(XML_ERROR_MSG_InvalidRange,    "The requested range cannot be satisfied.").
+-define(XML_ERROR_MSG_InternalError,   "We encountered an internal error. Please try again.").
+-define(XML_ERROR_MSG_ServiceUnavailable,   "Please reduce your request rate.").
 
 %% Macros
 -define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
@@ -143,13 +160,26 @@
 -define(reply_partial_content(_H,_R),    cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_R)).    %% 206
 -define(reply_partial_content(_H,_B,_R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_B,_R)). %% 206 with body
 -define(reply_not_modified(_H,_R),       cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,    _H,_R)). %% 304
--define(reply_bad_request(_H,_R),        cowboy_req:reply(?HTTP_ST_BAD_REQ,         _H,_R)). %% 400
--define(reply_forbidden(_H,_R),          cowboy_req:reply(?HTTP_ST_FORBIDDEN,       _H,_R)). %% 403
--define(reply_not_found(_H,_R),          cowboy_req:reply(?HTTP_ST_NOT_FOUND,       _H,_R)). %% 404
--define(reply_bad_range(_H,_R),          cowboy_req:reply(?HTTP_ST_BAD_RANGE,       _H,_R)). %% 416
--define(reply_internal_error(_H,_R),     cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR,  _H,_R)). %% 500
--define(reply_timeout(_H,_R),            cowboy_req:reply(?HTTP_ST_GATEWAY_TIMEOUT, _H,_R)). %% 504
 
+%% for HEAD(without body)
+-define(reply_bad_request_without_body(_H,_R),    cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,_R)).             %% 403
+-define(reply_not_found_without_body(_H,_R),      cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,_R)).           %% 404
+-define(reply_internal_error_without_body(_H,_R), cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,_R)).      %% 500
+-define(reply_timeout_without_body(_H,_R),        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,_R)). %% 503
+
+%% for GET/PUT/DELETE(with body)
+-define(reply_bad_request(_H, _Code, _Msg, _Key, _ReqId, _R), 
+        cowboy_req:reply(?HTTP_ST_BAD_REQ, _H, io_lib:format(?XML_ERROR, [_Code, _Msg, xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_forbidden(_H, _Key, _ReqId, _R),                
+        cowboy_req:reply(?HTTP_ST_FORBIDDEN, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_not_found(_H, _Key, _ReqId, _R),                
+        cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_NoSuchKey, ?XML_ERROR_MSG_NoSuchKey, xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_bad_range(_H, _Key, _ReqId, _R),                
+        cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InvalidRange, ?XML_ERROR_MSG_InvalidRange, xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_internal_error(_H, _Key, _ReqId, _R),           
+        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_timeout(_H, _Key, _ReqId, _R),                  
+        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_ServiceUnavailable, ?XML_ERROR_MSG_ServiceUnavailable, xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
 -define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
                                    {undefined, _} -> ?BIN_EMPTY;
@@ -213,6 +243,14 @@
                       "<ETag>\"~s\"</ETag>",
                       "</CompleteMultipartUploadResult>"])).
 
+-define(XML_ERROR,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<Error>",
+                      "<Code>~s</Code>",
+                      "<Message>~s</Message>",
+                      "<Resource>~s</Resource>",
+                      "<RequestId>~s</RequestId>",
+                      "</Error>"])).
 
 %% Records
 -record(http_options, {

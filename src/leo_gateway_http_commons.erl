@@ -257,13 +257,13 @@ get_object(Req, Key, #req_params{bucket = Bucket,
             end;
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -325,13 +325,13 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
 
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -346,7 +346,7 @@ put_object(Req, Key, #req_params{bucket = Bucket,
     case (Size >= ThresholdObjLen) of
         true when Size >= MaxLenForObj ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_BAD_REQ),
-            ?reply_bad_request([?SERVER_HEADER], Req);
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge, ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
 
         true when IsUpload == false ->
             put_large_object(Req, Key, Size, Params);
@@ -423,10 +423,10 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
             ?reply_ok(Header, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -459,8 +459,10 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                                          false -> {Req, ErrorRet}
                                      end,
                     case Cause of
-                        timeout -> ?reply_timeout([?SERVER_HEADER], Req_1);
-                        _Other  -> ?reply_internal_error([?SERVER_HEADER], Req_1)
+                        timeout -> 
+                            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req_1);
+                        _Other  -> 
+                            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req_1)
                     end;
                 Ret ->
                     ?access_log_put(Bucket, Key, Size, 0),
@@ -540,10 +542,10 @@ delete_object(Req, Key, #req_params{bucket = Bucket}) ->
             ?reply_no_content([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -563,16 +565,16 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
             cowboy_req:reply(?HTTP_ST_OK, Headers, fun() -> void end, Req);
         {ok, #metadata{del = 1}} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, not_found} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error_without_body([?SERVER_HEADER], Req);
         {error, timeout} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout_without_body([?SERVER_HEADER], Req)
     end.
 
 -undef(DEF_SEPARATOR).
@@ -588,7 +590,7 @@ range_object(Req, Key, #req_params{bucket = Bucket,
 
 get_range_object(Req, Bucket, Key, {error, badarg}) ->
     ?access_log_get(Bucket, Key, 0, ?HTTP_ST_BAD_RANGE),
-    ?reply_bad_range([?SERVER_HEADER], Req);
+    ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
 get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,

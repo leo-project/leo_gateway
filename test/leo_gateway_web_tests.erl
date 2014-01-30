@@ -234,10 +234,12 @@ get_bucket_list_error_([_TermFun, _Node0, Node1]) ->
                           [leo_storage_handler_directory,
                            find_by_parent_dir, 1, {error, some_error}]),
             try
-                {ok, {SC, _Body}} =
+                {ok, {SC, Body}} =
                     httpc:request(get, {lists:append(
                                           ["http://", ?TARGET_HOST, ":8080/a/b?prefix=pre"]), []},
                                   [], [{full_result, false}]),
+                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b/", ""]), % req id is empty for now
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
@@ -387,10 +389,12 @@ get_object_error_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3, {error, foobar}]),
             try
-                {ok, {SC, _Body}} =
+                {ok, {SC, Body}} =
                     httpc:request(get, {lists:append(["http://",
                                                       ?TARGET_HOST,
                                                       ":8080/a/b.png"]), []}, [], [{full_result, false}]),
+                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b.png", ""]), % req id is empty for now
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
@@ -412,10 +416,12 @@ get_object_notfound_([_TermFun, Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3, {error, not_found}]),
             try
-                {ok, {SC, _Body}} =
+                {ok, {SC, Body}} =
                     httpc:request(get, {lists:append(["http://",
                                                       ?TARGET_HOST,
                                                       ":8080/a/b/c.png"]), []}, [], [{full_result, false}]),
+                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_NoSuchKey, ?XML_ERROR_MSG_NoSuchKey, "a/b/c.png", ""]), % req id is empty for now
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(404, SC)
             catch
                 throw:Reason ->
@@ -535,11 +541,13 @@ delete_object_error_([_TermFun, _Node0, Node1]) ->
 
 
             try
-                {ok, {SC, _Body}} =
+                {ok, {SC, Body}} =
                     httpc:request(delete, {lists:append(["http://",
                                                          ?TARGET_HOST,
                                                          ":8080/a/b.png"]),
                                            [{"Authorization","auth"}]}, [], [{full_result, false}]),
+                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b.png", ""]), % req id is empty for now
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->
@@ -581,12 +589,14 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
                           [leo_storage_handler_object, put, 2, {error, foobar}]),
 
             try
-                {ok, {SC, _Body}} =
+                {ok, {SC, Body}} =
                     httpc:request(put, {lists:append(["http://",
                                                       ?TARGET_HOST,
                                                       ":8080/a/b.png"]),
                                         [{"Authorization","auth"}], "image/png", "body"},
                                   [], [{full_result, false}]),
+                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b.png", ""]), % req id is empty for now
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
                 throw:Reason ->

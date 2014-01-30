@@ -91,22 +91,22 @@ onresponse(CacheCondition) ->
 %% Callbacks from HTTP-Handler
 %%--------------------------------------------------------------------
 %% @doc GET buckets and dirs
-get_bucket(Req,_Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], Req).
+get_bucket(Req, Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 
 %% @doc PUT buckets and dirs
-put_bucket(Req,_Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], Req).
+put_bucket(Req, Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 
 %% @doc DELETE buckets and dirs
-delete_bucket(Req,_Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], Req).
+delete_bucket(Req, Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 %% @doc HEAD buckets and dirs
 head_bucket(Req,_Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], Req).
+    ?reply_bad_request_without_body([?SERVER_HEADER], Req).
 
 
 %% ---------------------------------------------------------------------
@@ -150,8 +150,8 @@ head_object(Req, Key, Params) ->
 %% @doc RANGE-Query operation on Objects
 -spec(range_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
-range_object(Req,_Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], Req).
+range_object(Req, Key,_Params) ->
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 
 %%--------------------------------------------------------------------
@@ -192,9 +192,9 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                                      threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len},
             handle_2(Req, HTTPMethod, Path, ReqParams, State);
         false when HTTPMethod == ?HTTP_GET ->
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);
         false  ->
-            ?reply_bad_request([?SERVER_HEADER], Req)
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Path, <<>>, Req)
     end.
 
 
@@ -206,15 +206,15 @@ handle_2(Req1, HTTPMethod, Path, Params, State) ->
             Req3 = cowboy_req:compact(Req2),
             {ok, Req3, State};
         {error, not_found} ->
-            {ok, Req2} = ?reply_not_found([?SERVER_HEADER], Req1),
+            {ok, Req2} = ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State};
         {error, Cause} ->
             ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Req1),
+            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State};
         {'EXIT', Cause} ->
             ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Req1),
+            {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State}
     end.
 
