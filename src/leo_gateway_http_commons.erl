@@ -36,7 +36,7 @@
 -export([start/1, start/2]).
 -export([onrequest/2, onresponse/2]).
 -export([get_object/3, get_object_with_cache/4,
-         put_object/3, put_small_object/3, put_large_object/4,
+         put_object/3, put_small_object/3, put_large_object/4, move_large_object/3,
          delete_object/3, head_object/3,
          range_object/3]).
 
@@ -334,6 +334,74 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
+%% @doc MOVE/COPY an object
+-spec(move_large_object(#metadata{}, binary(), #req_params{}) ->
+             ok | {error, any()}).
+move_large_object(#metadata{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DstKey, Params) ->
+    {ok, ReadHandler} = leo_gateway_large_object_handler:start_link(Key, 0, TotalChunkedObjs),
+    try
+        move_large_object(SrcMeta, DstKey, Params, ReadHandler)
+    after
+        catch leo_gateway_large_object_handler:stop(ReadHandler)
+    end.
+
+move_large_object(#metadata{dsize = Size}, DstKey,
+                       #req_params{chunked_obj_len = ChunkedSize}, 
+                       ReadHandler) ->
+    {ok, WriteHandler}  = leo_gateway_large_object_handler:start_link(DstKey, ChunkedSize),
+    try
+        move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler),
+                                #req_large_obj{handler       = WriteHandler,
+                                               key           = DstKey,
+                                               length        = Size,
+                                               chunked_size  = ChunkedSize}, ReadHandler)
+    after
+        catch leo_gateway_large_object_handler:stop(WriteHandler)
+    end.
+
+move_large_object_1({ok, Data},
+                   #req_large_obj{key = Key,
+                                  handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
+    case catch leo_gateway_large_object_handler:put(WriteHandler, Data) of
+        ok ->
+            move_large_object_1(leo_gateway_large_object_handler:get_chunk(ReadHandler), ReqLargeObj, ReadHandler);
+        {'EXIT', Cause} ->
+            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {error, ?ERROR_FAIL_PUT_OBJ};
+        {error, Cause} ->
+            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {error, ?ERROR_FAIL_PUT_OBJ}
+    end;
+move_large_object_1({error, Cause}, 
+                    #req_large_obj{key = Key,
+                                   handler = WriteHandler}, _) ->
+    ok = leo_gateway_large_object_handler:rollback(WriteHandler),
+    ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    {error, ?ERROR_FAIL_RETRIEVE_OBJ};
+move_large_object_1(done, #req_large_obj{handler = WriteHandler,
+                                         key = Key,
+                                         length = Size,
+                                         chunked_size = ChunkedSize}, _) ->
+    case catch leo_gateway_large_object_handler:result(WriteHandler) of
+        {ok, #large_obj_info{length = TotalSize,
+                             num_of_chunks = TotalChunks,
+                             md5_context   = Digest}} when Size == TotalSize ->
+            Digest_1 = leo_hex:raw_binary_to_integer(Digest),
+
+            case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
+                                             ChunkedSize, TotalChunks, Digest_1) of
+                {ok, _ETag} ->
+                    ok;
+                {error, timeout = Cause} ->
+                    {error, Cause};
+                {error, _Cause} ->
+                    {error, ?ERROR_FAIL_PUT_OBJ}
+            end;
+        {ok, _} ->
+            {error, ?ERROR_NOT_MATCH_LENGTH};
+        {_,_Cause} ->
+            {error, ?ERROR_FAIL_PUT_OBJ}
+    end.
 
 %% @doc PUT an object
 -spec(put_object(any(), binary(), #req_params{}) ->
