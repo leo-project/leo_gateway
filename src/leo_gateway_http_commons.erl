@@ -350,11 +350,17 @@ move_large_object(#metadata{dsize = Size}, DstKey,
                        ReadHandler) ->
     {ok, WriteHandler}  = leo_gateway_large_object_handler:start_link(DstKey, ChunkedSize),
     try
-        move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler),
+        case move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler),
                                 #req_large_obj{handler       = WriteHandler,
                                                key           = DstKey,
                                                length        = Size,
-                                               chunked_size  = ChunkedSize}, ReadHandler)
+                                               chunked_size  = ChunkedSize}, ReadHandler) of
+            {error, Cause} ->
+                ok = leo_gateway_large_object_handler:rollback(WriteHandler),
+                {error, Cause};
+            Other ->
+                Other
+        end
     after
         catch leo_gateway_large_object_handler:stop(WriteHandler)
     end.
@@ -375,7 +381,6 @@ move_large_object_1({ok, Data},
 move_large_object_1({error, Cause}, 
                     #req_large_obj{key = Key,
                                    handler = WriteHandler}, _) ->
-    ok = leo_gateway_large_object_handler:rollback(WriteHandler),
     ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 move_large_object_1(done, #req_large_obj{handler = WriteHandler,
