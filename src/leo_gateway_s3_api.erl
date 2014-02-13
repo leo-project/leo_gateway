@@ -230,7 +230,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
-put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
+put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3} = Params) ->
     CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
@@ -242,8 +242,10 @@ put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3}) ->
           end,
 
     case leo_gateway_rpc_handler:get(CS2) of
-        {ok, Meta, RespObject} ->
+        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
             put_object_1(Directive, Req, Key, Meta, RespObject);
+        {ok, #metadata{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
+            put_large_object_1(Directive, Req, Key, Meta, Params);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -288,6 +290,39 @@ put_object_3(Req, Meta) ->
             ?reply_timeout([?SERVER_HEADER], Meta#metadata.key, <<>>, Req)
     end.
 
+%% @doc POST/PUT operation on `Large` Objects. COPY
+%% @private
+put_large_object_1(Directive, Req, Key, Meta, Params) ->
+    case leo_gateway_http_commons:move_large_object(Meta, Key, Params) of
+        ok when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
+            resp_copy_obj_xml(Req, Meta);
+        ok when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
+            put_large_object_2(Req, Key, Meta);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req);
+        {error, _Other} ->
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
+    end.
+
+%% @doc POST/PUT operation on Objects. REPLACE
+%% @private
+put_large_object_2(Req, Key, Meta) ->
+    case Key == Meta#metadata.key of
+        true  -> resp_copy_obj_xml(Req, Meta);
+        false -> put_large_object_3(Req, Meta)
+    end.
+
+put_large_object_3(Req, Meta) ->
+    case leo_gateway_large_object_handler:delete_chunked_objects(Meta#metadata.key, Meta#metadata.cnumber) of
+        ok ->
+            resp_copy_obj_xml(Req, Meta);
+        {error, not_found} ->
+            resp_copy_obj_xml(Req, Meta);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error([?SERVER_HEADER], Meta#metadata.key, <<>>, Req);
+        {error, timeout} ->
+            ?reply_timeout([?SERVER_HEADER], Meta#metadata.key, <<>>, Req)
+    end.
 
 %% @doc DELETE operation on Objects
 -spec(delete_object(any(), binary(), #req_params{}) ->

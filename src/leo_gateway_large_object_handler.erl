@@ -36,6 +36,7 @@
 %% Application callbacks
 -export([start_link/1, start_link/2, start_link/3, stop/1]).
 -export([put/2, get/4, get_chunked/1, rollback/1, result/1, state/1]).
+-export([delete_chunked_objects/2]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,

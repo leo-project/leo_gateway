@@ -370,7 +370,7 @@ move_large_object_1({ok, Data},
                                   handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
     case catch leo_gateway_large_object_handler:put(WriteHandler, Data) of
         ok ->
-            move_large_object_1(leo_gateway_large_object_handler:get_chunk(ReadHandler), ReqLargeObj, ReadHandler);
+            move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler), ReqLargeObj, ReadHandler);
         {'EXIT', Cause} ->
             ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
             {error, ?ERROR_FAIL_PUT_OBJ};
@@ -379,8 +379,7 @@ move_large_object_1({ok, Data},
             {error, ?ERROR_FAIL_PUT_OBJ}
     end;
 move_large_object_1({error, Cause}, 
-                    #req_large_obj{key = Key,
-                                   handler = WriteHandler}, _) ->
+                    #req_large_obj{key = Key}, _) ->
     ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 move_large_object_1(done, #req_large_obj{handler = WriteHandler,
