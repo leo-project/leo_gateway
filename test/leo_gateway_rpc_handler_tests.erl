@@ -2,7 +2,7 @@
 %%
 %% LeoFS Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -87,6 +87,12 @@ setup() ->
                                                                     available = true}],
                                            n = 2, r = 1, w = 1, d = 1}}
                 end),
+
+    meck:new(leo_metrics_req),
+    meck:expect(leo_metrics_req, notify, fun(_) -> ok end),
+    ok = rpc:call(Node1, meck, new,    [leo_metrics_req, [no_link]]),
+    ok = rpc:call(Node1, meck, expect, [leo_metrics_req, notify, fun(_) -> ok end]),
+
     [Node0, Node1].
 
 teardown([_, Node1]) ->
@@ -129,10 +135,10 @@ head_object_normal1_([_Node0, Node1]) ->
                                         fun(_Addr, Key) ->
                                                 {ok,
                                                  #metadata{
-                                                   key = Key,
-                                                   dsize = 10,
-                                                   del = 0
-                                                  }
+                                                    key = Key,
+                                                    dsize = 10,
+                                                    del = 0
+                                                   }
                                                 }
                                         end]),
     KEY = <<"bucket/key">>,
@@ -176,10 +182,10 @@ get_object_normal1_([_Node0, Node1]) ->
                                         fun(_Addr, Key, _ReqId) ->
                                                 {ok,
                                                  #metadata{
-                                                   key = Key,
-                                                   dsize = 4,
-                                                   del = 0
-                                                  },
+                                                    key = Key,
+                                                    dsize = 4,
+                                                    del = 0
+                                                   },
                                                  <<"body">>
                                                 }
                                         end]),
@@ -225,10 +231,10 @@ get_object_with_etag_normal1_([_Node0, Node1]) ->
                                         fun(_Addr, Key, _Etag, _ReqId) ->
                                                 {ok,
                                                  #metadata{
-                                                   key = Key,
-                                                   dsize = 4,
-                                                   del = 0
-                                                  },
+                                                    key = Key,
+                                                    dsize = 4,
+                                                    del = 0
+                                                   },
                                                  <<"body">>
                                                 }
                                         end]),

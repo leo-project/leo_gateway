@@ -2,7 +2,7 @@
 %%
 %% Leo S3 Handler
 %%
-%% Copyright (c) 2012 Rakuten, Inc.
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -55,6 +55,7 @@
                    resp_copy_obj_xml/2, request_params/2, auth/4, auth/6, auth/7,
                    get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2
                   ]}).
+
 
 %%--------------------------------------------------------------------
 %% API
@@ -210,7 +211,8 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 
     case (Size >= Params#req_params.threshold_of_chunk_len) of
         true when Size >= Params#req_params.max_len_of_obj ->
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge, ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
+                               ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
         true when Params#req_params.is_upload == false ->
             leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
         false ->
@@ -313,7 +315,8 @@ put_large_object_2(Req, Key, Meta) ->
     end.
 
 put_large_object_3(Req, Meta) ->
-    case leo_gateway_large_object_handler:delete_chunked_objects(Meta#metadata.key, Meta#metadata.cnumber) of
+    case leo_gateway_large_object_handler:delete_chunked_objects(
+           Meta#metadata.key, Meta#metadata.cnumber) of
         ok ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
@@ -383,22 +386,23 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
 
     case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
         {undefined, _} ->
-            ReqParams = request_params(
-                          Req2, #req_params{handler           = ?MODULE,
-                                            path              = Path2,
-                                            bucket            = Bucket,
-                                            token_length      = TokenLen,
-                                            min_layers        = NumOfMinLayers,
-                                            max_layers        = NumOfMaxLayers,
-                                            qs_prefix         = Prefix,
-                                            has_inner_cache   = HasInnerCache,
-                                            is_cached         = true,
-                                            is_dir            = IsDir,
-                                            max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                            max_len_of_obj    = Props#http_options.max_len_of_obj,
-                                            chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                            reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                                            threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
+            ReqParams =
+                request_params(
+                  Req2, #req_params{handler           = ?MODULE,
+                                    path              = Path2,
+                                    bucket            = Bucket,
+                                    token_length      = TokenLen,
+                                    min_layers        = NumOfMinLayers,
+                                    max_layers        = NumOfMaxLayers,
+                                    qs_prefix         = Prefix,
+                                    has_inner_cache   = HasInnerCache,
+                                    is_cached         = true,
+                                    is_dir            = IsDir,
+                                    max_chunked_objs  = Props#http_options.max_chunked_objs,
+                                    max_len_of_obj    = Props#http_options.max_len_of_obj,
+                                    chunked_obj_len   = Props#http_options.chunked_obj_len,
+                                    reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                                    threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
             AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
             handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
         _ ->
@@ -429,7 +433,7 @@ handle_2({ok,_AccessKeyId}, Req1, ?HTTP_POST, _, #req_params{path = Path1,
     UploadIdBin = list_to_binary(UploadId),
 
     {ok, Req2} =
-        case leo_gateway_rpc_handler:put(<<Path1/binary, ?STR_NEWLINE, UploadIdBin/binary>> , <<>>, 0) of
+        case leo_gateway_rpc_handler:put(<<Path1/binary, ?STR_NEWLINE, UploadIdBin/binary>>, <<>>, 0) of
             {ok, _ETag} ->
                 %% Response xml to a client
                 [Bucket|Path2] = leo_misc:binary_tokens(Path1, ?BIN_SLASH),
@@ -451,7 +455,10 @@ handle_2({ok,_AccessKeyId}, Req1, ?HTTP_PUT, Key,
                      upload_part_num  = PartNum,
                      max_chunked_objs = MaxChunkedObjs}, State) when UploadId /= <<>>,
                                                                      PartNum > MaxChunkedObjs ->
-    {ok, Req2} = ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge, ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req1),
+    {ok, Req2} = ?reply_bad_request([?SERVER_HEADER],
+                                    ?XML_ERROR_CODE_EntityTooLarge,
+                                    ?XML_ERROR_MSG_EntityTooLarge,
+                                    Key, <<>>, Req1),
     {ok, Req2, State};
 
 handle_2({ok,_AccessKeyId}, Req1, ?HTTP_PUT, _,
@@ -553,7 +560,8 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
                     XML   = gen_upload_completion_xml(Bucket, Path2, ETag2),
                     ?reply_ok([?SERVER_HEADER], XML, Req);
                 {error, Cause} ->
-                    ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
+                    ?error("handle_multi_upload_2/3", "path:~s, cause:~p",
+                           [binary_to_list(Path1), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req)
             end;
         {error, Cause} ->
@@ -652,12 +660,14 @@ request_params(Req, Params) ->
                       upload_part_num = PartNum,
                       range_header    = Range}.
 
+
 %% @doc check if bucket is public-read
 is_public_read([]) ->
     false;
 is_public_read([H|Rest]) ->
     #bucket_acl_info{user_id = UserId, permissions = Permissions} = H,
-    case UserId == ?GRANTEE_ALL_USER andalso (Permissions == [read] orelse Permissions == [read, write]) of
+    case UserId == ?GRANTEE_ALL_USER andalso
+        (Permissions == [read] orelse Permissions == [read, write]) of
         true ->
             true;
         false ->
@@ -668,12 +678,14 @@ is_public_read_write([]) ->
     false;
 is_public_read_write([H|Rest]) ->
     #bucket_acl_info{user_id = UserId, permissions = Permissions} = H,
-    case UserId == ?GRANTEE_ALL_USER andalso Permissions == [read, write] of
+    case UserId == ?GRANTEE_ALL_USER andalso
+        (Permissions == [read, write]) of
         true ->
             true;
         false ->
             is_public_read_write(Rest)
     end.
+
 
 %% @doc Authentication
 %% @private
@@ -886,7 +898,7 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                                   %% file.
                                   {lists:append([Acc,
                                                  "<Contents>",
-                                                 "<Key>", 
+                                                 "<Key>",
                                                  xmerl_lib:export_text(Prefix),
                                                  xmerl_lib:export_text(Entry),
                                                  "</Key>",
@@ -907,7 +919,10 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                   end
           end,
     {List, NextMarker}= lists:foldl(Fun, {[], <<>>}, MetadataList),
-    io_lib:format(?XML_OBJ_LIST, [xmerl_lib:export_text(Prefix), xmerl_lib:export_text(NextMarker), integer_to_list(MaxKeys), TruncatedStr, List]).
+    io_lib:format(?XML_OBJ_LIST,
+                  [xmerl_lib:export_text(Prefix),
+                   xmerl_lib:export_text(NextMarker),
+                   integer_to_list(MaxKeys), TruncatedStr, List]).
 
 generate_bucket_xml(MetadataList) ->
     Fun = fun(#?BUCKET{name = BucketBin,
@@ -918,7 +933,7 @@ generate_bucket_xml(MetadataList) ->
                           Acc;
                       false ->
                           lists:append([Acc,
-                                        "<Bucket><Name>", 
+                                        "<Bucket><Name>",
                                         xmerl_lib:export_text(Bucket),
                                         "</Name>",
                                         "<CreationDate>", leo_http:web_date(CreatedAt),

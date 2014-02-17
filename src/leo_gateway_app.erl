@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012 Rakuten, Inc.
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -217,13 +217,10 @@ after_process_0({ok, _Pid} = Res) ->
 
             %% Launch SNMPA
             ok = leo_statistics_api:start_link(leo_gateway),
-            ok = leo_statistics_metrics_vm:start_link(?STATISTICS_SYNC_INTERVAL),
-            ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_S),
-            ok = leo_statistics_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_L),
-            ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_S),
-            ok = leo_statistics_metrics_req:start_link(?SNMP_SYNC_INTERVAL_L),
-            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
-            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
+            ok = leo_metrics_vm:start_link(timer:seconds(5)),
+            ok = leo_metrics_req:start_link(timer:seconds(5)),
+            %% ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_S),
+            %% ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_L),
 
             %% Launch http-handler(s)
             Handler = HttpOptions#http_options.handler,

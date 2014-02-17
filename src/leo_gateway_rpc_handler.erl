@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012 Rakuten, Inc.
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -74,7 +74,7 @@ head(Key) ->
 -spec(get(binary()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key) ->
-    _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
+    ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
@@ -84,7 +84,7 @@ get(Key) ->
 -spec(get(binary(), integer()) ->
              {ok, match}|{ok, #metadata{}, binary()}|{error, any()}).
 get(Key, ETag) ->
-    _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
+    ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
@@ -95,7 +95,7 @@ get(Key, ETag) ->
 -spec(get(binary(), integer(), integer()) ->
              {ok, #metadata{}, binary()}|{error, any()}).
 get(Key, StartPos, EndPos) ->
-    _ = leo_statistics_req_counter:increment(?STAT_REQ_GET),
+    ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
@@ -111,7 +111,7 @@ get(Key, StartPos, EndPos) ->
 -spec(delete(binary()) ->
              ok|{error, any()}).
 delete(Key) ->
-    _ = leo_statistics_req_counter:increment(?STAT_REQ_DEL),
+    ok = leo_metrics_req:notify(?STAT_COUNT_DEL),
     ReqParams = get_request_parameters(delete, Key),
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
@@ -155,7 +155,7 @@ put(Key, Body, Size, ChunkedSize, TotalOfChunks, Digest) ->
 -spec(put(binary(), binary(), integer(), integer(), integer(), integer(), integer()) ->
              ok|{error, any()}).
 put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
-    _ = leo_statistics_req_counter:increment(?STAT_REQ_PUT),
+    ok = leo_metrics_req:notify(?STAT_COUNT_PUT),
     ReqParams = get_request_parameters(put, Key),
 
     invoke(ReqParams#req_params.redundancies,

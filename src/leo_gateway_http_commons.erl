@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012 Rakuten, Inc.
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -46,10 +46,7 @@
           length  :: pos_integer(),
           chunked_size         :: pos_integer(),
           reading_chunked_size :: pos_integer()
-          %% total_length         :: pos_integer(),
-          %% total_chunks         :: pos_integer()
          }).
-
 
 
 %%--------------------------------------------------------------------
@@ -346,15 +343,15 @@ move_large_object(#metadata{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, Ds
     end.
 
 move_large_object(#metadata{dsize = Size}, DstKey,
-                       #req_params{chunked_obj_len = ChunkedSize}, 
-                       ReadHandler) ->
+                  #req_params{chunked_obj_len = ChunkedSize},
+                  ReadHandler) ->
     {ok, WriteHandler}  = leo_gateway_large_object_handler:start_link(DstKey, ChunkedSize),
     try
         case move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler),
-                                #req_large_obj{handler       = WriteHandler,
-                                               key           = DstKey,
-                                               length        = Size,
-                                               chunked_size  = ChunkedSize}, ReadHandler) of
+                                 #req_large_obj{handler       = WriteHandler,
+                                                key           = DstKey,
+                                                length        = Size,
+                                                chunked_size  = ChunkedSize}, ReadHandler) of
             {error, Cause} ->
                 ok = leo_gateway_large_object_handler:rollback(WriteHandler),
                 {error, Cause};
@@ -366,11 +363,13 @@ move_large_object(#metadata{dsize = Size}, DstKey,
     end.
 
 move_large_object_1({ok, Data},
-                   #req_large_obj{key = Key,
-                                  handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
+                    #req_large_obj{key = Key,
+                                   handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
     case catch leo_gateway_large_object_handler:put(WriteHandler, Data) of
         ok ->
-            move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler), ReqLargeObj, ReadHandler);
+            move_large_object_1(
+              leo_gateway_large_object_handler:get_chunked(ReadHandler),
+              ReqLargeObj, ReadHandler);
         {'EXIT', Cause} ->
             ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
             {error, ?ERROR_FAIL_PUT_OBJ};
@@ -378,7 +377,7 @@ move_large_object_1({ok, Data},
             ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
             {error, ?ERROR_FAIL_PUT_OBJ}
     end;
-move_large_object_1({error, Cause}, 
+move_large_object_1({error, Cause},
                     #req_large_obj{key = Key}, _) ->
     ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
@@ -418,7 +417,10 @@ put_object(Req, Key, #req_params{bucket = Bucket,
     case (Size >= ThresholdObjLen) of
         true when Size >= MaxLenForObj ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_BAD_REQ),
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge, ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
+            ?reply_bad_request([?SERVER_HEADER],
+                               ?XML_ERROR_CODE_EntityTooLarge,
+                               ?XML_ERROR_MSG_EntityTooLarge,
+                               Key, <<>>, Req);
 
         true when IsUpload == false ->
             put_large_object(Req, Key, Size, Params);
@@ -531,9 +533,9 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                                          false -> {Req, ErrorRet}
                                      end,
                     case Cause of
-                        timeout -> 
+                        timeout ->
                             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req_1);
-                        _Other  -> 
+                        _Other  ->
                             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req_1)
                     end;
                 Ret ->

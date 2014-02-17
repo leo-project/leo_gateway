@@ -2,7 +2,7 @@
 %%
 %% LeoFS Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -142,8 +142,6 @@ setup(InitFun, TermFun) ->
     ok = leo_logger_client_message:new("./", ?LOG_LEVEL_WARN),
     ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
                                       "./", ?LOG_FILENAME_ACCESS),
-    %ok = leo_logger_client_esearch:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ESEARCH,
-    %                                   "127.0.0.1", 9200, 5000),
 
     io:format(user, "cwd:~p~n",[os:cmd("pwd")]),
     [] = os:cmd("epmd -daemon"),
@@ -173,7 +171,14 @@ setup(InitFun, TermFun) ->
     meck:expect(leo_s3_endpoint, get_endpoints, 0, {ok, [{endpoint, <<"localhost">>, 0}]}),
 
     meck:new(leo_s3_bucket),
-    meck:expect(leo_s3_bucket, get_acls, 1, {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER, permissions = [read, write]}]}),
+    meck:expect(leo_s3_bucket, get_acls, 1,
+                {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
+                                       permissions = [read, write]}]}),
+
+    meck:new(leo_metrics_req),
+    meck:expect(leo_metrics_req, notify, fun(_) -> ok end),
+    ok = rpc:call(Node1, meck, new,    [leo_metrics_req, [no_link]]),
+    ok = rpc:call(Node1, meck, expect, [leo_metrics_req, notify, fun(_) -> ok end]),
 
     code:add_path("../cherly/ebin"),
     ok = file:write_file("./server_cert.pem", ?SSL_CERT_DATA),
@@ -238,7 +243,11 @@ get_bucket_list_error_([_TermFun, _Node0, Node1]) ->
                     httpc:request(get, {lists:append(
                                           ["http://", ?TARGET_HOST, ":8080/a/b?prefix=pre"]), []},
                                   [], [{full_result, false}]),
-                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b/", ""]), % req id is empty for now
+
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_InternalError,
+                                     ?XML_ERROR_MSG_InternalError, "a/b/", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
@@ -393,7 +402,12 @@ get_object_error_([_TermFun, _Node0, Node1]) ->
                     httpc:request(get, {lists:append(["http://",
                                                       ?TARGET_HOST,
                                                       ":8080/a/b.png"]), []}, [], [{full_result, false}]),
-                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b.png", ""]), % req id is empty for now
+
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_InternalError,
+                                     ?XML_ERROR_MSG_InternalError,
+                                     "a/b.png", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
@@ -420,7 +434,12 @@ get_object_notfound_([_TermFun, Node0, Node1]) ->
                     httpc:request(get, {lists:append(["http://",
                                                       ?TARGET_HOST,
                                                       ":8080/a/b/c.png"]), []}, [], [{full_result, false}]),
-                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_NoSuchKey, ?XML_ERROR_MSG_NoSuchKey, "a/b/c.png", ""]), % req id is empty for now
+
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_NoSuchKey,
+                                     ?XML_ERROR_MSG_NoSuchKey,
+                                     "a/b/c.png", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(404, SC)
             catch
@@ -489,9 +508,11 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
 
             try
                 {ok, {{_, SC, _}, _Headers, Body}} =
-                    httpc:request(get, {lists:append(["http://",
-                                                      ?TARGET_HOST,
-                                                      ":8080/a/b.png"]), [{"connection", "close"},{"range", RangeValue}]}, [], []),
+                    httpc:request(get,
+                                  {lists:append(["http://",
+                                                 ?TARGET_HOST,
+                                                 ":8080/a/b.png"]),
+                                   [{"connection", "close"},{"range", RangeValue}]}, [], []),
                 ?assertEqual(200, SC),
                 ?assertEqual("od", Body)
             catch
@@ -517,10 +538,11 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
 
             try
                 {ok, {SC, _Body}} =
-                    httpc:request(delete, {lists:append(["http://",
-                                                         ?TARGET_HOST,
-                                                         ":8080/a/b.png"]),
-                                           [{"Authorization","auth"}]}, [], [{full_result, false}]),
+                    httpc:request(delete,
+                                  {lists:append(["http://",
+                                                 ?TARGET_HOST,
+                                                 ":8080/a/b.png"]),
+                                   [{"Authorization","auth"}]}, [], [{full_result, false}]),
                 ?assertEqual(204, SC)
             catch
                 throw:Reason ->
@@ -546,7 +568,12 @@ delete_object_error_([_TermFun, _Node0, Node1]) ->
                                                          ?TARGET_HOST,
                                                          ":8080/a/b.png"]),
                                            [{"Authorization","auth"}]}, [], [{full_result, false}]),
-                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b.png", ""]), % req id is empty for now
+
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_InternalError,
+                                     ?XML_ERROR_MSG_InternalError,
+                                     "a/b.png", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
@@ -595,7 +622,11 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
                                                       ":8080/a/b.png"]),
                                         [{"Authorization","auth"}], "image/png", "body"},
                                   [], [{full_result, false}]),
-                Xml = io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, "a/b.png", ""]), % req id is empty for now
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_InternalError,
+                                     ?XML_ERROR_MSG_InternalError,
+                                     "a/b.png", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
             catch
