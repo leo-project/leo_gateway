@@ -61,7 +61,6 @@ start_link(Window) ->
 %% Callback
 %%--------------------------------------------------------------------
 handle_notify() ->
-    ?debugVal('handle_notify'),
     Stats = case catch leo_cache_api:stats() of
                 {ok, Value} -> Value;
                 {_, _Cause} -> #stats{}
