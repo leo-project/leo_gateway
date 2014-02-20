@@ -513,7 +513,7 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                                  ?TARGET_HOST,
                                                  ":8080/a/b.png"]),
                                    [{"connection", "close"},{"range", RangeValue}]}, [], []),
-                ?assertEqual(200, SC),
+                ?assertEqual(206, SC),
                 ?assertEqual("od", Body)
             catch
                 throw:Reason ->

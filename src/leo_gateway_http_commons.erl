@@ -669,7 +669,7 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,
               {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}],
-    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
+    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_PARTIAL_CONTENT, Header, Req),
     get_range_object_1(Req2, Bucket, Key, Range, undefined).
 
 get_range_object_1(Req,_Bucket,_Key, [], _) ->
