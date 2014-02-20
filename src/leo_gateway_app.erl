@@ -193,9 +193,9 @@ after_process_0({ok, _Pid} = Res) ->
             %% Launch SNMPA
             ok = leo_statistics_api:start_link(leo_gateway),
             ok = leo_statistics_api:create_tables(ram_copies, [node()]),
-            ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_5S),
-            ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_5S),
-            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_30S),
+            ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
+            ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
+            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
 
             %% Launch http-handler(s)
             Handler = HttpOptions#http_options.handler,
