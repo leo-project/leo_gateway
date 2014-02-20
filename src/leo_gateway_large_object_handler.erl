@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012 Rakuten, Inc.
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -34,8 +34,9 @@
 
 
 %% Application callbacks
--export([start_link/1, start_link/2, stop/1]).
--export([put/2, get/4, rollback/1, result/1, state/1]).
+-export([start_link/1, start_link/2, start_link/3, stop/1]).
+-export([put/2, get/4, get_chunked/1, rollback/1, result/1, state/1]).
+-export([delete_chunked_objects/2]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -50,13 +51,22 @@
 -undef(DEF_TIMEOUT).
 -define(DEF_TIMEOUT, 30000).
 
--record(state, {key = <<>>         :: binary(),
-                max_obj_len = 0    :: pos_integer(),
-                stacked_bin = <<>> :: binary(),
-                num_of_chunks = 0  :: pos_integer(),
-                total_len = 0      :: pos_integer(),
-                md5_context = <<>> :: binary(),
-                errors = []        :: list()
+-record(iterator, {origin_key = <<>>     :: binary(),
+                   origin_total_len = 0  :: pos_integer(),
+                   origin_cur_idx   = 0  :: pos_integer(),
+                   chunked_key = <<>>    :: binary(),
+                   chunked_total_len = 0 :: pos_integer(),
+                   chunked_cur_idx   = 0 :: pos_integer()
+                  }).
+
+-record(state, {key = <<>>          :: binary(),
+                max_obj_len = 0     :: pos_integer(),
+                stacked_bin = <<>>  :: binary(),
+                num_of_chunks = 0   :: pos_integer(),
+                total_len = 0       :: pos_integer(),
+                md5_context = <<>>  :: binary(),
+                errors = []         :: list(),
+                iterator            :: #iterator{}
                }).
 
 
@@ -68,12 +78,17 @@
 -spec(start_link(binary()) ->
              ok | {error, any()}).
 start_link(Key) ->
-    gen_server:start_link(?MODULE, [Key, 0], []).
+    gen_server:start_link(?MODULE, [Key, 0, 0], []).
 
 -spec(start_link(binary(), pos_integer()) ->
              ok | {error, any()}).
 start_link(Key, Length) ->
-    gen_server:start_link(?MODULE, [Key, Length], []).
+    gen_server:start_link(?MODULE, [Key, Length, 0], []).
+
+-spec(start_link(binary(), pos_integer(), pos_integer()) ->
+             ok | {error, any()}).
+start_link(Key, Length, TotalChunk) ->
+    gen_server:start_link(?MODULE, [Key, Length, TotalChunk], []).
 
 %% @doc Stop this server
 %%
@@ -99,6 +114,12 @@ get(Pid, TotalOfChunkedObjs, Req, Meta) ->
     %% Timeout sholud be infinity.
     gen_server:call(Pid, {get, TotalOfChunkedObjs, Req, Meta}, infinity).
 
+%% @doc Retrieve a part of chunked object from the storage cluster
+%%
+-spec(get_chunked(pid()) ->
+             {ok, binary()} | {error, any()} | done ).
+get_chunked(Pid) ->
+    gen_server:call(Pid, get_chunked, ?DEF_TIMEOUT).
 
 %% @doc Make a rollback before all operations
 %%
@@ -132,13 +153,14 @@ state(Pid) ->
 %%                         ignore               |
 %%                         {stop, Reason}
 %% Description: Initiates the server
-init([Key, Length]) ->
+init([Key, Length, TotalChunk]) ->
     {ok, #state{key = Key,
                 max_obj_len = Length,
                 num_of_chunks = 1,
                 stacked_bin = <<>>,
                 md5_context = crypto:hash_init(md5),
-                errors = []}}.
+                errors = [],
+                iterator = iterator_init(Key, TotalChunk)}}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
@@ -170,6 +192,42 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = Sta
     end,
     {reply, Reply, State};
 
+handle_call(get_chunked, _From, #state{iterator = I} = State) ->
+    {Key, I2} = iterator_next(I),
+    case Key of
+        <<"">> ->
+            {reply, done, State#state{iterator = I2}};
+        _ ->
+            {Reply, NewIterator} =
+                case leo_gateway_rpc_handler:get(Key) of
+                    %% only children
+                    {ok, #metadata{cnumber = 0}, Bin} ->
+                        {{ok, Bin}, I2};
+                    %% both children and grand-children
+                    {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
+                        %% grand-children
+                        I3 = iterator_set_chunked(I2, Key, TotalChunkedObjs),
+                        {Key2, I4} = iterator_next(I3),
+                        case Key2 of
+                            <<"">> ->
+                                {done, I4};
+                            _ ->
+                                case leo_gateway_rpc_handler:get(Key2) of
+                                    {ok, _, Bin2} ->
+                                        {{ok, Bin2}, I4};
+                                    {error, Cause} = Error ->
+                                        ?error("handle_call/3", "key:~s, cause:~p",
+                                               [binary_to_list(Key2), Cause]),
+                                        {Error, I4}
+                                end
+                        end;
+                    {error, Cause} = Error ->
+                        ?error("handle_call/3", "key:~s, cause:~p",
+                               [binary_to_list(Key), Cause]),
+                        {Error, I2}
+                end,
+            {reply, Reply, State#state{iterator = NewIterator}}
+    end;
 
 handle_call({put, Bin}, _From, #state{key = Key,
                                       max_obj_len   = MaxObjLen,
@@ -186,8 +244,9 @@ handle_call({put, Bin}, _From, #state{key = Key,
             NumOfChunksBin = list_to_binary(integer_to_list(NumOfChunks)),
             << Bin_2:MaxObjLen/binary, StackedBin_1/binary >> = Bin_1,
 
-            case leo_gateway_rpc_handler:put(<< Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
-                                             Bin_2, MaxObjLen, NumOfChunks) of
+            case leo_gateway_rpc_handler:put(
+                   << Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
+                   Bin_2, MaxObjLen, NumOfChunks) of
                 {ok, _ETag} ->
                     Context_1 = crypto:hash_update(Context, Bin_2),
                     {reply, ok, State#state{stacked_bin   = StackedBin_1,
@@ -348,6 +407,7 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
             {error, Cause}
     end.
 
+
 %% @doc Remove chunked objects
 %% @private
 -spec(delete_chunked_objects(binary(), integer()) ->
@@ -367,3 +427,71 @@ delete_chunked_objects(Key1, Index1) ->
     end,
     delete_chunked_objects(Key1, Index1 - 1).
 
+
+-spec(iterator_next(#iterator{}) ->
+             {binary(), #iterator{}}).
+iterator_next(#iterator{chunked_key = <<>>, origin_cur_idx = TotalLen,
+                        origin_total_len = TotalLen} = Iterator) ->
+    {<<>>, Iterator};
+
+iterator_next(#iterator{chunked_key = <<>>, origin_key = Key,
+                        origin_cur_idx = Index} = Iterator) ->
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
+    {<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+     Iterator#iterator{origin_cur_idx = Index + 1}};
+
+iterator_next(#iterator{origin_cur_idx = Total,
+                        origin_total_len = Total,
+                        chunked_total_len = ChunkedTotal,
+                        chunked_cur_idx   = ChunkedTotal} = Iterator) ->
+    {<<>>, Iterator};
+
+iterator_next(#iterator{origin_key = Key,
+                        origin_cur_idx = Index,
+                        chunked_key = _Chunked_key,
+                        chunked_total_len = ChunkedTotal,
+                        chunked_cur_idx   = ChunkedTotal} = Iterator) ->
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
+    {<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+     Iterator#iterator{origin_cur_idx = Index + 1,
+                       chunked_key = <<>>,
+                       chunked_total_len = 0,
+                       chunked_cur_idx = 0}};
+
+iterator_next(#iterator{chunked_key = Key,
+                        chunked_cur_idx = Index} = Iterator) ->
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
+    {<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+     Iterator#iterator{chunked_cur_idx = Index + 1}}.
+
+
+-spec(iterator_set_chunked(#iterator{}, binary(), pos_integer()) ->
+             #iterator{}).
+iterator_set_chunked(Iterator, ChunkedKey, ChunkedTotal) ->
+    Iterator#iterator{chunked_key = ChunkedKey, chunked_total_len = ChunkedTotal}.
+
+
+-spec(iterator_init(binary(), pos_integer()) ->
+             #iterator{}).
+iterator_init(Key, Total) ->
+    #iterator{origin_key = Key, origin_total_len = Total}.
+
+
+-ifdef(TEST).
+iterator_test() ->
+    I = iterator_init(<<"hoge">>, 5),
+    {<<"hoge\n1">>, I2} = iterator_next(I),
+    {<<"hoge\n2">>, I3} = iterator_next(I2),
+    I4 = iterator_set_chunked(I3, <<"hoge\n2">>, 3),
+    {<<"hoge\n2\n1">>, I5} = iterator_next(I4),
+    {<<"hoge\n2\n2">>, I6} = iterator_next(I5),
+    {<<"hoge\n2\n3">>, I7} = iterator_next(I6),
+    {<<"hoge\n3">>, I8} = iterator_next(I7),
+    {<<"hoge\n4">>, I9} = iterator_next(I8),
+    {Key, I10} = iterator_next(I9),
+    I11 = iterator_set_chunked(I10, Key, 2),
+    {<<"hoge\n5\n1">>, I12} = iterator_next(I11),
+    {<<"hoge\n5\n2">>, I13} = iterator_next(I12),
+    {<<"">>, _} = iterator_next(I13),
+    {<<"">>, _} = iterator_next(I10).
+-endif.

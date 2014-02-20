@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012 Rakuten, Inc.
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -33,13 +33,16 @@
 -include_lib("leo_cache/include/leo_cache.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%% api
 -export([start_link/1]).
--export([init/0, handle_call/1]).
+
+%% callback
+-export([handle_notify/0]).
+
 
 -define(SNMP_MSG_REPLICATE,  'num-of-msg-replicate').
 -define(SNMP_MSG_SYNC_VNODE, 'num-of-msg-sync-vnode').
 -define(SNMP_MSG_REBALANCE,  'num-of-msg-rebalance').
-
 
 -define(SNMP_CACHE_HIT_COUNT,  'cache-hit-count').
 -define(SNMP_CACHE_MISS_COUNT, 'cache-miss-count').
@@ -50,26 +53,14 @@
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
-start_link(Interval) ->
-    ok = leo_statistics_api:start_link(?MODULE, Interval),
+start_link(Window) ->
+    ok = leo_statistics_sup:start_child(?MODULE, Window),
     ok.
 
 %%--------------------------------------------------------------------
 %% Callback
 %%--------------------------------------------------------------------
-%% @doc Initialize metrics.
-%%
--spec(init() ->
-             ok).
-init() ->
-    ok.
-
-
-%% @doc Synchronize values.
-%%
--spec(handle_call({sync, ?STAT_INTERVAL_1M | ?STAT_INTERVAL_5M}) ->
-             ok).
-handle_call({sync, ?STAT_INTERVAL_1M}) ->
+handle_notify() ->
     Stats = case catch leo_cache_api:stats() of
                 {ok, Value} -> Value;
                 {_, _Cause} -> #stats{}
@@ -85,8 +76,4 @@ handle_call({sync, ?STAT_INTERVAL_1M}) ->
     catch snmp_generic:variable_set(?SNMP_CACHE_MISS_COUNT, NumOfRead - HitCount),
     catch snmp_generic:variable_set(?SNMP_CACHE_NUM_OF_OBJ, NumOfObjects),
     catch snmp_generic:variable_set(?SNMP_CACHE_TOTAL_SIZE, TotalOfSize1),
-    ok;
-
-handle_call({sync, ?STAT_INTERVAL_5M}) ->
     ok.
-

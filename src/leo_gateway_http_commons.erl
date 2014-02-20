@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012 Rakuten, Inc.
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -36,7 +36,7 @@
 -export([start/1, start/2]).
 -export([onrequest/2, onresponse/2]).
 -export([get_object/3, get_object_with_cache/4,
-         put_object/3, put_small_object/3, put_large_object/4,
+         put_object/3, put_small_object/3, put_large_object/4, move_large_object/3,
          delete_object/3, head_object/3,
          range_object/3]).
 
@@ -46,10 +46,7 @@
           length  :: pos_integer(),
           chunked_size         :: pos_integer(),
           reading_chunked_size :: pos_integer()
-          %% total_length         :: pos_integer(),
-          %% total_chunks         :: pos_integer()
          }).
-
 
 
 %%--------------------------------------------------------------------
@@ -257,13 +254,13 @@ get_object(Req, Key, #req_params{bucket = Bucket,
             end;
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -325,15 +322,89 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
 
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
+%% @doc MOVE/COPY an object
+-spec(move_large_object(#metadata{}, binary(), #req_params{}) ->
+             ok | {error, any()}).
+move_large_object(#metadata{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DstKey, Params) ->
+    {ok, ReadHandler} = leo_gateway_large_object_handler:start_link(Key, 0, TotalChunkedObjs),
+    try
+        move_large_object(SrcMeta, DstKey, Params, ReadHandler)
+    after
+        catch leo_gateway_large_object_handler:stop(ReadHandler)
+    end.
+
+move_large_object(#metadata{dsize = Size}, DstKey,
+                  #req_params{chunked_obj_len = ChunkedSize},
+                  ReadHandler) ->
+    {ok, WriteHandler}  = leo_gateway_large_object_handler:start_link(DstKey, ChunkedSize),
+    try
+        case move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler),
+                                 #req_large_obj{handler       = WriteHandler,
+                                                key           = DstKey,
+                                                length        = Size,
+                                                chunked_size  = ChunkedSize}, ReadHandler) of
+            {error, Cause} ->
+                ok = leo_gateway_large_object_handler:rollback(WriteHandler),
+                {error, Cause};
+            Other ->
+                Other
+        end
+    after
+        catch leo_gateway_large_object_handler:stop(WriteHandler)
+    end.
+
+move_large_object_1({ok, Data},
+                    #req_large_obj{key = Key,
+                                   handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
+    case catch leo_gateway_large_object_handler:put(WriteHandler, Data) of
+        ok ->
+            move_large_object_1(
+              leo_gateway_large_object_handler:get_chunked(ReadHandler),
+              ReqLargeObj, ReadHandler);
+        {'EXIT', Cause} ->
+            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {error, ?ERROR_FAIL_PUT_OBJ};
+        {error, Cause} ->
+            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {error, ?ERROR_FAIL_PUT_OBJ}
+    end;
+move_large_object_1({error, Cause},
+                    #req_large_obj{key = Key}, _) ->
+    ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    {error, ?ERROR_FAIL_RETRIEVE_OBJ};
+move_large_object_1(done, #req_large_obj{handler = WriteHandler,
+                                         key = Key,
+                                         length = Size,
+                                         chunked_size = ChunkedSize}, _) ->
+    case catch leo_gateway_large_object_handler:result(WriteHandler) of
+        {ok, #large_obj_info{length = TotalSize,
+                             num_of_chunks = TotalChunks,
+                             md5_context   = Digest}} when Size == TotalSize ->
+            Digest_1 = leo_hex:raw_binary_to_integer(Digest),
+
+            case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
+                                             ChunkedSize, TotalChunks, Digest_1) of
+                {ok, _ETag} ->
+                    ok;
+                {error, timeout = Cause} ->
+                    {error, Cause};
+                {error, _Cause} ->
+                    {error, ?ERROR_FAIL_PUT_OBJ}
+            end;
+        {ok, _} ->
+            {error, ?ERROR_NOT_MATCH_LENGTH};
+        {_,_Cause} ->
+            {error, ?ERROR_FAIL_PUT_OBJ}
+    end.
 
 %% @doc PUT an object
 -spec(put_object(any(), binary(), #req_params{}) ->
@@ -346,7 +417,10 @@ put_object(Req, Key, #req_params{bucket = Bucket,
     case (Size >= ThresholdObjLen) of
         true when Size >= MaxLenForObj ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_BAD_REQ),
-            ?reply_bad_request([?SERVER_HEADER], Req);
+            ?reply_bad_request([?SERVER_HEADER],
+                               ?XML_ERROR_CODE_EntityTooLarge,
+                               ?XML_ERROR_MSG_EntityTooLarge,
+                               Key, <<>>, Req);
 
         true when IsUpload == false ->
             put_large_object(Req, Key, Size, Params);
@@ -423,10 +497,10 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
             ?reply_ok(Header, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -459,8 +533,10 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                                          false -> {Req, ErrorRet}
                                      end,
                     case Cause of
-                        timeout -> ?reply_timeout([?SERVER_HEADER], Req_1);
-                        _Other  -> ?reply_internal_error([?SERVER_HEADER], Req_1)
+                        timeout ->
+                            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req_1);
+                        _Other  ->
+                            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req_1)
                     end;
                 Ret ->
                     ?access_log_put(Bucket, Key, Size, 0),
@@ -540,10 +616,10 @@ delete_object(Req, Key, #req_params{bucket = Bucket}) ->
             ?reply_no_content([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -563,16 +639,16 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
             cowboy_req:reply(?HTTP_ST_OK, Headers, fun() -> void end, Req);
         {ok, #metadata{del = 1}} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, not_found} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
-            ?reply_not_found([?SERVER_HEADER], Req);
+            ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_INTERNAL_ERROR),
-            ?reply_internal_error([?SERVER_HEADER], Req);
+            ?reply_internal_error_without_body([?SERVER_HEADER], Req);
         {error, timeout} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Req)
+            ?reply_timeout_without_body([?SERVER_HEADER], Req)
     end.
 
 -undef(DEF_SEPARATOR).
@@ -588,12 +664,12 @@ range_object(Req, Key, #req_params{bucket = Bucket,
 
 get_range_object(Req, Bucket, Key, {error, badarg}) ->
     ?access_log_get(Bucket, Key, 0, ?HTTP_ST_BAD_RANGE),
-    ?reply_bad_range([?SERVER_HEADER], Req);
+    ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
 get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,
               {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}],
-    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
+    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_PARTIAL_CONTENT, Header, Req),
     get_range_object_1(Req2, Bucket, Key, Range, undefined).
 
 get_range_object_1(Req,_Bucket,_Key, [], _) ->

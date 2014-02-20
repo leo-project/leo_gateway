@@ -2,7 +2,7 @@
 %%
 %% LeoFS Gateway
 %%
-%% Copyright (c) 2012
+%% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -177,90 +177,81 @@
 
 %% access-log
 %%
-
-%% -define(ESEARCH_LOG_IDX_PREFIX, <<"leoaccesslog-">>).
-%% -define(esearch_index(_GregorianSeconds),
-%%         begin
-%%             {{Year, Month, Date},_} =
-%%                 calendar:gregorian_seconds_to_datetime(_GregorianSeconds),
-%%             io_lib:format("~4..0w.~2..0w.~2..0w", [Year, Month, Date])
-%%         end).
-%% -define(esearch_doc(_Method, _Bucket, _Path, _Size, _Response),
-%%         begin
-%%             _GregorianSec = calendar:datetime_to_gregorian_seconds(
-%%                               calendar:now_to_universal_time(os:timestamp())),
-%%             _Timestamp = list_to_binary(leo_date:date_format('utc', _GregorianSec)),
-%%             _Index = list_to_binary(?esearch_index(_GregorianSec)),
-%%             leo_logger_client_esearch:append(
-%%               {?LOG_ID_ESEARCH,
-%%                #message_log{message = [{<<"@timestamp">>, _Timestamp},
-%%                                        {<<"method">>,     _Method},
-%%                                        {<<"bucket">>,     _Bucket},
-%%                                        {<<"path">>,       _Path},
-%%                                        {<<"size">>,       _Size},
-%%                                        {<<"response">>,   _Response},
-%%                                        {<<"gateway">>,    list_to_binary(atom_to_list(node()))}
-%%                                       ],
-%%                             esearch = [{?ESEARCH_DOC_INDEX, <<?ESEARCH_LOG_IDX_PREFIX/binary, _Index/binary>>},
-%%                                        {?ESEARCH_DOC_TYPE,  _Bucket}]}})
-%%         end).
+-define(get_child_num(_Path_1),
+        begin
+            case string:str(_Path_1, "\n") of
+                0 ->
+                    {_Path_1, 0};
+                _Index ->
+                    case list_to_integer(string:sub_string(_Path_1, _Index + 1)) of
+                        {'EXIT',_} ->
+                            {_Path_1, 0};
+                        _Num->
+                            {string:sub_string(_Path_1, 1, _Index -1), _Num}
+                    end
+            end
+        end).
 
 -define(access_log_get(_Bucket, _Path, _Size, _Response),
         begin
+            {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_common:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[GET]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+               #message_log{format  = "[GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
-                                       binary_to_list(_Path),
+                                       _OrgPath,
+                                       _ChildNum,
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
                                        _Response]}})
-            %% ?esearch_doc(<<"GET">>, _Bucket, _Path, _Size, _Response)
         end).
 -define(access_log_put(_Bucket, _Path, _Size, _Response),
         begin
+            {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_common:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[PUT]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+               #message_log{format  = "[PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
-                                       binary_to_list(_Path),
+                                       _OrgPath,
+                                       _ChildNum,
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
                                        _Response
                                       ]}
               })
-            %% ?esearch_doc(<<"PUT">>, _Bucket, _Path, _Size, _Response)
         end).
 -define(access_log_delete(_Bucket, _Path, _Size, _Response),
         begin
+            {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_common:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[DELETE]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+               #message_log{format  = "[DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
-                                       binary_to_list(_Path),
+                                       _OrgPath,
+                                       _ChildNum,
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
                                        _Response
                                       ]}
               })
-            %% ?esearch_doc(<<"DELETE">>, _Bucket, _Path, _Size, _Response)
         end).
 -define(access_log_head(_Bucket, _Path, _Response),
         begin
+            {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_common:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[HEAD]\t~s\t~s\t~w\t\~s\t~w\t~w\n",
+               #message_log{format  = "[HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
-                                       binary_to_list(_Path),
+                                       _OrgPath,
+                                       _ChildNum,
                                        0,
                                        leo_date:date_format(),
                                        leo_date:clock(),
                                        _Response
                                       ]}
               })
-            %% ?esearch_doc(<<"HEAD">>, _Bucket, _Path, 0, _Response)
         end).
 
