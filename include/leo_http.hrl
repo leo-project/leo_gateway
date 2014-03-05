@@ -240,7 +240,7 @@
                       "<Location>http://Example-Bucket.s3.amazonaws.com/Example-Object</Location>",
                       "<Bucket>~s</Bucket>",
                       "<Key>~s</Key>",
-                      "<ETag>\"~s\"</ETag>",
+                      "<ETag>\"~s-~s\"</ETag>",
                       "</CompleteMultipartUploadResult>"])).
 
 -define(XML_ERROR,

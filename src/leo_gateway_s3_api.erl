@@ -51,7 +51,7 @@
 
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
                    handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
-                   gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/3,
+                   gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
                    resp_copy_obj_xml/2, request_params/2, auth/4, auth/6, auth/7,
                    get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2
                   ]}).
@@ -557,7 +557,7 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
                 {ok, _} ->
                     [Bucket|Path2] = leo_misc:binary_tokens(Path1, ?BIN_SLASH),
                     ETag2 = leo_hex:integer_to_hex(ETag1, 32),
-                    XML   = gen_upload_completion_xml(Bucket, Path2, ETag2),
+                    XML   = gen_upload_completion_xml(Bucket, Path2, ETag2, TotalUploadedObjs),
                     ?reply_ok([?SERVER_HEADER], XML, Req);
                 {error, Cause} ->
                     ?error("handle_multi_upload_2/3", "path:~s, cause:~p",
@@ -580,7 +580,7 @@ handle_multi_upload_3(0, _, Acc) ->
     Metas = lists:reverse(Acc),
     {Len, ETag1} = lists:foldl(
                      fun({_, {DSize, Checksum}}, {Sum, ETagBin1}) ->
-                             ETagBin2 = list_to_binary(leo_hex:integer_to_hex(Checksum, 32)),
+                             ETagBin2 = leo_hex:integer_to_raw_binary(Checksum),
                              {Sum + DSize, <<ETagBin1/binary, ETagBin2/binary>>}
                      end, {0, <<>>}, lists:sort(Metas)),
     ETag2 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(crypto:hash(md5, ETag1))),
@@ -618,12 +618,13 @@ gen_upload_initiate_xml(BucketBin, Path, UploadId) ->
 
 %% @doc Generate an update-completion xml
 %% @private
--spec(gen_upload_completion_xml(binary(), list(binary()), string()) ->
+-spec(gen_upload_completion_xml(binary(), list(binary()), string(), integer()) ->
              list()).
-gen_upload_completion_xml(BucketBin, Path, ETag) ->
+gen_upload_completion_xml(BucketBin, Path, ETag, Total) ->
     Bucket = binary_to_list(BucketBin),
+    TotalStr = integer_to_list(Total),
     Key = gen_upload_key(Path),
-    io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket, Key, ETag]).
+    io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket, Key, ETag, TotalStr]).
 
 
 %% @doc Generate copy-obj's xml
