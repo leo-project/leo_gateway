@@ -200,11 +200,24 @@ get_object_with_cache(Req, Key, CacheObj, Params) ->
     leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj,  Params).
 
 
+%% @doc utility func for getting x-amz-meta-directive correctly
+get_x_amz_meta_directive(Req) ->
+    Directive = ?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE),
+    get_x_amz_meta_directive(Req, Directive).
+get_x_amz_meta_directive(Req, ?BIN_EMPTY) ->
+    CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+    case CS of
+        ?BIN_EMPTY -> ?BIN_EMPTY;
+        _ -> ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY %% default copy
+    end;
+get_x_amz_meta_directive(_Req, Other) ->
+    Other.
+
 %% @doc POST/PUT operation on Objects
 -spec(put_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_object(Req, Key, Params) ->
-    put_object(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params).
+    put_object(get_x_amz_meta_directive(Req), Req, Key, Params).
 
 put_object(?BIN_EMPTY, Req, Key, Params) ->
     {Size, _} = cowboy_req:body_length(Req),
