@@ -993,4 +993,4 @@ generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
                                  io_lib:format(?XML_ACL_GRANT, [URI, ?acl_full_control])])
                   end, Acc, Permissions)
           end,
-    io_lib:format(?XML_ACL_POLICY, [ID, "", lists:foldl(Fun, [], ACLs)]).
+    io_lib:format(?XML_ACL_POLICY, [ID, ID, lists:foldl(Fun, [], ACLs)]).
