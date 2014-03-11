@@ -131,18 +131,19 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end;
-get_bucket(Req, Bucket, #req_params{access_key_id = _AccessKeyId,
-                                 is_acl        = true}) ->
-    case leo_s3_bucket:find_bucket_by_name(Bucket) of
+get_bucket(Req, Bucket1, #req_params{access_key_id = _AccessKeyId,
+                                     is_acl        = true}) ->
+    Bucket2 = formalize_bucket(Bucket1),
+    case leo_s3_bucket:find_bucket_by_name(Bucket2) of
         {ok, BucketInfo} ->
             XML = generate_acl_xml(BucketInfo),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
         not_found ->
-            ?reply_not_found([?SERVER_HEADER], Bucket, <<>>, Req);
+            ?reply_not_found([?SERVER_HEADER], Bucket2, <<>>, Req);
         {error, _Cause} ->
-            ?reply_internal_error([?SERVER_HEADER], Bucket, <<>>, Req)
+            ?reply_internal_error([?SERVER_HEADER], Bucket2, <<>>, Req)
     end.
 
 %% @doc Put a bucket
@@ -851,13 +852,7 @@ put_bucket_1(AccessKeyId, Bucket) ->
 -spec(delete_bucket_1(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket_1(AccessKeyId, Bucket1) ->
-    Bucket2 = case (binary:last(Bucket1) == $/) of
-                  true ->
-                      binary:part(Bucket1, {0, byte_size(Bucket1) - 1});
-                  false ->
-                      Bucket1
-              end,
-
+    Bucket2 = formalize_bucket(Bucket1),
     ManagerNodes = ?env_manager_nodes(leo_gateway),
     delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2).
 
@@ -994,3 +989,11 @@ generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
                   end, Acc, Permissions)
           end,
     io_lib:format(?XML_ACL_POLICY, [ID, ID, lists:foldl(Fun, [], ACLs)]).
+
+formalize_bucket(Bucket1) ->
+    case (binary:last(Bucket1) == $/) of
+        true ->
+            binary:part(Bucket1, {0, byte_size(Bucket1) - 1});
+        false ->
+            Bucket1
+    end.
