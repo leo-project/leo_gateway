@@ -108,6 +108,7 @@ onresponse(CacheCondition) ->
 -spec(get_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
+                                 is_acl        = false,
                                  qs_prefix     = Prefix}) ->
     Marker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
                  {undefined, _} -> [];
@@ -129,6 +130,19 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+    end;
+get_bucket(Req, Bucket, #req_params{access_key_id = _AccessKeyId,
+                                 is_acl        = true}) ->
+    case leo_s3_bucket:find_bucket_by_name(Bucket) of
+        {ok, BucketInfo} ->
+            XML = generate_acl_xml(BucketInfo),
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
+            ?reply_ok(Header, XML, Req);
+        not_found ->
+            ?reply_not_found([?SERVER_HEADER], Bucket, <<>>, Req);
+        {error, _Cause} ->
+            ?reply_internal_error([?SERVER_HEADER], Bucket, <<>>, Req)
     end.
 
 %% @doc Put a bucket
@@ -397,32 +411,31 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                 {BinParam, true, NewPath, Req1}
         end,
 
-    case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
-        {undefined, _} ->
-            ReqParams =
-                request_params(
-                  Req2, #req_params{handler           = ?MODULE,
-                                    path              = Path2,
-                                    bucket            = Bucket,
-                                    token_length      = TokenLen,
-                                    min_layers        = NumOfMinLayers,
-                                    max_layers        = NumOfMaxLayers,
-                                    qs_prefix         = Prefix,
-                                    has_inner_cache   = HasInnerCache,
-                                    is_cached         = true,
-                                    is_dir            = IsDir,
-                                    max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                    max_len_of_obj    = Props#http_options.max_len_of_obj,
-                                    chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                    reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                                    threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
-            AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
-            handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
-        _ ->
-            {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Path2, <<>>, Req2),
-            {ok, Req3, State}
-    end.
+    IsACL = case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
+        {undefined, _} -> false;
+        _ -> true
+    end,
 
+    ReqParams =
+        request_params(
+          Req2, #req_params{handler           = ?MODULE,
+                            path              = Path2,
+                            bucket            = Bucket,
+                            token_length      = TokenLen,
+                            min_layers        = NumOfMinLayers,
+                            max_layers        = NumOfMaxLayers,
+                            qs_prefix         = Prefix,
+                            has_inner_cache   = HasInnerCache,
+                            is_cached         = true,
+                            is_dir            = IsDir,
+                            is_acl            = IsACL,
+                            max_chunked_objs  = Props#http_options.max_chunked_objs,
+                            max_len_of_obj    = Props#http_options.max_len_of_obj,
+                            chunked_obj_len   = Props#http_options.chunked_obj_len,
+                            reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                            threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
+    AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
+    handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State).
 
 %% @doc Handle a request (sub)
 %% @private
@@ -956,3 +969,28 @@ generate_bucket_xml(MetadataList) ->
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).
 
+generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
+    Fun = fun(#bucket_acl_info{user_id     = URI,
+                               permissions = Permissions} , Acc) ->
+                  lists:foldl(
+                      fun(read, Acc2) -> 
+                          Acc3 = lists:append([
+                                 Acc2,
+                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read])]),
+                          lists:append([
+                                 Acc3,
+                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read_acp])]);
+                          (write, Acc2) ->
+                          Acc3 = lists:append([
+                                 Acc2,
+                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write])]),
+                          lists:append([
+                                 Acc3,
+                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write_acp])]);
+                          (full_control, Acc2) ->
+                          lists:append([
+                                 Acc2, 
+                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_full_control])])
+                  end, Acc, Permissions)
+          end,
+    io_lib:format(?XML_ACL_POLICY, [ID, "", lists:foldl(Fun, [], ACLs)]).

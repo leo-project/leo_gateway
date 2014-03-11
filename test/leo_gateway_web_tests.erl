@@ -58,6 +58,7 @@ gen_tests_1(Arg) ->
               [fun get_bucket_list_error_/1,
                fun get_bucket_list_empty_/1,
                fun get_bucket_list_normal1_/1,
+               fun get_bucket_acl_normal1_/1,
                fun head_object_error_/1,
                fun head_object_notfound_/1,
                fun head_object_normal1_/1,
@@ -317,6 +318,39 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
+get_bucket_acl_normal1_([_TermFun, _Node0, Node1]) ->
+    fun() ->
+            timer:sleep(150),
+            %% leo_s3_bucket is already created at setup
+            meck:expect(leo_s3_bucket, get_acls, 1,
+                {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
+                                       permissions = [read, write]}]}),
+            meck:expect(leo_s3_bucket, find_bucket_by_name, 1,
+                {ok, #?BUCKET{name = "bucket",
+                              access_key_id = <<"ackid">>,
+                              acls = [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
+                                                       permissions = [read, write]},
+                                      #bucket_acl_info{user_id = ?GRANTEE_AUTHENTICATED_USER, 
+                                                       permissions = [full_control]}]
+                              }}),
+            meck:new(leo_s3_auth, [no_link]),
+            meck:expect(leo_s3_auth, authenticate, 3, {ok, ["hoge"]}),
+            try
+                {ok, {SC,Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST, ":8080/bucket?acl"]), [{"Authorization","auth"}]},
+                                  [], [{full_result, false}]),
+                ?assertEqual(200, SC),
+                {_XmlDoc, Rest} = xmerl_scan:string(Body),
+                ?assertEqual([], Rest)
+            catch
+                throw:Reason ->
+                    throw(Reason)
+            after
+                meck:unload(leo_s3_auth)
+            end,
+            ok
+    end.
 head_object_notfound_([_TermFun, Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node0, meck, new,

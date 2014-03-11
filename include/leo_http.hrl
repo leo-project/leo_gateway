@@ -193,6 +193,12 @@
                                    {_, Val} -> Val
                                end).
 
+%% canned ACLs
+-define(acl_read,         "READ").
+-define(acl_read_acp,     "READ_ACP").
+-define(acl_write,        "WRITE").
+-define(acl_write_acp,    "WRITE_ACP").
+-define(acl_full_control, "FULL_CONTROL").
 
 %% S3 Response XML
 -define(XML_BUCKET_LIST,
@@ -252,6 +258,24 @@
                       "<RequestId>~s</RequestId>",
                       "</Error>"])).
 
+-define(XML_ACL_POLICY,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "<Owner>",
+                      "<ID>~s</ID>",
+                      "<DisplayName>~s</DisplayName>",
+                      "</Owner>",
+                      "<AccessControlList>~s</AccessControlList>",
+                      "</AccessControlPolicy>"])).
+
+-define(XML_ACL_GRANT,
+        lists:append(["<Grant>",
+                      "<Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"Group\">",
+                      "<URI>~s</URI>",
+                      "</Grantee>",
+                      "<Permission>~s</Permission>",
+                      "</Grant>"])).
+
 %% Records
 -record(http_options, {
           %% for basic
@@ -298,6 +322,7 @@
           is_dir = false             :: boolean(),      %% is directory?
           %% for large-object
           is_upload = false            :: boolean(),      %% is upload operation? (for multipart upload)
+          is_acl = false               :: boolean(),      %% is acl operation?
           upload_id = <<>>             :: binary(),       %% upload id for multipart upload
           upload_part_num = 0          :: pos_integer(),  %% upload part number for multipart upload
           max_chunked_objs = 0         :: pos_integer(),  %% max chunked objects
