@@ -53,7 +53,7 @@
                    handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
                    resp_copy_obj_xml/2, request_params/2, auth/5, auth/7, auth/8,
-                   get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2
+                   get_bucket_1/6, put_bucket_1/3, delete_bucket_1/2, head_bucket_1/2
                   ]}).
 
 
@@ -152,7 +152,8 @@ get_bucket(Req, Bucket1, #req_params{access_key_id = _AccessKeyId,
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false}) ->
     Bucket = formalize_bucket(Key),
-    case put_bucket_1(AccessKeyId, Bucket) of
+    CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
+    case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -164,7 +165,7 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = true}) ->
     Bucket = formalize_bucket(Key),
     CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
-    case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
+    case put_bucket_acl_1(CannedACL, AccessKeyId, Bucket) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         {error, not_supported} ->
@@ -852,23 +853,25 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix1) ->
 %% @doc Put a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketPUT.html
--spec(put_bucket_1(string(), string()|none) ->
+-spec(put_bucket_1(string(), string(), string()|none) ->
              ok|{error, any()}).
-put_bucket_1(AccessKeyId, Bucket) ->
-    leo_s3_bucket:put(AccessKeyId, Bucket).
+put_bucket_1([], AccessKeyId, Bucket) ->
+    leo_s3_bucket:put(AccessKeyId, Bucket);
+put_bucket_1(CannedACL, AccessKeyId, Bucket) ->
+    leo_s3_bucket:put(AccessKeyId, Bucket, CannedACL).
 
 %% @doc Put a bucket ACL
 %% @private
 %% @see http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTacl.html
--spec(put_bucket_1(string(), string(), string()|none) ->
+-spec(put_bucket_acl_1(string(), string(), string()|none) ->
              ok|{error, any()}).
-put_bucket_1(?CANNED_ACL_PRIVATE, AccessKeyId, Bucket) ->
+put_bucket_acl_1(?CANNED_ACL_PRIVATE, AccessKeyId, Bucket) ->
     leo_s3_bucket:update_acls2private(AccessKeyId, Bucket);
-put_bucket_1(?CANNED_ACL_PUBLIC_READ, AccessKeyId, Bucket) ->
+put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ, AccessKeyId, Bucket) ->
     leo_s3_bucket:update_acls2public_read(AccessKeyId, Bucket);
-put_bucket_1(?CANNED_ACL_PUBLIC_READ_WRITE, AccessKeyId, Bucket) ->
+put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ_WRITE, AccessKeyId, Bucket) ->
     leo_s3_bucket:update_acls2public_read_write(AccessKeyId, Bucket);
-put_bucket_1(_, _AccessKeyId, _Bucket) ->
+put_bucket_acl_1(_, _AccessKeyId, _Bucket) ->
     {error, not_supported}.
 
 %% @doc Delete a bucket
