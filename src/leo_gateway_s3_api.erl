@@ -52,7 +52,7 @@
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
                    handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
-                   resp_copy_obj_xml/2, request_params/2, auth/4, auth/6, auth/7,
+                   resp_copy_obj_xml/2, request_params/2, auth/5, auth/7, auth/8,
                    get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2
                   ]}).
 
@@ -447,7 +447,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                             chunked_obj_len   = Props#http_options.chunked_obj_len,
                             reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                             threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
-    AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
+    AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen, ReqParams),
     handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State).
 
 %% @doc Handle a request (sub)
@@ -729,23 +729,23 @@ is_public_read_write([H|Rest]) ->
 
 %% @doc Authentication
 %% @private
-auth(Req, HTTPMethod, Path, TokenLen) ->
+auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
     Bucket = case (TokenLen >= 1) of
                  true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
                  false -> ?BIN_EMPTY
              end,
     case leo_s3_bucket:get_acls(Bucket) of
         {ok, ACLs} ->
-            auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
+            auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
         not_found ->
-            auth(Req, HTTPMethod, Path, TokenLen, Bucket, []);
+            auth(Req, HTTPMethod, Path, TokenLen, Bucket, [], ReqParams);
         {error, Cause} ->
             {error, Cause}
     end.
 
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen =< 1 ->
-    auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 andalso
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen =< 1 ->
+    auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1 andalso
                                                          (HTTPMethod == ?HTTP_POST orelse
                                                           HTTPMethod == ?HTTP_PUT orelse
                                                           HTTPMethod == ?HTTP_DELETE) ->
@@ -753,25 +753,25 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 andalso
         true ->
             {ok, []};
         false ->
-            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs)
+            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end;
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 ->
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1 ->
     %% handle HTTP_GET|HTTP_HEAD
     case is_public_read(ACLs) of
         true ->
             {ok, []};
         false ->
-            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs)
+            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end.
 
-auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs) ->
+auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
         {AuthorizationBin, _} ->
-            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
+            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT andalso not IsACL),
             {RawUri,  _} = cowboy_req:path(Req),
             {QStr1,   _} = cowboy_req:qs(Req),
             {Headers, _} = cowboy_req:headers(Req),
