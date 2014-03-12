@@ -149,7 +149,8 @@ get_bucket(Req, Bucket1, #req_params{access_key_id = _AccessKeyId,
 %% @doc Put a bucket
 -spec(put_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
-put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
+                                 is_acl        = false}) ->
     Bucket = formalize_bucket(Key),
     case put_bucket_1(AccessKeyId, Bucket) of
         ok ->
@@ -158,6 +159,22 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+    end;
+put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
+                                 is_acl        = true}) ->
+    Bucket = formalize_bucket(Key),
+    CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
+    case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
+        ok ->
+            ?reply_ok([?SERVER_HEADER], Req);
+        {error, not_supported} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+        {error, invalid_access} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
+                               ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req);
+        {error, _} ->
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -840,6 +857,19 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix1) ->
 put_bucket_1(AccessKeyId, Bucket) ->
     leo_s3_bucket:put(AccessKeyId, Bucket).
 
+%% @doc Put a bucket ACL
+%% @private
+%% @see http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTacl.html
+-spec(put_bucket_1(string(), string(), string()|none) ->
+             ok|{error, any()}).
+put_bucket_1(?CANNED_ACL_PRIVATE, AccessKeyId, Bucket) ->
+    leo_s3_bucket:update_acls2private(AccessKeyId, Bucket);
+put_bucket_1(?CANNED_ACL_PUBLIC_READ, AccessKeyId, Bucket) ->
+    leo_s3_bucket:update_acls2public_read(AccessKeyId, Bucket);
+put_bucket_1(?CANNED_ACL_PUBLIC_READ_WRITE, AccessKeyId, Bucket) ->
+    leo_s3_bucket:update_acls2public_read_write(AccessKeyId, Bucket);
+put_bucket_1(_, _AccessKeyId, _Bucket) ->
+    {error, not_supported}.
 
 %% @doc Delete a bucket
 %% @private
