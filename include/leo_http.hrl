@@ -66,6 +66,7 @@
 -define(HTTP_HEAD_X_AMZ_COPY_SOURCE,            <<"x-amz-copy-source">>).
 -define(HTTP_HEAD_X_AMZ_ID_2,                   <<"x-amz-id-2">>).
 -define(HTTP_HEAD_X_AMZ_REQ_ID,                 <<"x-amz-request-id">>).
+-define(HTTP_HEAD_X_AMZ_ACL,                    <<"x-amz-acl">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_X_FROM_CACHE,                 <<"x-from-cache">>).

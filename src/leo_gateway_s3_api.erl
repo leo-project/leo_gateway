@@ -150,12 +150,7 @@ get_bucket(Req, Bucket1, #req_params{access_key_id = _AccessKeyId,
 -spec(put_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
-    Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
-                 true ->
-                     binary:part(Key, {0, byte_size(Key) -1});
-                 false ->
-                     Key
-             end,
+    Bucket = formalize_bucket(Key),
     case put_bucket_1(AccessKeyId, Bucket) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
