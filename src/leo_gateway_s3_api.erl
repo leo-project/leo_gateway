@@ -50,7 +50,7 @@
 -include_lib("xmerl/include/xmerl.hrl").
 
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
-                   handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
+                   handle_multi_upload_1/5, handle_multi_upload_2/4, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
                    resp_copy_obj_xml/2, request_params/2, auth/5, auth/7, auth/8,
                    get_bucket_1/6, put_bucket_1/3, delete_bucket_1/2, head_bucket_1/2
@@ -536,12 +536,13 @@ handle_2({ok,_AccessKeyId}, Req1, ?HTTP_DELETE, _,
 %%
 handle_2({ok,_AccessKeyId}, Req1, ?HTTP_POST, _,
          #req_params{path = Path,
+                     chunked_obj_len = CL,
                      is_upload = false,
                      upload_id = UploadId,
                      upload_part_num = PartNum}, State) when UploadId /= <<>>,
                                                              PartNum  == 0 ->
     Res = cowboy_req:has_body(Req1),
-    {ok, Req2} = handle_multi_upload_1(Res, Req1, Path, UploadId),
+    {ok, Req2} = handle_multi_upload_1(Res, Req1, Path, UploadId, CL),
     {ok, Req2, State};
 
 %% For Regular cases
@@ -564,7 +565,7 @@ handle_2({ok, AccessKeyId}, Req1, HTTPMethod, Path, Params, State) ->
 
 %% @doc Handle multi-upload processing
 %% @private
-handle_multi_upload_1(true, Req, Path, UploadId) ->
+handle_multi_upload_1(true, Req, Path, UploadId, CL) ->
     Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
 
     case leo_gateway_rpc_handler:head(Path4Conf) of
@@ -572,14 +573,14 @@ handle_multi_upload_1(true, Req, Path, UploadId) ->
             _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
             Ret = cowboy_req:body(Req),
-            handle_multi_upload_2(Ret, Req, Path);
+            handle_multi_upload_2(Ret, Req, Path, CL);
         _ ->
             ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_1(false, Req, Path,_UploadId) ->
+handle_multi_upload_1(false, Req, Path,_UploadId, _CL) ->
     ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req).
 
-handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
+handle_multi_upload_2({ok, Bin, Req}, _Req, Path1, CL) ->
     %% trim spaces
     Acc = fun(#xmlText{value = " ", pos = P}, Acc, S) ->
                   {Acc, P, S};
@@ -593,23 +594,23 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
 
     case handle_multi_upload_3(TotalUploadedObjs, Path1, []) of
         {ok, {Len, ETag1}} ->
-            case leo_gateway_rpc_handler:put(Path1, <<>>, Len, 0, TotalUploadedObjs, ETag1) of
+            case leo_gateway_rpc_handler:put(Path1, <<>>, Len, CL, TotalUploadedObjs, ETag1) of
                 {ok, _} ->
                     [Bucket|Path2] = leo_misc:binary_tokens(Path1, ?BIN_SLASH),
                     ETag2 = leo_hex:integer_to_hex(ETag1, 32),
                     XML   = gen_upload_completion_xml(Bucket, Path2, ETag2, TotalUploadedObjs),
                     ?reply_ok([?SERVER_HEADER], XML, Req);
                 {error, Cause} ->
-                    ?error("handle_multi_upload_2/3", "path:~s, cause:~p",
+                    ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
                            [binary_to_list(Path1), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req)
             end;
         {error, Cause} ->
-            ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
+            ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
             ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req)
     end;
-handle_multi_upload_2({error, Cause}, Req, Path) ->
-    ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+handle_multi_upload_2({error, Cause}, Req, Path, _CL) ->
+    ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 
 %% @doc Retrieve Metadatas for uploaded objects (Multipart)
