@@ -753,18 +753,19 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos) ->
 send_chunk(_Req, _,  _Key, Start, _End, CurPos, ChunkSize) when (CurPos + ChunkSize - 1) < Start ->
     %% skip proc
     CurPos + ChunkSize;
-send_chunk(Req, Bucket, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
+send_chunk(Req, _Bucket, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
                                                          (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->
-            ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
+            % @FIXME current impl can't handle a file which consist of grand childs
+            %%%?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
             cowboy_req:chunk(Bin, Req),
             CurPos + ChunkSize;
         Error ->
             Error
     end;
-send_chunk(Req, Bucket, Key, Start, End, CurPos, ChunkSize) ->
+send_chunk(Req, _Bucket, Key, Start, End, CurPos, ChunkSize) ->
     %% partial get
     StartPos = case Start =< CurPos of
                    true -> 0;
@@ -778,7 +779,8 @@ send_chunk(Req, Bucket, Key, Start, End, CurPos, ChunkSize) ->
         {ok, _Meta, <<>>} ->
             CurPos + ChunkSize;
         {ok, _Meta, Bin} ->
-            ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
+            % @FIXME current impl can't handle a file which consist of grand childs
+            %%%?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
             cowboy_req:chunk(Bin, Req),
             CurPos + ChunkSize;
         {error, Cause} ->
