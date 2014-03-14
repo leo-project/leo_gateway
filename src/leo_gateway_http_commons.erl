@@ -690,9 +690,10 @@ get_range_object_2(Req, Bucket, Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #metadata{del = 0, cnumber = 0} = _Meta} ->
             get_range_object_small(Req, Bucket, Key, Start, End);
-        {ok, #metadata{del = 0, cnumber = N, dsize = ObjectSize} = _Meta} ->
+        {ok, #metadata{del = 0, cnumber = N, dsize = ObjectSize, csize = CS} = _Meta} ->
             {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
-            get_range_object_large(Req, Bucket, Key, NewStartPos, NewEndPos, N, 0, 0);
+            {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
+            get_range_object_large(Req, Bucket, Key, NewStartPos, NewEndPos, N, Index, CurPos);
         _ ->
             {error, not_found}
     end.
@@ -708,6 +709,11 @@ get_range_object_small(Req, Bucket, Key, Start, End) ->
         {error, Cause} ->
             {error, Cause}
     end.
+
+move_curpos2head(Start, ChunkedSize, CurPos, Idx) when (CurPos + ChunkedSize - 1) < Start ->
+    move_curpos2head(Start, ChunkedSize, CurPos + ChunkedSize, Idx + 1);
+move_curpos2head(_Start, _ChunkedSize, CurPos, Idx) ->
+    {CurPos, Idx}.
 
 calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
     NewStartPos = ObjectSize + EndPos,
