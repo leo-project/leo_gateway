@@ -221,13 +221,13 @@ get_object(Req, Key, #req_params{bucket = Bucket,
                                  has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
-        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
+        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
 
             case HasInnerCache of
                 true ->
-                    Val = term_to_binary(#cache{etag  = Meta#metadata.checksum,
-                                                mtime = Meta#metadata.timestamp,
+                    Val = term_to_binary(#cache{etag  = Meta#?METADATA.checksum,
+                                                mtime = Meta#?METADATA.timestamp,
                                                 content_type = Mime,
                                                 body = RespObject,
                                                 size = byte_size(RespObject)}),
@@ -236,20 +236,20 @@ get_object(Req, Key, #req_params{bucket = Bucket,
                     void
             end,
 
-            ?access_log_get(Bucket, Key, Meta#metadata.dsize, ?HTTP_ST_OK),
+            ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
-                      {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                      {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             ?reply_ok(Header, RespObject, Req);
 
         %% For a chunked object.
-        {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
+        {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
             {ok, Pid} = leo_gateway_large_object_handler:start_link(Key),
             try
                 leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
             after
-                ?access_log_get(Bucket, Key, Meta#metadata.dsize, 0),
+                ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
                 catch leo_gateway_large_object_handler:stop(Pid)
             end;
         {error, not_found} ->
@@ -293,30 +293,30 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
             ?reply_ok(Header, CacheObj#cache.body, Req);
 
         %% MISS: get an object from storage (small-size)
-        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
+        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
-            Val = term_to_binary(#cache{etag  = Meta#metadata.checksum,
-                                        mtime = Meta#metadata.timestamp,
+            Val = term_to_binary(#cache{etag  = Meta#?METADATA.checksum,
+                                        mtime = Meta#?METADATA.timestamp,
                                         content_type = Mime,
                                         body = RespObject,
                                         size = byte_size(RespObject)
                                        }),
             leo_cache_api:put(Key, Val),
 
-            ?access_log_get(Bucket, Key, Meta#metadata.dsize, ?HTTP_ST_OK),
+            ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
-                      {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+                      {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                      {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             ?reply_ok(Header, RespObject, Req);
 
         %% MISS: get an object from storage (large-size)
-        {ok, #metadata{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
+        {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
             {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
             try
                 leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
             after
-                ?access_log_get(Bucket, Key, Meta#metadata.dsize, 0),
+                ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
                 catch leo_gateway_large_object_handler:stop(Pid)
             end;
 
@@ -332,9 +332,9 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
     end.
 
 %% @doc MOVE/COPY an object
--spec(move_large_object(#metadata{}, binary(), #req_params{}) ->
+-spec(move_large_object(#?METADATA{}, binary(), #req_params{}) ->
              ok | {error, any()}).
-move_large_object(#metadata{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DstKey, Params) ->
+move_large_object(#?METADATA{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DstKey, Params) ->
     {ok, ReadHandler} = leo_gateway_large_object_handler:start_link(Key, 0, TotalChunkedObjs),
     try
         move_large_object(SrcMeta, DstKey, Params, ReadHandler)
@@ -342,7 +342,7 @@ move_large_object(#metadata{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, Ds
         catch leo_gateway_large_object_handler:stop(ReadHandler)
     end.
 
-move_large_object(#metadata{dsize = Size}, DstKey,
+move_large_object(#?METADATA{dsize = Size}, DstKey,
                   #req_params{chunked_obj_len = ChunkedSize},
                   ReadHandler) ->
     {ok, WriteHandler}  = leo_gateway_large_object_handler:start_link(DstKey, ChunkedSize),
@@ -601,7 +601,7 @@ put_large_object_1({done, Req}, #req_large_obj{handler = Handler,
              {ok, any()}).
 delete_object(Req, Key, #req_params{bucket = Bucket}) ->
     Size1 = case leo_gateway_rpc_handler:head(Key) of
-                {ok, #metadata{del = 0, dsize = Size}} ->
+                {ok, #?METADATA{del = 0, dsize = Size}} ->
                     Size;
                 _ ->
                     0
@@ -628,16 +628,16 @@ delete_object(Req, Key, #req_params{bucket = Bucket}) ->
              {ok, any()}).
 head_object(Req, Key, #req_params{bucket = Bucket}) ->
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #metadata{del = 0} = Meta} ->
-            Timestamp = leo_http:rfc1123_date(Meta#metadata.timestamp),
+        {ok, #?METADATA{del = 0} = Meta} ->
+            Timestamp = leo_http:rfc1123_date(Meta#?METADATA.timestamp),
             ?access_log_head(Bucket, Key, ?HTTP_ST_OK),
             Headers   = [?SERVER_HEADER,
                          {?HTTP_HEAD_RESP_CONTENT_TYPE,   leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_RESP_ETAG,           ?http_etag(Meta#metadata.checksum)},
-                         {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#metadata.dsize)},
+                         {?HTTP_HEAD_RESP_ETAG,           ?http_etag(Meta#?METADATA.checksum)},
+                         {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
                          {?HTTP_HEAD_RESP_LAST_MODIFIED,  Timestamp}],
             cowboy_req:reply(?HTTP_ST_OK, Headers, fun() -> void end, Req);
-        {ok, #metadata{del = 1}} ->
+        {ok, #?METADATA{del = 1}} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, not_found} ->
@@ -688,9 +688,9 @@ get_range_object_1(Req, Bucket, Key, [End|Rest], _) ->
 
 get_range_object_2(Req, Bucket, Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #metadata{del = 0, cnumber = 0} = _Meta} ->
+        {ok, #?METADATA{del = 0, cnumber = 0} = _Meta} ->
             get_range_object_small(Req, Bucket, Key, Start, End);
-        {ok, #metadata{del = 0, cnumber = N, dsize = ObjectSize, csize = CS} = _Meta} ->
+        {ok, #?METADATA{del = 0, cnumber = N, dsize = ObjectSize, csize = CS} = _Meta} ->
             {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
             {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
             get_range_object_large(Req, Bucket, Key, NewStartPos, NewEndPos, N, Index, CurPos);
@@ -733,13 +733,13 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos) ->
     Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
     case leo_gateway_rpc_handler:head(Key2) of
-        {ok, #metadata{cnumber = 0, dsize = CS}} ->
+        {ok, #?METADATA{cnumber = 0, dsize = CS}} ->
             %% only children
             %% get and chunk
             NewPos = send_chunk(Req, Bucket, Key2, Start, End, CurPos, CS),
             get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos);
 
-        {ok, #metadata{cnumber = GrandChildNum}} ->
+        {ok, #?METADATA{cnumber = GrandChildNum}} ->
             case get_range_object_large(Req, Bucket, Key2, Start, End, GrandChildNum, 0, CurPos) of
                 {ok, NewPos} ->
                     get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos);
@@ -754,12 +754,12 @@ send_chunk(_Req, _,  _Key, Start, _End, CurPos, ChunkSize) when (CurPos + ChunkS
     %% skip proc
     CurPos + ChunkSize;
 send_chunk(Req, _Bucket, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
-                                                         (CurPos + ChunkSize - 1) =< End ->
+                                                                  (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->
-            % @FIXME current impl can't handle a file which consist of grand childs
-            %%%?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
+                                                % @FIXME current impl can't handle a file which consist of grand childs
+%%%?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
             cowboy_req:chunk(Bin, Req),
             CurPos + ChunkSize;
         Error ->
@@ -779,8 +779,8 @@ send_chunk(Req, _Bucket, Key, Start, End, CurPos, ChunkSize) ->
         {ok, _Meta, <<>>} ->
             CurPos + ChunkSize;
         {ok, _Meta, Bin} ->
-            % @FIXME current impl can't handle a file which consist of grand childs
-            %%%?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
+                                                % @FIXME current impl can't handle a file which consist of grand childs
+%%%?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
             cowboy_req:chunk(Bin, Req),
             CurPos + ChunkSize;
         {error, Cause} ->

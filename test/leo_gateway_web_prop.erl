@@ -141,10 +141,10 @@ http_check_resp(SC, _RespHeaders, _RespBody, 'put', {ok, _ETag}) ->
     SC =:= 200;
 http_check_resp(SC, _RespHeaders, _RespBody, 'head', ok) ->
     SC =:= 200;
-http_check_resp(SC, RespHeaders, _RespBody, 'head', {ok, #metadata{dsize = DSize}}) ->
+http_check_resp(SC, RespHeaders, _RespBody, 'head', {ok, #?METADATA{dsize = DSize}}) ->
     ContentLength = list_to_integer(proplists:get_value("content-length", RespHeaders, "0")),
     SC =:= 200 andalso ContentLength =:= DSize;
-http_check_resp(SC, RespHeaders, RespBody, 'get', {ok, #metadata{dsize = DSize}, Body}) ->
+http_check_resp(SC, RespHeaders, RespBody, 'get', {ok, #?METADATA{dsize = DSize}, Body}) ->
     ContentLength = list_to_integer(proplists:get_value("content-length", RespHeaders, "0")),
     SC =:= 200 andalso ContentLength =:= DSize andalso RespBody =:= Body;
 http_check_resp(SC, RespHeaders, RespBody, 'get', {ok, _MetaList, Body}) ->
@@ -175,11 +175,11 @@ headers_gen() ->
     [{"connection", "close"},{"Authorization","auth"}].
 
 raw_resp_gen('head', Bucket, Path, 'ok', Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
-    {ok, #metadata{
-       del = 0,
-       timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
-       checksum = 0,
-       dsize = size(Body)}};
+    {ok, #?METADATA{
+             del = 0,
+             timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+             checksum = 0,
+             dsize = size(Body)}};
 raw_resp_gen('head', _, _, 'ok', _) ->
     ok;
 raw_resp_gen('head', Bucket, Path, 'not_found', _Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
@@ -192,11 +192,11 @@ raw_resp_gen('head', _, _, 'error', _Body) ->
     {error, ?ERR_TYPE_INTERNAL_ERROR};
 
 raw_resp_gen('get', Bucket, Path, 'ok', Body) when length(Bucket) > 0 andalso length(Path) > 0 ->
-    {ok, #metadata{
-       del = 0,
-       timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
-       checksum = 0,
-       dsize = size(Body)}, Body};
+    {ok, #?METADATA{
+             del = 0,
+             timestamp = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+             checksum = 0,
+             dsize = size(Body)}, Body};
 raw_resp_gen('get', _, _, 'ok', Body) ->
     {ok, [], Body};
 raw_resp_gen('get', _, _, 'not_found', _Body) ->
