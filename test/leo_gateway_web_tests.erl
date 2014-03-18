@@ -296,10 +296,30 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_directory, find_by_parent_dir,
                            4, {ok,
-                               [{metadata, <<"localhost/a/b/pre/test.png">>,
-                                 0, 8, 0, 0,
-                                 0, 0, 0,
-                                 0, 0, 63511805822, 19740926, 0, 0}]}]),
+                               [#?METADATA{
+                                    key = <<"localhost/a/b/pre/test.png">>,
+                                    addr_id    = 0,
+                                    ksize      = 8,
+                                    dsize      = 0,
+                                    msize      = 0,
+                                    csize      = 0,
+                                    cnumber    = 0,
+                                    cindex     = 0,
+                                    offset     = 0,
+                                    clock      = 63511805822,
+                                    timestamp  = 19740926,
+                                    checksum   = 0,
+                                    ring_hash  = 0,
+                                    cluster_id = [],
+                                    num_of_replicas = 0,
+                                    ver = 0,
+                                    del = ?DEL_FALSE
+                                   }
+                                %% {metadata, <<"localhost/a/b/pre/test.png">>,
+                                %%  0, 8, 0, 0,
+                                %%  0, 0, 0,
+                                %%  0, 0, 63511805822, 19740926, 0, 0}
+                               ]}]),
             try
                 {ok, {SC,Body}} =
                     httpc:request(get, {lists:append(["http://",
@@ -318,7 +338,7 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
-get_bucket_acl_normal1_([_TermFun, _Node0, Node1]) ->
+get_bucket_acl_normal1_([_TermFun, _Node0,_Node1]) ->
     fun() ->
             timer:sleep(150),
             %% leo_s3_bucket is already created at setup
@@ -330,7 +350,7 @@ get_bucket_acl_normal1_([_TermFun, _Node0, Node1]) ->
                               access_key_id = <<"ackid">>,
                               acls = [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
                                                        permissions = [read, write]},
-                                      #bucket_acl_info{user_id = ?GRANTEE_AUTHENTICATED_USER, 
+                                      #bucket_acl_info{user_id = ?GRANTEE_AUTHENTICATED_USER,
                                                        permissions = [full_control]}]
                               }}),
             meck:new(leo_s3_auth, [no_link]),
@@ -405,10 +425,26 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                           [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, head, 2,
-                           {ok, {metadata, <<"a/b/c/d.png">>,
-                                 0, 4, 16384, 0,
-                                 0, 0, 0,
-                                 0, 1, 63505750315, 19740926, 0, 0}}]),
+                           {ok, #?METADATA{
+                                    key =  <<"a/b/c/d.png">>,
+                                    addr_id    = 0,
+                                    ksize      = 4,
+                                    dsize      = 16384,
+                                    msize      = 0,
+                                    csize      = 0,
+                                    cnumber    = 0,
+                                    cindex     = 0,
+                                    offset     = 1,
+                                    clock      = 63511805822,
+                                    timestamp  = 19740926,
+                                    checksum   = 0,
+                                    ring_hash  = 0,
+                                    cluster_id = [],
+                                    num_of_replicas = 0,
+                                    ver = 0,
+                                    del = ?DEL_FALSE
+                                   }
+                           }]),
             try
                 {ok, {{_, SC, _}, Headers, _Body}} =
                     httpc:request(head, {lists:append(["http://",
@@ -492,11 +528,26 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                           [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3,
-                           {ok, {metadata, "",
-                                 0, 4, 4, 0,
-                                 0, 0, 0, 0, 1,
-                                 calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
-                                 19740926, 0, 0}, <<"body">>}]),
+                           {ok, #?METADATA{
+                                    key =  <<"">>,
+                                    addr_id    = 0,
+                                    ksize      = 4,
+                                    dsize      = 4,
+                                    msize      = 0,
+                                    csize      = 0,
+                                    cnumber    = 0,
+                                    cindex     = 0,
+                                    offset     = 1,
+                                    clock      = calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
+                                    timestamp  = 19740926,
+                                    checksum   = 0,
+                                    ring_hash  = 0,
+                                    cluster_id = [],
+                                    num_of_replicas = 0,
+                                    ver = 0,
+                                    del = ?DEL_FALSE
+                                   },
+                            <<"body">>}]),
 
             try
                 {ok, {{_, SC, _}, Headers, Body}} =
@@ -528,17 +579,48 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                           [leo_storage_handler_object, [no_link]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, head, 2,
-                           {ok, {metadata, <<"a/b.png">>,
-                                 0, 4, 16384, 0,
-                                 0, 0, 0,
-                                 0, 1, 63505750315, 19740926, 0, 0}}]),
+                           {ok, #?METADATA{
+                                    key =  <<"a/b.png">>,
+                                    addr_id    = 0,
+                                    ksize      = 4,
+                                    dsize      = 16384,
+                                    msize      = 0,
+                                    csize      = 0,
+                                    cnumber    = 0,
+                                    cindex     = 0,
+                                    offset     = 1,
+                                    clock      = 63505750315,
+                                    timestamp  = 19740926,
+                                    checksum   = 0,
+                                    ring_hash  = 0,
+                                    cluster_id = [],
+                                    num_of_replicas = 0,
+                                    ver = 0,
+                                    del = ?DEL_FALSE
+                                   }
+                           }]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 5,
-                           {ok, {metadata, "",
-                                 0, 2, 2, 0,
-                                 0, 0, 0, 0, 1,
-                                 calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
-                                 19740926, 0, 0}, <<"od">>}]),
+                           {ok, #?METADATA{
+                                    key =  <<"">>,
+                                    addr_id    = 0,
+                                    ksize      = 2,
+                                    dsize      = 2,
+                                    msize      = 0,
+                                    csize      = 0,
+                                    cnumber    = 0,
+                                    cindex     = 0,
+                                    offset     = 1,
+                                    clock      = calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
+                                    timestamp  = 19740926,
+                                    checksum   = 0,
+                                    ring_hash  = 0,
+                                    cluster_id = [],
+                                    num_of_replicas = 0,
+                                    ver = 0,
+                                    del = ?DEL_FALSE
+                                   },
+                            <<"od">>}]),
 
             try
                 {ok, {{_, SC, _}, _Headers, Body}} =

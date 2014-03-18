@@ -50,7 +50,7 @@ get(Key) ->
             case leo_gateway_rpc_handler:get(Key) of
                 {error,not_found} ->
                     not_found;
-                {ok, #metadata{checksum = Checksum}, Body} ->
+                {ok, #?METADATA{checksum = Checksum}, Body} ->
                     {ok, {Checksum, Body}};
                 Error ->
                     Error
@@ -88,10 +88,10 @@ put(Key, Body) ->
 %% @doc Insert an object
 %%
 -spec(head(binary()) ->
-             {ok, #metadata{}} | not_found | {error, any()}).
+             {ok, #?METADATA{}} | not_found | {error, any()}).
 head(Key) ->
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #metadata{del = 1}} ->
+        {ok, #?METADATA{del = 1}} ->
             not_found;
         Ret ->
             Ret

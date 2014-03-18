@@ -107,7 +107,7 @@ put(Pid, Bin) ->
 
 %% @doc Retrieve a chunked object from the storage cluster
 %%
--spec(get(pid(), integer(), any(), #metadata{}) ->
+-spec(get(pid(), integer(), any(), #?METADATA{}) ->
              ok | {error, any()}).
 get(Pid, TotalOfChunkedObjs, Req, Meta) ->
     %% Since this call may take a long time in case of handling a very large file,
@@ -170,8 +170,8 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = Sta
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,
               {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-              {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
-              {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
+              {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+              {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
     {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
     Ref1 = case leo_cache_api:put_begin_tran(Key) of
                {ok, Ref} -> Ref;
@@ -183,8 +183,8 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = Sta
         {ok, _Req} ->
             Mime = leo_mime:guess_mime(Key),
             CacheMeta = #cache_meta{
-                           md5          = Meta#metadata.checksum,
-                           mtime        = Meta#metadata.timestamp,
+                           md5          = Meta#?METADATA.checksum,
+                           mtime        = Meta#?METADATA.timestamp,
                            content_type = Mime},
             catch leo_cache_api:put_end_tran(Ref1, Key, CacheMeta, true);
         _ ->
@@ -201,10 +201,10 @@ handle_call(get_chunked, _From, #state{iterator = I} = State) ->
             {Reply, NewIterator} =
                 case leo_gateway_rpc_handler:get(Key) of
                     %% only children
-                    {ok, #metadata{cnumber = 0}, Bin} ->
+                    {ok, #?METADATA{cnumber = 0}, Bin} ->
                         {{ok, Bin}, I2};
                     %% both children and grand-children
-                    {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
+                    {ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin} ->
                         %% grand-children
                         I3 = iterator_set_chunked(I2, Key, TotalChunkedObjs),
                         {Key2, I4} = iterator_next(I3),
@@ -361,12 +361,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Retrieve chunked objects
 %% @private
--spec(handle_loop(binary(), integer(), any(), #metadata{}, any()) ->
+-spec(handle_loop(binary(), integer(), any(), #?METADATA{}, any()) ->
              {ok, any()} | {error, any()}).
 handle_loop(Key, Total, Req, Meta, Ref) ->
     handle_loop(Key, Key, Total, 0, Req, Meta, Ref).
 
--spec(handle_loop(binary(), binary(), integer(), integer(), any(), #metadata{}, any()) ->
+-spec(handle_loop(binary(), binary(), integer(), integer(), any(), #?METADATA{}, any()) ->
              {ok, any()} | {error, any()}).
 handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Meta, _Ref) ->
     {ok, Req};
@@ -377,7 +377,7 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
 
     case leo_gateway_rpc_handler:get(Key2) of
         %% only children
-        {ok, #metadata{cnumber = 0}, Bin} ->
+        {ok, #?METADATA{cnumber = 0}, Bin} ->
 
             case cowboy_req:chunk(Bin, Req) of
                 ok ->
@@ -390,7 +390,7 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
             end;
 
         %% both children and grand-children
-        {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
+        {ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
             case handle_loop(OriginKey, Key2, TotalChunkedObjs, 0, Req, Meta, Ref) of
                 {ok, Req} ->

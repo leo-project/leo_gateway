@@ -285,9 +285,9 @@ put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3} = Params
           end,
 
     case leo_gateway_rpc_handler:get(CS2) of
-        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
+        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
             put_object_1(Directive, Req, Key, Meta, RespObject);
-        {ok, #metadata{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
+        {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
             put_large_object_1(Directive, Req, Key, Meta, Params);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
@@ -316,21 +316,21 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
 put_object_2(Req, Key, Meta) ->
-    case Key == Meta#metadata.key of
+    case Key == Meta#?METADATA.key of
         true  -> resp_copy_obj_xml(Req, Meta);
         false -> put_object_3(Req, Meta)
     end.
 
 put_object_3(Req, Meta) ->
-    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
+    case leo_gateway_rpc_handler:delete(Meta#?METADATA.key) of
         ok ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Meta#metadata.key, <<>>, Req);
+            ?reply_internal_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Meta#metadata.key, <<>>, Req)
+            ?reply_timeout([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req)
     end.
 
 %% @doc POST/PUT operation on `Large` Objects. COPY
@@ -350,22 +350,22 @@ put_large_object_1(Directive, Req, Key, Meta, Params) ->
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
 put_large_object_2(Req, Key, Meta) ->
-    case Key == Meta#metadata.key of
+    case Key == Meta#?METADATA.key of
         true  -> resp_copy_obj_xml(Req, Meta);
         false -> put_large_object_3(Req, Meta)
     end.
 
 put_large_object_3(Req, Meta) ->
     case leo_gateway_large_object_handler:delete_chunked_objects(
-           Meta#metadata.key, Meta#metadata.cnumber) of
+           Meta#?METADATA.key, Meta#?METADATA.cnumber) of
         ok ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Meta#metadata.key, <<>>, Req);
+            ?reply_internal_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Meta#metadata.key, <<>>, Req)
+            ?reply_timeout([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req)
     end.
 
 %% @doc DELETE operation on Objects
@@ -426,9 +426,9 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
         end,
 
     IsACL = case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
-        {undefined, _} -> false;
-        _ -> true
-    end,
+                {undefined, _} -> false;
+                _ -> true
+            end,
 
     ReqParams =
         request_params(
@@ -632,8 +632,8 @@ handle_multi_upload_3(PartNum, Path, Acc) ->
     Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary  >>,
 
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #metadata{dsize = Len,
-                       checksum = Checksum}} ->
+        {ok, #?METADATA{dsize = Len,
+                        checksum = Checksum}} ->
             handle_multi_upload_3(PartNum - 1, Path, [{PartNum, {Len, Checksum}} | Acc]);
         Error ->
             Error
@@ -672,8 +672,8 @@ gen_upload_completion_xml(BucketBin, Path, ETag, Total) ->
 %% @private
 resp_copy_obj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
-                        [leo_http:web_date(Meta#metadata.timestamp),
-                         leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
+                        [leo_http:web_date(Meta#?METADATA.timestamp),
+                         leo_hex:integer_to_hex(Meta#?METADATA.checksum, 32)]),
     ?reply_ok([?SERVER_HEADER,
                {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}
               ], XML, Req).
@@ -748,9 +748,9 @@ auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
 auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen =< 1 ->
     auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
 auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1 andalso
-                                                         (HTTPMethod == ?HTTP_POST orelse
-                                                          HTTPMethod == ?HTTP_PUT orelse
-                                                          HTTPMethod == ?HTTP_DELETE) ->
+                                                                    (HTTPMethod == ?HTTP_POST orelse
+                                                                     HTTPMethod == ?HTTP_PUT orelse
+                                                                     HTTPMethod == ?HTTP_DELETE) ->
     case is_public_read_write(ACLs) of
         true ->
             {ok, []};
@@ -924,11 +924,11 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                        false -> "false"
                    end,
 
-    Fun = fun(#metadata{key       = EntryKeyBin,
-                        dsize     = Length,
-                        timestamp = TS,
-                        checksum  = CS,
-                        del       = 0} , {Acc, _NextMarker}) ->
+    Fun = fun(#?METADATA{key       = EntryKeyBin,
+                         dsize     = Length,
+                         timestamp = TS,
+                         checksum  = CS,
+                         del       = 0} , {Acc, _NextMarker}) ->
                   EntryKey = binary_to_list(EntryKeyBin),
 
                   case string:equal(Key, EntryKey) of
@@ -997,25 +997,25 @@ generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
     Fun = fun(#bucket_acl_info{user_id     = URI,
                                permissions = Permissions} , Acc) ->
                   lists:foldl(
-                      fun(read, Acc2) -> 
-                          Acc3 = lists:append([
-                                 Acc2,
-                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read])]),
-                          lists:append([
-                                 Acc3,
-                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read_acp])]);
-                          (write, Acc2) ->
-                          Acc3 = lists:append([
-                                 Acc2,
-                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write])]),
-                          lists:append([
-                                 Acc3,
-                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write_acp])]);
-                          (full_control, Acc2) ->
-                          lists:append([
-                                 Acc2, 
-                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_full_control])])
-                  end, Acc, Permissions)
+                    fun(read, Acc2) -> 
+                            Acc3 = lists:append([
+                                                 Acc2,
+                                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read])]),
+                            lists:append([
+                                          Acc3,
+                                          io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read_acp])]);
+                       (write, Acc2) ->
+                            Acc3 = lists:append([
+                                                 Acc2,
+                                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write])]),
+                            lists:append([
+                                          Acc3,
+                                          io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write_acp])]);
+                       (full_control, Acc2) ->
+                            lists:append([
+                                          Acc2, 
+                                          io_lib:format(?XML_ACL_GRANT, [URI, ?acl_full_control])])
+                    end, Acc, Permissions)
           end,
     io_lib:format(?XML_ACL_POLICY, [ID, ID, lists:foldl(Fun, [], ACLs)]).
 
