@@ -59,14 +59,17 @@
                    chunked_cur_idx   = 0 :: pos_integer()
                   }).
 
--record(state, {key = <<>>          :: binary(),
-                max_obj_len = 0     :: pos_integer(),
-                stacked_bin = <<>>  :: binary(),
-                num_of_chunks = 0   :: pos_integer(),
-                total_len = 0       :: pos_integer(),
-                md5_context = <<>>  :: binary(),
-                errors = []         :: list(),
-                iterator            :: #iterator{}
+-record(state, {key = <<>>            :: binary(),
+                max_obj_len = 0       :: pos_integer(),
+                stacked_bin = <<>>    :: binary(),
+                num_of_chunks = 0     :: pos_integer(),
+                total_len = 0         :: pos_integer(),
+                md5_context = <<>>    :: binary(),
+                errors = []           :: list(),
+                %% Transport
+                socket = undefined    :: any(),
+                transport = undefined :: undefined | module(),
+                iterator              :: #iterator{}
                }).
 
 
@@ -75,20 +78,20 @@
 %% ===================================================================
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
--spec(start_link(binary()) ->
+-spec(start_link(tuple()) ->
              ok | {error, any()}).
-start_link(Key) ->
-    gen_server:start_link(?MODULE, [Key, 0, 0], []).
+start_link({Key, Transport, Socket}) ->
+    gen_server:start_link(?MODULE, [Key, 0, 0, Transport, Socket], []).
 
 -spec(start_link(binary(), pos_integer()) ->
              ok | {error, any()}).
 start_link(Key, Length) ->
-    gen_server:start_link(?MODULE, [Key, Length, 0], []).
+    gen_server:start_link(?MODULE, [Key, Length, 0, undefined, undefined], []).
 
 -spec(start_link(binary(), pos_integer(), pos_integer()) ->
              ok | {error, any()}).
 start_link(Key, Length, TotalChunk) ->
-    gen_server:start_link(?MODULE, [Key, Length, TotalChunk], []).
+    gen_server:start_link(?MODULE, [Key, Length, TotalChunk, undefined, undefined], []).
 
 %% @doc Stop this server
 %%
@@ -153,12 +156,14 @@ state(Pid) ->
 %%                         ignore               |
 %%                         {stop, Reason}
 %% Description: Initiates the server
-init([Key, Length, TotalChunk]) ->
+init([Key, Length, TotalChunk, Transport, Socket]) ->
     {ok, #state{key = Key,
                 max_obj_len = Length,
                 num_of_chunks = 1,
                 stacked_bin = <<>>,
                 md5_context = crypto:hash_init(md5),
+                transport = Transport,
+                socket = Socket,
                 errors = [],
                 iterator = iterator_init(Key, TotalChunk)}}.
 
@@ -166,18 +171,13 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 
-handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = State) ->
-    Mime = leo_mime:guess_mime(Key),
-    Header = [?SERVER_HEADER,
-              {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-              {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
-              {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
-    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
+handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, 
+            #state{key = Key, transport = Transport, socket = Socket} = State) ->
     Ref1 = case leo_cache_api:put_begin_tran(Key) of
                {ok, Ref} -> Ref;
                _ -> undefined
            end,
-    Reply = handle_loop(Key, TotalOfChunkedObjs, Req2, Meta, Ref1),
+    Reply = handle_loop(Key, TotalOfChunkedObjs, Req, Meta, Ref1, Transport, Socket),
 
     case Reply of
         {ok, _Req} ->
@@ -361,17 +361,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Retrieve chunked objects
 %% @private
--spec(handle_loop(binary(), integer(), any(), #?METADATA{}, any()) ->
+-spec(handle_loop(binary(), integer(), any(), #?METADATA{}, any(), module(), any()) ->
              {ok, any()} | {error, any()}).
-handle_loop(Key, Total, Req, Meta, Ref) ->
-    handle_loop(Key, Key, Total, 0, Req, Meta, Ref).
+handle_loop(Key, Total, Req, Meta, Ref, Transport, Socket) ->
+    handle_loop(Key, Key, Total, 0, Req, Meta, Ref, Transport, Socket).
 
--spec(handle_loop(binary(), binary(), integer(), integer(), any(), #?METADATA{}, any()) ->
+-spec(handle_loop(binary(), binary(), integer(), integer(), any(), #?METADATA{}, any(), module(), any()) ->
              {ok, any()} | {error, any()}).
-handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Meta, _Ref) ->
+handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Meta, _Ref, _, _) ->
     {ok, Req};
 
-handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
+handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref, Transport, Socket) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key2 = << ChunkedKey/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
@@ -379,12 +379,12 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
         %% only children
         {ok, #?METADATA{cnumber = 0}, Bin} ->
 
-            case cowboy_req:chunk(Bin, Req) of
+            case Transport:send(Socket, Bin) of
                 ok ->
                     leo_cache_api:put(Ref, OriginKey, Bin),
-                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref, Transport, Socket);
                 {error, Cause} ->
-                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/9", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
@@ -392,17 +392,17 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
         %% both children and grand-children
         {ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
-            case handle_loop(OriginKey, Key2, TotalChunkedObjs, 0, Req, Meta, Ref) of
+            case handle_loop(OriginKey, Key2, TotalChunkedObjs, 0, Req, Meta, Ref, Transport, Socket) of
                 {ok, Req} ->
                     %% children
-                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref, Transport, Socket);
                 {error, Cause} ->
-                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/9", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
-            ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+            ?error("handle_loop/9", "key:~s, index:~p, cause:~p",
                    [binary_to_list(Key2), Index, Cause]),
             {error, Cause}
     end.

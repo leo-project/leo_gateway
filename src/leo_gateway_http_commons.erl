@@ -245,13 +245,21 @@ get_object(Req, Key, #req_params{bucket = Bucket,
 
         %% For a chunked object.
         {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
-            {ok, Pid} = leo_gateway_large_object_handler:start_link(Key),
-            try
-                leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
-            after
-                ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
-                catch leo_gateway_large_object_handler:stop(Pid)
-            end;
+            Mime = leo_mime:guess_mime(Key),
+            Header = [?SERVER_HEADER,
+                     {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
+                     {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                     {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
+            BodyFunc = fun(Socket, Transport) ->
+                           {ok, Pid} = leo_gateway_large_object_handler:start_link({Key, Transport, Socket}),
+                           try
+                               leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
+                           after
+                               ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
+                               catch leo_gateway_large_object_handler:stop(Pid)
+                           end
+                       end,
+            cowboy_req:reply(?HTTP_ST_OK, Header, {Meta#?METADATA.dsize, BodyFunc}, Req);
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
@@ -312,14 +320,21 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
 
         %% MISS: get an object from storage (large-size)
         {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
-            {ok, Pid}  = leo_gateway_large_object_handler:start_link(Key),
-            try
-                leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
-            after
-                ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
-                catch leo_gateway_large_object_handler:stop(Pid)
-            end;
-
+            Mime = leo_mime:guess_mime(Key),
+            Header = [?SERVER_HEADER,
+                     {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
+                     {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                     {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
+            BodyFunc = fun(Socket, Transport) ->
+                           {ok, Pid} = leo_gateway_large_object_handler:start_link({Key, Transport, Socket}),
+                           try
+                               leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
+                           after
+                               ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
+                               catch leo_gateway_large_object_handler:stop(Pid)
+                           end
+                       end,
+            cowboy_req:reply(?HTTP_ST_OK, Header, {Meta#?METADATA.dsize, BodyFunc}, Req);
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
