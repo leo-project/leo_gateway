@@ -46,6 +46,7 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_endpoint.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
@@ -395,15 +396,17 @@ range_object(Req, Key, Params) ->
 %% @doc Create a key
 %% @private
 gen_key(Req) ->
-    EndPoints2 = case leo_s3_endpoint:get_endpoints() of
-                     {ok, EndPoints1} ->
-                         lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints1);
-                     _ -> []
-                 end,
+    EndPoints_2 = case leo_s3_endpoint:get_endpoints() of
+                      {ok, EndPoints_1} ->
+                          lists:map(fun(#endpoint{endpoint = EP}) ->
+                                            EP
+                                    end, EndPoints_1);
+                      _ -> []
+                  end,
     {Host,    _} = cowboy_req:host(Req),
     {RawPath, _} = cowboy_req:path(Req),
     Path = cowboy_http:urldecode(RawPath),
-    leo_http:key(EndPoints2, Host, Path).
+    leo_http:key(EndPoints_2, Host, Path).
 
 
 %% @doc Handle an http-request
@@ -997,7 +1000,7 @@ generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
     Fun = fun(#bucket_acl_info{user_id     = URI,
                                permissions = Permissions} , Acc) ->
                   lists:foldl(
-                    fun(read, Acc2) -> 
+                    fun(read, Acc2) ->
                             Acc3 = lists:append([
                                                  Acc2,
                                                  io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read])]),
@@ -1013,7 +1016,7 @@ generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
                                           io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write_acp])]);
                        (full_control, Acc2) ->
                             lists:append([
-                                          Acc2, 
+                                          Acc2,
                                           io_lib:format(?XML_ACL_GRANT, [URI, ?acl_full_control])])
                     end, Acc, Permissions)
           end,
