@@ -59,14 +59,17 @@
                    chunked_cur_idx   = 0 :: pos_integer()
                   }).
 
--record(state, {key = <<>>          :: binary(),
-                max_obj_len = 0     :: pos_integer(),
-                stacked_bin = <<>>  :: binary(),
-                num_of_chunks = 0   :: pos_integer(),
-                total_len = 0       :: pos_integer(),
-                md5_context = <<>>  :: binary(),
-                errors = []         :: list(),
-                iterator            :: #iterator{}
+-record(state, {key = <<>>            :: binary(),
+                max_obj_len = 0       :: pos_integer(),
+                stacked_bin = <<>>    :: binary(),
+                num_of_chunks = 0     :: pos_integer(),
+                total_len = 0         :: pos_integer(),
+                md5_context = <<>>    :: binary(),
+                errors = []           :: list(),
+                %% Transport
+                socket = undefined    :: any(),
+                transport = undefined :: undefined | module(),
+                iterator              :: #iterator{}
                }).
 
 
@@ -75,20 +78,20 @@
 %% ===================================================================
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
--spec(start_link(binary()) ->
+-spec(start_link(tuple()) ->
              ok | {error, any()}).
-start_link(Key) ->
-    gen_server:start_link(?MODULE, [Key, 0, 0], []).
+start_link({Key, Transport, Socket}) ->
+    gen_server:start_link(?MODULE, [Key, 0, 0, Transport, Socket], []).
 
 -spec(start_link(binary(), pos_integer()) ->
              ok | {error, any()}).
 start_link(Key, Length) ->
-    gen_server:start_link(?MODULE, [Key, Length, 0], []).
+    gen_server:start_link(?MODULE, [Key, Length, 0, undefined, undefined], []).
 
 -spec(start_link(binary(), pos_integer(), pos_integer()) ->
              ok | {error, any()}).
 start_link(Key, Length, TotalChunk) ->
-    gen_server:start_link(?MODULE, [Key, Length, TotalChunk], []).
+    gen_server:start_link(?MODULE, [Key, Length, TotalChunk, undefined, undefined], []).
 
 %% @doc Stop this server
 %%
@@ -107,7 +110,7 @@ put(Pid, Bin) ->
 
 %% @doc Retrieve a chunked object from the storage cluster
 %%
--spec(get(pid(), integer(), any(), #metadata{}) ->
+-spec(get(pid(), integer(), any(), #?METADATA{}) ->
              ok | {error, any()}).
 get(Pid, TotalOfChunkedObjs, Req, Meta) ->
     %% Since this call may take a long time in case of handling a very large file,
@@ -153,12 +156,14 @@ state(Pid) ->
 %%                         ignore               |
 %%                         {stop, Reason}
 %% Description: Initiates the server
-init([Key, Length, TotalChunk]) ->
+init([Key, Length, TotalChunk, Transport, Socket]) ->
     {ok, #state{key = Key,
                 max_obj_len = Length,
                 num_of_chunks = 1,
                 stacked_bin = <<>>,
                 md5_context = crypto:hash_init(md5),
+                transport = Transport,
+                socket = Socket,
                 errors = [],
                 iterator = iterator_init(Key, TotalChunk)}}.
 
@@ -166,25 +171,20 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 
-handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, #state{key = Key} = State) ->
-    Mime = leo_mime:guess_mime(Key),
-    Header = [?SERVER_HEADER,
-              {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-              {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#metadata.checksum)},
-              {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#metadata.timestamp)}],
-    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_OK, Header, Req),
+handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
+            #state{key = Key, transport = Transport, socket = Socket} = State) ->
     Ref1 = case leo_cache_api:put_begin_tran(Key) of
                {ok, Ref} -> Ref;
                _ -> undefined
            end,
-    Reply = handle_loop(Key, TotalOfChunkedObjs, Req2, Meta, Ref1),
+    Reply = handle_loop(Key, TotalOfChunkedObjs, Req, Meta, Ref1, Transport, Socket),
 
     case Reply of
         {ok, _Req} ->
             Mime = leo_mime:guess_mime(Key),
             CacheMeta = #cache_meta{
-                           md5          = Meta#metadata.checksum,
-                           mtime        = Meta#metadata.timestamp,
+                           md5          = Meta#?METADATA.checksum,
+                           mtime        = Meta#?METADATA.timestamp,
                            content_type = Mime},
             catch leo_cache_api:put_end_tran(Ref1, Key, CacheMeta, true);
         _ ->
@@ -201,10 +201,10 @@ handle_call(get_chunked, _From, #state{iterator = I} = State) ->
             {Reply, NewIterator} =
                 case leo_gateway_rpc_handler:get(Key) of
                     %% only children
-                    {ok, #metadata{cnumber = 0}, Bin} ->
+                    {ok, #?METADATA{cnumber = 0}, Bin} ->
                         {{ok, Bin}, I2};
                     %% both children and grand-children
-                    {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
+                    {ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin} ->
                         %% grand-children
                         I3 = iterator_set_chunked(I2, Key, TotalChunkedObjs),
                         {Key2, I4} = iterator_next(I3),
@@ -361,48 +361,48 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Retrieve chunked objects
 %% @private
--spec(handle_loop(binary(), integer(), any(), #metadata{}, any()) ->
+-spec(handle_loop(binary(), integer(), any(), #?METADATA{}, any(), module(), any()) ->
              {ok, any()} | {error, any()}).
-handle_loop(Key, Total, Req, Meta, Ref) ->
-    handle_loop(Key, Key, Total, 0, Req, Meta, Ref).
+handle_loop(Key, Total, Req, Meta, Ref, Transport, Socket) ->
+    handle_loop(Key, Key, Total, 0, Req, Meta, Ref, Transport, Socket).
 
--spec(handle_loop(binary(), binary(), integer(), integer(), any(), #metadata{}, any()) ->
+-spec(handle_loop(binary(), binary(), integer(), integer(), any(), #?METADATA{}, any(), module(), any()) ->
              {ok, any()} | {error, any()}).
-handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Meta, _Ref) ->
+handle_loop(_Key, _ChunkedKey, Total, Total, Req, _Meta, _Ref, _, _) ->
     {ok, Req};
 
-handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref) ->
+handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref, Transport, Socket) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key2 = << ChunkedKey/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
     case leo_gateway_rpc_handler:get(Key2) of
         %% only children
-        {ok, #metadata{cnumber = 0}, Bin} ->
+        {ok, #?METADATA{cnumber = 0}, Bin} ->
 
-            case cowboy_req:chunk(Bin, Req) of
+            case Transport:send(Socket, Bin) of
                 ok ->
                     leo_cache_api:put(Ref, OriginKey, Bin),
-                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref, Transport, Socket);
                 {error, Cause} ->
-                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/9", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
 
         %% both children and grand-children
-        {ok, #metadata{cnumber = TotalChunkedObjs}, _Bin} ->
+        {ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin} ->
             %% grand-children
-            case handle_loop(OriginKey, Key2, TotalChunkedObjs, 0, Req, Meta, Ref) of
+            case handle_loop(OriginKey, Key2, TotalChunkedObjs, 0, Req, Meta, Ref, Transport, Socket) of
                 {ok, Req} ->
                     %% children
-                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref);
+                    handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref, Transport, Socket);
                 {error, Cause} ->
-                    ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+                    ?error("handle_loop/9", "key:~s, index:~p, cause:~p",
                            [binary_to_list(Key2), Index, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
-            ?error("handle_loop/7", "key:~s, index:~p, cause:~p",
+            ?error("handle_loop/9", "key:~s, index:~p, cause:~p",
                    [binary_to_list(Key2), Index, Cause]),
             {error, Cause}
     end.

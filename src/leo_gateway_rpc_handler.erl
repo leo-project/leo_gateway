@@ -60,7 +60,7 @@
 %% @doc Retrieve a metadata from the storage-cluster
 %%
 -spec(head(binary()) ->
-             {ok, #metadata{}}|{error, any()}).
+             {ok, #?METADATA{}}|{error, any()}).
 head(Key) ->
     ReqParams = get_request_parameters(head, Key),
     invoke(ReqParams#req_params.redundancies,
@@ -72,7 +72,7 @@ head(Key) ->
 %% @doc Retrieve an object from the storage-cluster
 %%
 -spec(get(binary()) ->
-             {ok, #metadata{}, binary()}|{error, any()}).
+             {ok, #?METADATA{}, binary()}|{error, any()}).
 get(Key) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -82,7 +82,7 @@ get(Key) ->
            [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id],
            []).
 -spec(get(binary(), integer()) ->
-             {ok, match}|{ok, #metadata{}, binary()}|{error, any()}).
+             {ok, match}|{ok, #?METADATA{}, binary()}|{error, any()}).
 get(Key, ETag) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -93,7 +93,7 @@ get(Key, ETag) ->
            []).
 
 -spec(get(binary(), integer(), integer()) ->
-             {ok, #metadata{}, binary()}|{error, any()}).
+             {ok, #?METADATA{}, binary()}|{error, any()}).
 get(Key, StartPos, EndPos) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -116,9 +116,9 @@ delete(Key) ->
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            delete,
-           [#object{addr_id   = ReqParams#req_params.addr_id,
-                    key       = Key,
-                    timestamp = ReqParams#req_params.timestamp},
+           [#?OBJECT{addr_id   = ReqParams#req_params.addr_id,
+                     key       = Key,
+                     timestamp = ReqParams#req_params.timestamp},
             ReqParams#req_params.req_id],
            []).
 
@@ -161,16 +161,16 @@ put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
     invoke(ReqParams#req_params.redundancies,
            leo_storage_handler_object,
            put,
-           [#object{addr_id   = ReqParams#req_params.addr_id,
-                    key       = Key,
-                    data      = Body,
-                    dsize     = Size,
-                    timestamp = ReqParams#req_params.timestamp,
-                    csize     = ChunkedSize,
-                    cnumber   = TotalOfChunks,
-                    cindex    = ChunkIndex,
-                    checksum  = Digest
-                   },
+           [#?OBJECT{addr_id   = ReqParams#req_params.addr_id,
+                     key       = Key,
+                     data      = Body,
+                     dsize     = Size,
+                     timestamp = ReqParams#req_params.timestamp,
+                     csize     = ChunkedSize,
+                     cnumber   = TotalOfChunks,
+                     cindex    = ChunkIndex,
+                     checksum  = Digest
+                    },
             ReqParams#req_params.req_id],
            []).
 
@@ -271,7 +271,7 @@ timeout(Len) when ?TIMEOUT_L3_LEN > Len -> ?env_timeout_level_3();
 timeout(Len) when ?TIMEOUT_L4_LEN > Len -> ?env_timeout_level_4();
 timeout(_)                              -> ?env_timeout_level_5().
 
-timeout(put, [#object{dsize = DSize}, _]) ->
+timeout(put, [#?OBJECT{dsize = DSize}, _]) ->
     timeout(DSize);
 timeout(get, _) ->
     ?DEF_REQ_TIMEOUT;

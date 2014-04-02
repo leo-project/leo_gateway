@@ -134,7 +134,7 @@ head_object_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head,
                                         fun(_Addr, Key) ->
                                                 {ok,
-                                                 #metadata{
+                                                 #?METADATA{
                                                     key = Key,
                                                     dsize = 10,
                                                     del = 0
@@ -143,8 +143,8 @@ head_object_normal1_([_Node0, Node1]) ->
                                         end]),
     KEY = <<"bucket/key">>,
     {ok, Meta} = leo_gateway_rpc_handler:head(KEY),
-    ?assertEqual(10, Meta#metadata.dsize),
-    ?assertEqual(KEY, Meta#metadata.key),
+    ?assertEqual(10, Meta#?METADATA.dsize),
+    ?assertEqual(KEY, Meta#?METADATA.key),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.
 
@@ -181,7 +181,7 @@ get_object_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get,
                                         fun(_Addr, Key, _ReqId) ->
                                                 {ok,
-                                                 #metadata{
+                                                 #?METADATA{
                                                     key = Key,
                                                     dsize = 4,
                                                     del = 0
@@ -191,8 +191,8 @@ get_object_normal1_([_Node0, Node1]) ->
                                         end]),
     KEY = <<"bucket/key">>,
     {ok, Meta, Body} = leo_gateway_rpc_handler:get(KEY),
-    ?assertEqual(4, Meta#metadata.dsize),
-    ?assertEqual(KEY, Meta#metadata.key),
+    ?assertEqual(4, Meta#?METADATA.dsize),
+    ?assertEqual(KEY, Meta#?METADATA.key),
     ?assertEqual(<<"body">>, Body),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.
@@ -230,7 +230,7 @@ get_object_with_etag_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get,
                                         fun(_Addr, Key, _Etag, _ReqId) ->
                                                 {ok,
-                                                 #metadata{
+                                                 #?METADATA{
                                                     key = Key,
                                                     dsize = 4,
                                                     del = 0
@@ -240,8 +240,8 @@ get_object_with_etag_normal1_([_Node0, Node1]) ->
                                         end]),
     KEY = <<"bucket/key">>,
     {ok, Meta, Body} = leo_gateway_rpc_handler:get(KEY, 123),
-    ?assertEqual(4, Meta#metadata.dsize),
-    ?assertEqual(KEY, Meta#metadata.key),
+    ?assertEqual(4, Meta#?METADATA.dsize),
+    ?assertEqual(KEY, Meta#?METADATA.key),
     ?assertEqual(<<"body">>, Body),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.

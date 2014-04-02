@@ -46,14 +46,15 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_endpoint.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
-                   handle_multi_upload_1/4, handle_multi_upload_2/3, handle_multi_upload_3/3,
-                   gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/3,
-                   resp_copy_obj_xml/2, request_params/2, auth/4, auth/6, auth/7,
-                   get_bucket_1/6, put_bucket_1/2, delete_bucket_1/2, head_bucket_1/2
+                   handle_multi_upload_1/5, handle_multi_upload_2/4, handle_multi_upload_3/3,
+                   gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
+                   resp_copy_obj_xml/2, request_params/2, auth/5, auth/7, auth/8,
+                   get_bucket_1/6, put_bucket_1/3, delete_bucket_1/2, head_bucket_1/2
                   ]}).
 
 
@@ -108,6 +109,7 @@ onresponse(CacheCondition) ->
 -spec(get_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
+                                 is_acl        = false,
                                  qs_prefix     = Prefix}) ->
     Marker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
                  {undefined, _} -> [];
@@ -129,25 +131,52 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+    end;
+get_bucket(Req, Bucket1, #req_params{access_key_id = _AccessKeyId,
+                                     is_acl        = true}) ->
+    Bucket2 = formalize_bucket(Bucket1),
+    case leo_s3_bucket:find_bucket_by_name(Bucket2) of
+        {ok, BucketInfo} ->
+            XML = generate_acl_xml(BucketInfo),
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
+            ?reply_ok(Header, XML, Req);
+        not_found ->
+            ?reply_not_found([?SERVER_HEADER], Bucket2, <<>>, Req);
+        {error, _Cause} ->
+            ?reply_internal_error([?SERVER_HEADER], Bucket2, <<>>, Req)
     end.
 
 %% @doc Put a bucket
 -spec(put_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
-put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
-    Bucket = case (?BIN_SLASH == binary:part(Key, {byte_size(Key)-1, 1})) of
-                 true ->
-                     binary:part(Key, {0, byte_size(Key) -1});
-                 false ->
-                     Key
-             end,
-    case put_bucket_1(AccessKeyId, Bucket) of
+put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
+                                 is_acl        = false}) ->
+    Bucket = formalize_bucket(Key),
+    CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
+    case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+    end;
+put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
+                                 is_acl        = true}) ->
+    Bucket = formalize_bucket(Key),
+    CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
+    case put_bucket_acl_1(CannedACL, AccessKeyId, Bucket) of
+        ok ->
+            ?reply_ok([?SERVER_HEADER], Req);
+        {error, not_supported} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+        {error, invalid_access} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
+                               ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req);
+        {error, _} ->
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 
@@ -200,11 +229,24 @@ get_object_with_cache(Req, Key, CacheObj, Params) ->
     leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj,  Params).
 
 
+%% @doc utility func for getting x-amz-meta-directive correctly
+get_x_amz_meta_directive(Req) ->
+    Directive = ?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE),
+    get_x_amz_meta_directive(Req, Directive).
+get_x_amz_meta_directive(Req, ?BIN_EMPTY) ->
+    CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+    case CS of
+        ?BIN_EMPTY -> ?BIN_EMPTY;
+        _ -> ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY %% default copy
+    end;
+get_x_amz_meta_directive(_Req, Other) ->
+    Other.
+
 %% @doc POST/PUT operation on Objects
 -spec(put_object(any(), binary(), #req_params{}) ->
              {ok, any()}).
 put_object(Req, Key, Params) ->
-    put_object(?http_header(Req, ?HTTP_HEAD_X_AMZ_META_DIRECTIVE), Req, Key, Params).
+    put_object(get_x_amz_meta_directive(Req), Req, Key, Params).
 
 put_object(?BIN_EMPTY, Req, Key, Params) ->
     {Size, _} = cowboy_req:body_length(Req),
@@ -244,9 +286,9 @@ put_object(Directive, Req, Key, #req_params{handler = ?HTTP_HANDLER_S3} = Params
           end,
 
     case leo_gateway_rpc_handler:get(CS2) of
-        {ok, #metadata{cnumber = 0} = Meta, RespObject} ->
+        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
             put_object_1(Directive, Req, Key, Meta, RespObject);
-        {ok, #metadata{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
+        {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
             put_large_object_1(Directive, Req, Key, Meta, Params);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
@@ -275,21 +317,21 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
 put_object_2(Req, Key, Meta) ->
-    case Key == Meta#metadata.key of
+    case Key == Meta#?METADATA.key of
         true  -> resp_copy_obj_xml(Req, Meta);
         false -> put_object_3(Req, Meta)
     end.
 
 put_object_3(Req, Meta) ->
-    case leo_gateway_rpc_handler:delete(Meta#metadata.key) of
+    case leo_gateway_rpc_handler:delete(Meta#?METADATA.key) of
         ok ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Meta#metadata.key, <<>>, Req);
+            ?reply_internal_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Meta#metadata.key, <<>>, Req)
+            ?reply_timeout([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req)
     end.
 
 %% @doc POST/PUT operation on `Large` Objects. COPY
@@ -309,22 +351,22 @@ put_large_object_1(Directive, Req, Key, Meta, Params) ->
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
 put_large_object_2(Req, Key, Meta) ->
-    case Key == Meta#metadata.key of
+    case Key == Meta#?METADATA.key of
         true  -> resp_copy_obj_xml(Req, Meta);
         false -> put_large_object_3(Req, Meta)
     end.
 
 put_large_object_3(Req, Meta) ->
     case leo_gateway_large_object_handler:delete_chunked_objects(
-           Meta#metadata.key, Meta#metadata.cnumber) of
+           Meta#?METADATA.key, Meta#?METADATA.cnumber) of
         ok ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Meta#metadata.key, <<>>, Req);
+            ?reply_internal_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Meta#metadata.key, <<>>, Req)
+            ?reply_timeout([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req)
     end.
 
 %% @doc DELETE operation on Objects
@@ -354,15 +396,17 @@ range_object(Req, Key, Params) ->
 %% @doc Create a key
 %% @private
 gen_key(Req) ->
-    EndPoints2 = case leo_s3_endpoint:get_endpoints() of
-                     {ok, EndPoints1} ->
-                         lists:map(fun({endpoint,EP,_}) -> EP end, EndPoints1);
-                     _ -> []
-                 end,
+    EndPoints_2 = case leo_s3_endpoint:get_endpoints() of
+                      {ok, EndPoints_1} ->
+                          lists:map(fun(#endpoint{endpoint = EP}) ->
+                                            EP
+                                    end, EndPoints_1);
+                      _ -> []
+                  end,
     {Host,    _} = cowboy_req:host(Req),
     {RawPath, _} = cowboy_req:path(Req),
     Path = cowboy_http:urldecode(RawPath),
-    leo_http:key(EndPoints2, Host, Path).
+    leo_http:key(EndPoints_2, Host, Path).
 
 
 %% @doc Handle an http-request
@@ -384,32 +428,31 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                 {BinParam, true, NewPath, Req1}
         end,
 
-    case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
-        {undefined, _} ->
-            ReqParams =
-                request_params(
-                  Req2, #req_params{handler           = ?MODULE,
-                                    path              = Path2,
-                                    bucket            = Bucket,
-                                    token_length      = TokenLen,
-                                    min_layers        = NumOfMinLayers,
-                                    max_layers        = NumOfMaxLayers,
-                                    qs_prefix         = Prefix,
-                                    has_inner_cache   = HasInnerCache,
-                                    is_cached         = true,
-                                    is_dir            = IsDir,
-                                    max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                    max_len_of_obj    = Props#http_options.max_len_of_obj,
-                                    chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                    reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                                    threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
-            AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen),
-            handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State);
-        _ ->
-            {ok, Req3} = ?reply_not_found([?SERVER_HEADER], Path2, <<>>, Req2),
-            {ok, Req3, State}
-    end.
+    IsACL = case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req2) of
+                {undefined, _} -> false;
+                _ -> true
+            end,
 
+    ReqParams =
+        request_params(
+          Req2, #req_params{handler           = ?MODULE,
+                            path              = Path2,
+                            bucket            = Bucket,
+                            token_length      = TokenLen,
+                            min_layers        = NumOfMinLayers,
+                            max_layers        = NumOfMaxLayers,
+                            qs_prefix         = Prefix,
+                            has_inner_cache   = HasInnerCache,
+                            is_cached         = true,
+                            is_dir            = IsDir,
+                            is_acl            = IsACL,
+                            max_chunked_objs  = Props#http_options.max_chunked_objs,
+                            max_len_of_obj    = Props#http_options.max_len_of_obj,
+                            chunked_obj_len   = Props#http_options.chunked_obj_len,
+                            reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                            threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
+    AuthRet = auth(Req2, HTTPMethod, Path2, TokenLen, ReqParams),
+    handle_2(AuthRet, Req2, HTTPMethod, Path2, ReqParams, State).
 
 %% @doc Handle a request (sub)
 %% @private
@@ -496,12 +539,13 @@ handle_2({ok,_AccessKeyId}, Req1, ?HTTP_DELETE, _,
 %%
 handle_2({ok,_AccessKeyId}, Req1, ?HTTP_POST, _,
          #req_params{path = Path,
+                     chunked_obj_len = CL,
                      is_upload = false,
                      upload_id = UploadId,
                      upload_part_num = PartNum}, State) when UploadId /= <<>>,
                                                              PartNum  == 0 ->
     Res = cowboy_req:has_body(Req1),
-    {ok, Req2} = handle_multi_upload_1(Res, Req1, Path, UploadId),
+    {ok, Req2} = handle_multi_upload_1(Res, Req1, Path, UploadId, CL),
     {ok, Req2, State};
 
 %% For Regular cases
@@ -524,7 +568,7 @@ handle_2({ok, AccessKeyId}, Req1, HTTPMethod, Path, Params, State) ->
 
 %% @doc Handle multi-upload processing
 %% @private
-handle_multi_upload_1(true, Req, Path, UploadId) ->
+handle_multi_upload_1(true, Req, Path, UploadId, CL) ->
     Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
 
     case leo_gateway_rpc_handler:head(Path4Conf) of
@@ -532,14 +576,14 @@ handle_multi_upload_1(true, Req, Path, UploadId) ->
             _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
             Ret = cowboy_req:body(Req),
-            handle_multi_upload_2(Ret, Req, Path);
+            handle_multi_upload_2(Ret, Req, Path, CL);
         _ ->
             ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_1(false, Req, Path,_UploadId) ->
+handle_multi_upload_1(false, Req, Path,_UploadId, _CL) ->
     ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req).
 
-handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
+handle_multi_upload_2({ok, Bin, Req}, _Req, Path1, CL) ->
     %% trim spaces
     Acc = fun(#xmlText{value = " ", pos = P}, Acc, S) ->
                   {Acc, P, S};
@@ -553,23 +597,23 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path1) ->
 
     case handle_multi_upload_3(TotalUploadedObjs, Path1, []) of
         {ok, {Len, ETag1}} ->
-            case leo_gateway_rpc_handler:put(Path1, <<>>, Len, 0, TotalUploadedObjs, ETag1) of
+            case leo_gateway_rpc_handler:put(Path1, <<>>, Len, CL, TotalUploadedObjs, ETag1) of
                 {ok, _} ->
                     [Bucket|Path2] = leo_misc:binary_tokens(Path1, ?BIN_SLASH),
                     ETag2 = leo_hex:integer_to_hex(ETag1, 32),
-                    XML   = gen_upload_completion_xml(Bucket, Path2, ETag2),
+                    XML   = gen_upload_completion_xml(Bucket, Path2, ETag2, TotalUploadedObjs),
                     ?reply_ok([?SERVER_HEADER], XML, Req);
                 {error, Cause} ->
-                    ?error("handle_multi_upload_2/3", "path:~s, cause:~p",
+                    ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
                            [binary_to_list(Path1), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req)
             end;
         {error, Cause} ->
-            ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
+            ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path1), Cause]),
             ?reply_internal_error([?SERVER_HEADER], Path1, <<>>, Req)
     end;
-handle_multi_upload_2({error, Cause}, Req, Path) ->
-    ?error("handle_multi_upload_2/3", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+handle_multi_upload_2({error, Cause}, Req, Path, _CL) ->
+    ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 
 %% @doc Retrieve Metadatas for uploaded objects (Multipart)
@@ -580,7 +624,7 @@ handle_multi_upload_3(0, _, Acc) ->
     Metas = lists:reverse(Acc),
     {Len, ETag1} = lists:foldl(
                      fun({_, {DSize, Checksum}}, {Sum, ETagBin1}) ->
-                             ETagBin2 = list_to_binary(leo_hex:integer_to_hex(Checksum, 32)),
+                             ETagBin2 = leo_hex:integer_to_raw_binary(Checksum),
                              {Sum + DSize, <<ETagBin1/binary, ETagBin2/binary>>}
                      end, {0, <<>>}, lists:sort(Metas)),
     ETag2 = leo_hex:hex_to_integer(leo_hex:binary_to_hex(crypto:hash(md5, ETag1))),
@@ -591,8 +635,8 @@ handle_multi_upload_3(PartNum, Path, Acc) ->
     Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary  >>,
 
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #metadata{dsize = Len,
-                       checksum = Checksum}} ->
+        {ok, #?METADATA{dsize = Len,
+                        checksum = Checksum}} ->
             handle_multi_upload_3(PartNum - 1, Path, [{PartNum, {Len, Checksum}} | Acc]);
         Error ->
             Error
@@ -618,20 +662,21 @@ gen_upload_initiate_xml(BucketBin, Path, UploadId) ->
 
 %% @doc Generate an update-completion xml
 %% @private
--spec(gen_upload_completion_xml(binary(), list(binary()), string()) ->
+-spec(gen_upload_completion_xml(binary(), list(binary()), string(), integer()) ->
              list()).
-gen_upload_completion_xml(BucketBin, Path, ETag) ->
+gen_upload_completion_xml(BucketBin, Path, ETag, Total) ->
     Bucket = binary_to_list(BucketBin),
+    TotalStr = integer_to_list(Total),
     Key = gen_upload_key(Path),
-    io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket, Key, ETag]).
+    io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket, Key, ETag, TotalStr]).
 
 
 %% @doc Generate copy-obj's xml
 %% @private
 resp_copy_obj_xml(Req, Meta) ->
     XML = io_lib:format(?XML_COPY_OBJ_RESULT,
-                        [leo_http:web_date(Meta#metadata.timestamp),
-                         leo_hex:integer_to_hex(Meta#metadata.checksum, 32)]),
+                        [leo_http:web_date(Meta#?METADATA.timestamp),
+                         leo_hex:integer_to_hex(Meta#?METADATA.checksum, 32)]),
     ?reply_ok([?SERVER_HEADER,
                {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}
               ], XML, Req).
@@ -689,49 +734,49 @@ is_public_read_write([H|Rest]) ->
 
 %% @doc Authentication
 %% @private
-auth(Req, HTTPMethod, Path, TokenLen) ->
+auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
     Bucket = case (TokenLen >= 1) of
                  true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
                  false -> ?BIN_EMPTY
              end,
     case leo_s3_bucket:get_acls(Bucket) of
         {ok, ACLs} ->
-            auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
+            auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
         not_found ->
-            auth(Req, HTTPMethod, Path, TokenLen, Bucket, []);
+            auth(Req, HTTPMethod, Path, TokenLen, Bucket, [], ReqParams);
         {error, Cause} ->
             {error, Cause}
     end.
 
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen =< 1 ->
-    auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs);
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 andalso
-                                                         (HTTPMethod == ?HTTP_POST orelse
-                                                          HTTPMethod == ?HTTP_PUT orelse
-                                                          HTTPMethod == ?HTTP_DELETE) ->
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen =< 1 ->
+    auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1 andalso
+                                                                    (HTTPMethod == ?HTTP_POST orelse
+                                                                     HTTPMethod == ?HTTP_PUT orelse
+                                                                     HTTPMethod == ?HTTP_DELETE) ->
     case is_public_read_write(ACLs) of
         true ->
             {ok, []};
         false ->
-            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs)
+            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end;
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs) when TokenLen > 1 ->
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1 ->
     %% handle HTTP_GET|HTTP_HEAD
     case is_public_read(ACLs) of
         true ->
             {ok, []};
         false ->
-            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs)
+            auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end.
 
-auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs) ->
+auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
         {AuthorizationBin, _} ->
-            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT),
+            IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT andalso not IsACL),
             {RawUri,  _} = cowboy_req:path(Req),
             {QStr1,   _} = cowboy_req:qs(Req),
             {Headers, _} = cowboy_req:headers(Req),
@@ -812,11 +857,26 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix1) ->
 %% @doc Put a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketPUT.html
--spec(put_bucket_1(string(), string()|none) ->
+-spec(put_bucket_1(string(), string(), string()|none) ->
              ok|{error, any()}).
-put_bucket_1(AccessKeyId, Bucket) ->
-    leo_s3_bucket:put(AccessKeyId, Bucket).
+put_bucket_1([], AccessKeyId, Bucket) ->
+    leo_s3_bucket:put(AccessKeyId, Bucket);
+put_bucket_1(CannedACL, AccessKeyId, Bucket) ->
+    leo_s3_bucket:put(AccessKeyId, Bucket, CannedACL).
 
+%% @doc Put a bucket ACL
+%% @private
+%% @see http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTacl.html
+-spec(put_bucket_acl_1(string(), string(), string()|none) ->
+             ok|{error, any()}).
+put_bucket_acl_1(?CANNED_ACL_PRIVATE, AccessKeyId, Bucket) ->
+    leo_s3_bucket:update_acls2private(AccessKeyId, Bucket);
+put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ, AccessKeyId, Bucket) ->
+    leo_s3_bucket:update_acls2public_read(AccessKeyId, Bucket);
+put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ_WRITE, AccessKeyId, Bucket) ->
+    leo_s3_bucket:update_acls2public_read_write(AccessKeyId, Bucket);
+put_bucket_acl_1(_, _AccessKeyId, _Bucket) ->
+    {error, not_supported}.
 
 %% @doc Delete a bucket
 %% @private
@@ -824,13 +884,7 @@ put_bucket_1(AccessKeyId, Bucket) ->
 -spec(delete_bucket_1(string(), string()|none) ->
              ok|{error, any()}).
 delete_bucket_1(AccessKeyId, Bucket1) ->
-    Bucket2 = case (binary:last(Bucket1) == $/) of
-                  true ->
-                      binary:part(Bucket1, {0, byte_size(Bucket1) - 1});
-                  false ->
-                      Bucket1
-              end,
-
+    Bucket2 = formalize_bucket(Bucket1),
     ManagerNodes = ?env_manager_nodes(leo_gateway),
     delete_bucket_2(ManagerNodes, AccessKeyId, Bucket2).
 
@@ -873,11 +927,11 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                        false -> "false"
                    end,
 
-    Fun = fun(#metadata{key       = EntryKeyBin,
-                        dsize     = Length,
-                        timestamp = TS,
-                        checksum  = CS,
-                        del       = 0} , {Acc, _NextMarker}) ->
+    Fun = fun(#?METADATA{key       = EntryKeyBin,
+                         dsize     = Length,
+                         timestamp = TS,
+                         checksum  = CS,
+                         del       = 0} , {Acc, _NextMarker}) ->
                   EntryKey = binary_to_list(EntryKeyBin),
 
                   case string:equal(Key, EntryKey) of
@@ -942,3 +996,36 @@ generate_bucket_xml(MetadataList) ->
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).
 
+generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
+    Fun = fun(#bucket_acl_info{user_id     = URI,
+                               permissions = Permissions} , Acc) ->
+                  lists:foldl(
+                    fun(read, Acc2) ->
+                            Acc3 = lists:append([
+                                                 Acc2,
+                                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read])]),
+                            lists:append([
+                                          Acc3,
+                                          io_lib:format(?XML_ACL_GRANT, [URI, ?acl_read_acp])]);
+                       (write, Acc2) ->
+                            Acc3 = lists:append([
+                                                 Acc2,
+                                                 io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write])]),
+                            lists:append([
+                                          Acc3,
+                                          io_lib:format(?XML_ACL_GRANT, [URI, ?acl_write_acp])]);
+                       (full_control, Acc2) ->
+                            lists:append([
+                                          Acc2,
+                                          io_lib:format(?XML_ACL_GRANT, [URI, ?acl_full_control])])
+                    end, Acc, Permissions)
+          end,
+    io_lib:format(?XML_ACL_POLICY, [ID, ID, lists:foldl(Fun, [], ACLs)]).
+
+formalize_bucket(Bucket1) ->
+    case (binary:last(Bucket1) == $/) of
+        true ->
+            binary:part(Bucket1, {0, byte_size(Bucket1) - 1});
+        false ->
+            Bucket1
+    end.
