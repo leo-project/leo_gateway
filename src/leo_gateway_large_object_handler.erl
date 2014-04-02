@@ -171,7 +171,7 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 
-handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From, 
+handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
             #state{key = Key, transport = Transport, socket = Socket} = State) ->
     Ref1 = case leo_cache_api:put_begin_tran(Key) of
                {ok, Ref} -> Ref;
