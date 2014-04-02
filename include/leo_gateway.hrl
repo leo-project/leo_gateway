@@ -160,6 +160,18 @@
             _ -> ?TIMEOUT_L5_SEC
         end).
 
+%% QoS related
+-define(env_qos_stat_enable(),
+        case leo_misc:get_env(leo_gateway, is_enable_qos_stat) of
+            {ok, _IsEnableQoSStat} -> _IsEnableQoSStat;
+            _ -> false
+        end).
+-define(env_qos_notify_enable(),
+        case leo_misc:get_env(leo_gateway, is_enable_qos_notify) of
+            {ok, _IsEnableQoSNotify} -> _IsEnableQoSNotify;
+            _ -> false
+        end).
+
 
 -record(statistics, {
           id        = 0        :: integer(),
