@@ -200,7 +200,8 @@ delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 -spec(head_bucket(any(), binary(), #req_params{}) ->
              {ok, any()}).
 head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
-    case head_bucket_1(AccessKeyId, Key) of
+    Bucket = formalize_bucket(Key),
+    case head_bucket_1(AccessKeyId, Bucket) of
         ok ->
             ?reply_ok([?SERVER_HEADER], Req);
         not_found ->
