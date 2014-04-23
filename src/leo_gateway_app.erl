@@ -162,7 +162,6 @@ inspect_cluster_status(Res, ManagerNodes) ->
              {ok, pid()} | {error, any()}).
 after_process_0({ok, _Pid} = Res) ->
     ok = leo_misc:init_env(),
-
     ManagerNodes0  = ?env_manager_nodes(leo_gateway),
     ManagerNodes1 = lists:map(fun(X) when is_list(X) ->
                                       list_to_atom(X);
@@ -202,7 +201,7 @@ after_process_0({ok, _Pid} = Res) ->
             ok = Handler:start(leo_gateway_sup, HttpOptions)
     end,
 
-    %% launch LeoCache
+    %% Launch LeoCache
     NumOfCacheWorkers     = HttpOptions#http_options.cache_workers,
     CacheRAMCapacity      = HttpOptions#http_options.cache_ram_capacity,
     CacheDiscCapacity     = HttpOptions#http_options.cache_disc_capacity,
@@ -219,6 +218,24 @@ after_process_0({ok, _Pid} = Res) ->
                               {?PROP_DISC_CACHE_DATA_DIR,      CacheDiscDirData},
                               {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
                              ]),
+
+    %% Launch SavannaAgent(QoS)
+    SVManagers = ?env_qos_managers(),
+    QoS_StatEnabled = ?env_qos_stat_enabled(),
+    case QoS_StatEnabled of
+        true ->
+            %% launch savanna-agent and sync schema table
+            ok = savanna_agent:start(ram_copies),
+            ok = savanna_agent:sync_schemas(SVManagers);
+        false ->
+            void
+    end,
+    RefSup = whereis(leo_gateway_sup),
+    ChildSpec = {leo_gateway_qos_stat,
+                 {leo_gateway_qos_stat, start_link,
+                  [SVManagers, QoS_StatEnabled]},
+                 permanent, 2000, worker, [leo_gateway_qos_stat]},
+    {ok, _} = supervisor:start_child(RefSup, ChildSpec),
 
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);

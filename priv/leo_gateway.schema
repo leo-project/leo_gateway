@@ -525,19 +525,19 @@
 %% @doc savanna-manager nodes
 {mapping,
  "qos.managers",
- "leo_gateway.savanna_managers",
+ "savanna_agent.managers",
  [
   {datatype, string},
   {default, "savanna_manager_0@127.0.0.1, savanna_manager_1@127.0.0.1"}
  ]}.
 
-{translation, "leo_gateway.savanna_managers",
+{translation, "savanna_agent.managers",
  fun(Conf) ->
          Managers = cuttlefish_util:conf_get_value("qos.managers", Conf),
          case string:tokens(Managers, "[ , ]") of
              [] ->
-                 ['savanna_manager_0@127.0.0.1',
-                  'savanna_manager_1@127.0.0.1'];
+                 ['savanna_manager_0:13075@127.0.0.1',
+                  'savanna_manager_1:13076@127.0.0.1'];
              Tokens ->
                  lists:map(fun(X) ->
                                    list_to_atom(X)
