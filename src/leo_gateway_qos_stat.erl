@@ -154,7 +154,7 @@ handle_call(_Msg,_From, State) ->
 handle_cast({notify,_,_,_,_}, #state{is_enabled = false} = State) ->
     {noreply, State};
 handle_cast({notify, Schema, MetricGroup, Col, Val}, State) ->
-    _ = notify(Schema, MetricGroup, Col, Val, 0),
+    _ = notify_fun(Schema, MetricGroup, Col, Val, 0),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -202,11 +202,11 @@ create_schema([Node|Rest]) ->
 
 %% @doc Notify a message to savanna_agent
 %%
--spec(notify(atom(), atom(), atom(), any(), pos_integer())->
+-spec(notify_fun(atom(), atom(), atom(), any(), pos_integer())->
              ok).
-notify(_,_,_,_,?DEF_MAX_TIMES_OF_NOTICE) ->
-    {error, ''};
-notify(Schema, MetricGroup, Col, Val, Times) ->
+notify_fun(_,_,_,_,?DEF_MAX_TIMES_OF_NOTICE) ->
+    {error, "could not retrieve the schema"};
+notify_fun(Schema, MetricGroup, Col, Val, Times) ->
     Ret = case svc_tbl_schema:get(Schema) of
               {ok, _} ->
                   ok;
@@ -215,20 +215,20 @@ notify(Schema, MetricGroup, Col, Val, Times) ->
               {error, Cause} ->
                   {error, Cause}
           end,
-    notify_1(Ret, Schema, MetricGroup, Col, Val, Times).
+    notify_fun_1(Ret, Schema, MetricGroup, Col, Val, Times).
 
 
 %% @private
-notify_1(ok, Schema, MetricGroup, Col, Val, Times) ->
+notify_fun_1(ok, Schema, MetricGroup, Col, Val, Times) ->
     case savanna_agent:notify(MetricGroup, Col, Val) of
         {error, undefined} ->
             savanna_agent:create_metrics(
               Schema, MetricGroup, ?METRIC_BUCKET_WINDOW),
-            notify(Schema, MetricGroup, Col, Val, Times + 1);
+            notify_fun(Schema, MetricGroup, Col, Val, Times + 1);
         Other ->
             Other
     end;
-notify_1(Other,_,_,_,_,_) ->
+notify_fun_1(Other,_,_,_,_,_) ->
     Other.
 
 
