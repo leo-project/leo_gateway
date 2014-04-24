@@ -528,7 +528,7 @@
  "savanna_agent.managers",
  [
   {datatype, string},
-  {default, "savanna_manager_0@127.0.0.1, savanna_manager_1@127.0.0.1"}
+  {default, "savanna_manager_0:13075@127.0.0.1, savanna_manager_1:13076@127.0.0.1"}
  ]}.
 
 {translation, "savanna_agent.managers",
@@ -544,6 +544,15 @@
                            end, Tokens)
          end
  end}.
+
+%% @doc expiration time a metric server(sec)
+{mapping,
+ "qos.server.expiration",
+ "savanna_commons.proc_expiration_time",
+ [
+  {datatype, integer},
+  {default, 60}
+ ]}.
 
 
 %% --------------------------------------------------------------------
