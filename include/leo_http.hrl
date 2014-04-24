@@ -24,18 +24,18 @@
 %% @end
 %%======================================================================
 %% HTTP METHODS
--define(HTTP_GET,        <<"GET">>).
--define(HTTP_POST,       <<"POST">>).
--define(HTTP_PUT,        <<"PUT">>).
--define(HTTP_DELETE,     <<"DELETE">>).
--define(HTTP_HEAD,       <<"HEAD">>).
+-define(HTTP_GET,    <<"GET">>).
+-define(HTTP_POST,   <<"POST">>).
+-define(HTTP_PUT,    <<"PUT">>).
+-define(HTTP_DELETE, <<"DELETE">>).
+-define(HTTP_HEAD,   <<"HEAD">>).
 
 %% HTTP-RELATED
--define(SERVER_HEADER,   {<<"server">>,<<"LeoFS">>}).
--define(STR_NEWLINE,     "\n").
--define(STR_SLASH,       "/").
--define(BIN_SLASH,       <<"/">>).
--define(BIN_EMPTY,       <<>>).
+-define(SERVER_HEADER, {<<"server">>,<<"LeoFS">>}).
+-define(STR_NEWLINE,   "\n").
+-define(STR_SLASH,     "/").
+-define(BIN_SLASH,     <<"/">>).
+-define(BIN_EMPTY,     <<>>).
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
@@ -169,18 +169,35 @@
 -define(reply_timeout_without_body(_H,_R),        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,_R)). %% 503
 
 %% for GET/PUT/DELETE(with body)
--define(reply_bad_request(_H, _Code, _Msg, _Key, _ReqId, _R), 
-        cowboy_req:reply(?HTTP_ST_BAD_REQ, _H, io_lib:format(?XML_ERROR, [_Code, _Msg, xmerl_lib:export_text(_Key), _ReqId]), _R)).
--define(reply_forbidden(_H, _Key, _ReqId, _R),                
-        cowboy_req:reply(?HTTP_ST_FORBIDDEN, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, xmerl_lib:export_text(_Key), _ReqId]), _R)).
--define(reply_not_found(_H, _Key, _ReqId, _R),                
-        cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_NoSuchKey, ?XML_ERROR_MSG_NoSuchKey, xmerl_lib:export_text(_Key), _ReqId]), _R)).
--define(reply_bad_range(_H, _Key, _ReqId, _R),                
-        cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InvalidRange, ?XML_ERROR_MSG_InvalidRange, xmerl_lib:export_text(_Key), _ReqId]), _R)).
--define(reply_internal_error(_H, _Key, _ReqId, _R),           
-        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError, ?XML_ERROR_MSG_InternalError, xmerl_lib:export_text(_Key), _ReqId]), _R)).
--define(reply_timeout(_H, _Key, _ReqId, _R),                  
-        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H, io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_ServiceUnavailable, ?XML_ERROR_MSG_ServiceUnavailable, xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_bad_request(_H, _Code, _Msg, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,
+                         io_lib:format(?XML_ERROR, [_Code, _Msg,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_forbidden(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_FORBIDDEN, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_AccessDenied,
+                                                    ?XML_ERROR_MSG_AccessDenied,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_not_found(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_NoSuchKey,
+                                                    ?XML_ERROR_MSG_NoSuchKey,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_bad_range(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InvalidRange,
+                                                    ?XML_ERROR_MSG_InvalidRange,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_internal_error(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError,
+                                                    ?XML_ERROR_MSG_InternalError,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_timeout(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_ServiceUnavailable,
+                                                    ?XML_ERROR_MSG_ServiceUnavailable,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
 -define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
                                    {undefined, _} -> ?BIN_EMPTY;
