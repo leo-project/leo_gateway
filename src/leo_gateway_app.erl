@@ -337,13 +337,20 @@ get_system_config_from_manager([Manager|T]) ->
 get_members_from_manager([]) ->
     {error, 'could_not_get_members'};
 get_members_from_manager([Manager|T]) ->
-    case rpc:call(Manager, leo_manager_api, get_members_of_all_versions, [], ?DEF_TIMEOUT) of
+    case rpc:call(Manager, leo_manager_api,
+                  get_members_of_all_versions, [], ?DEF_TIMEOUT) of
         {ok, {MembersCur, MembersPrev}} ->
             {ok, {MembersCur, MembersPrev}};
         {badrpc, Why} ->
             {error, Why};
         {error, Cause} ->
-            ?error("get_members_from_manager/1", "cause:~p", [Cause]),
+            case Cause of
+                not_found ->
+                    void;
+                _ ->
+                    ?error("get_members_from_manager/1",
+                           "cause:~p", [Cause])
+            end,
             get_members_from_manager(T)
     end.
 
