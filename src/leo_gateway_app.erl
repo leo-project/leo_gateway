@@ -40,7 +40,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
--export([start/2, stop/1,
+-export([start/2, stop/1, prep_stop/1,
          inspect_cluster_status/2, profile_output/0, get_options/0]).
 
 -define(CHECK_INTERVAL, 3000).
@@ -101,6 +101,14 @@ start(_Type, _StartArgs) ->
     Res = leo_gateway_sup:start_link(),
     after_process_0(Res).
 
+
+%% @spec prep_stop(_State) -> ServerRet
+%% @doc application stop callback for leo_gateway.
+prep_stop(_State) ->
+    catch leo_redundant_manager_sup:stop(),
+    catch leo_mq_sup:stop(),
+    catch leo_logger_sup:stop(),
+    ok.
 
 %% @spec stop(_State) -> ServerRet
 %% @doc application stop callback for leo_gateway.
