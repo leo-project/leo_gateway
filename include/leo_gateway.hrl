@@ -226,7 +226,6 @@
 -define(LOG_ID_ACCESS,       'log_id_access_log').
 -define(LOG_FILENAME_ACCESS, "access").
 
-
 -define(notify_metrics(_Method,_Bucket,_Size),
         begin
             Cols = case _Method of
@@ -278,8 +277,8 @@
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response]}}),
-            ?notify_metrics(<<"GET">>,_Bucket,_Size)
+                                       _Response]}})
+            %% ?notify_metrics(<<"GET">>,_Bucket,_Size)
         end).
 -define(access_log_put(_Bucket, _Path, _Size, _Response),
         begin
@@ -295,8 +294,8 @@
                                        leo_date:clock(),
                                        _Response
                                       ]}
-              }),
-            ?notify_metrics(<<"PUT">>,_Bucket,_Size)
+              })
+            %% ?notify_metrics(<<"PUT">>,_Bucket,_Size)
         end).
 -define(access_log_delete(_Bucket, _Path, _Size, _Response),
         begin
@@ -312,8 +311,8 @@
                                        leo_date:clock(),
                                        _Response
                                       ]}
-              }),
-            ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
+              })
+            %% ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
         end).
 -define(access_log_head(_Bucket, _Path, _Response),
         begin
