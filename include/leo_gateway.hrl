@@ -24,6 +24,9 @@
 %%====================================================================
 -author('Yosuke Hara').
 
+%%----------------------------------------------------------------------
+%% DEFAULT VALUES
+%%----------------------------------------------------------------------
 -define(SHUTDOWN_WAITING_TIME, 2000).
 -define(S3_HTTP, leo_s3_http).
 -define(DEF_LAYERS_OF_DIRS, {1, 64}).
@@ -35,12 +38,6 @@
 -define(DEF_TIMEOUT,      5000). %%  5 sec
 -define(DEF_REQ_TIMEOUT, 30000). %% 30 sec
 -endif.
-
-%% error
--define(ERROR_COULD_NOT_CONNECT, "Could not connect").
--define(ERROR_NOT_MATCH_LENGTH,  "Not match object length").
--define(ERROR_FAIL_PUT_OBJ,      "Fail put an object").
--define(ERROR_FAIL_RETRIEVE_OBJ, "Fail retrieve an object").
 
 
 %% @pending
@@ -66,6 +63,18 @@
 -define(TIMEOUT_L5_SEC,   30000).
 
 
+%%----------------------------------------------------------------------
+%% ERROR MESSAGES
+%%----------------------------------------------------------------------
+-define(ERROR_COULD_NOT_CONNECT, "Could not connect").
+-define(ERROR_NOT_MATCH_LENGTH,  "Not match object length").
+-define(ERROR_FAIL_PUT_OBJ,      "Fail put an object").
+-define(ERROR_FAIL_RETRIEVE_OBJ, "Fail retrieve an object").
+
+
+%%----------------------------------------------------------------------
+%% RECORDS
+%%----------------------------------------------------------------------
 %% large-object
 -record(large_obj_info, {key = <<>>         :: binary(),
                          length = 0         :: pos_integer(),
@@ -73,12 +82,11 @@
                          md5_context = <<>> :: binary()
                         }).
 
-%% access-log
--define(LOG_GROUP_ID_ACCESS, 'log_grp_access_log').
--define(LOG_ID_ACCESS,       'log_id_access_log').
--define(LOG_FILENAME_ACCESS, "access").
 
-
+%%----------------------------------------------------------------------
+%% MACROS
+%%----------------------------------------------------------------------
+%% Gateway-related:
 -define(env_bucket_prop_sync_interval(),
         case application:get_env(leo_gateway, bucket_prop_sync_interval) of
             {ok, EnvBucketPropSyncInterval} -> EnvBucketPropSyncInterval;
@@ -123,7 +131,6 @@
 
 
 %% Timeout-related:
-%%
 -define(env_timeout(),
         case application:get_env(leo_gateway, timeout) of
             {ok, EnvTimeout} -> EnvTimeout;
@@ -161,18 +168,41 @@
         end).
 
 %% QoS related
--define(env_qos_stat_enable(),
+-define(env_qos_stat_enabled(),
         case leo_misc:get_env(leo_gateway, is_enable_qos_stat) of
             {ok, _IsEnableQoSStat} -> _IsEnableQoSStat;
             _ -> false
         end).
--define(env_qos_notify_enable(),
+-define(env_qos_notify_enabled(),
         case leo_misc:get_env(leo_gateway, is_enable_qos_notify) of
             {ok, _IsEnableQoSNotify} -> _IsEnableQoSNotify;
             _ -> false
         end).
+-define(env_qos_managers(),
+        case leo_misc:get_env(savanna_agent, managers) of
+            {ok, _SVManagers} -> _SVManagers;
+            _ -> []
+        end).
 
 
+%%----------------------------------------------------------------------
+%% FOR QoS
+%%----------------------------------------------------------------------
+-define(QOS_METRIC_BUCKET_SCHEMA, 'leo_bucket').
+-define(QOS_METRIC_BUCKET_COL_1,  'cnt_r'). %% num of reads
+-define(QOS_METRIC_BUCKET_COL_2,  'cnt_w'). %% num of writes
+-define(QOS_METRIC_BUCKET_COL_3,  'cnt_d'). %% num of deletes
+-define(QOS_METRIC_BUCKET_COL_4,  'sum_len_r'). %% summary of length of an object at read
+-define(QOS_METRIC_BUCKET_COL_5,  'sum_len_w'). %% summary of length of an object at write
+-define(QOS_METRIC_BUCKET_COL_6,  'sum_len_d'). %% summary of length of an object at delete
+-define(QOS_METRIC_BUCKET_COL_7,  'his_len_r'). %% histogram of length of an object at read
+-define(QOS_METRIC_BUCKET_COL_8,  'his_len_w'). %% histogram of length of an object at write
+-define(QOS_METRIC_BUCKET_COL_9,  'his_len_d'). %% histogram of length of an object at delete
+
+
+%%----------------------------------------------------------------------
+%% FOR STATISTICS
+%%----------------------------------------------------------------------
 -record(statistics, {
           id        = 0        :: integer(),
           read      = 0        :: integer(),
@@ -187,15 +217,46 @@
           num_of_procs     = 0 :: integer()
          }).
 
+
+%%----------------------------------------------------------------------
+%% FOR ACCESS-LOG
+%%----------------------------------------------------------------------
 %% access-log
-%%
+-define(LOG_GROUP_ID_ACCESS, 'log_grp_access_log').
+-define(LOG_ID_ACCESS,       'log_id_access_log').
+-define(LOG_FILENAME_ACCESS, "access").
+
+-define(notify_metrics(_Method,_Bucket,_Size),
+        begin
+            Cols = case _Method of
+                       <<"GET">> ->
+                           [?QOS_METRIC_BUCKET_COL_1,
+                            ?QOS_METRIC_BUCKET_COL_4,
+                            ?QOS_METRIC_BUCKET_COL_7];
+                       <<"PUT">> ->
+                           [?QOS_METRIC_BUCKET_COL_2,
+                            ?QOS_METRIC_BUCKET_COL_5,
+                            ?QOS_METRIC_BUCKET_COL_8];
+                       <<"DELETE">> ->
+                           [?QOS_METRIC_BUCKET_COL_3,
+                            ?QOS_METRIC_BUCKET_COL_6,
+                            ?QOS_METRIC_BUCKET_COL_9]
+                   end,
+            leo_gateway_qos_stat:notify(?QOS_METRIC_BUCKET_SCHEMA,
+                                        _Bucket, lists:nth(1, Cols), 1),
+            leo_gateway_qos_stat:notify(?QOS_METRIC_BUCKET_SCHEMA,
+                                        _Bucket, lists:nth(2, Cols),_Size),
+            leo_gateway_qos_stat:notify(?QOS_METRIC_BUCKET_SCHEMA,
+                                        _Bucket, lists:nth(3, Cols),_Size)
+        end).
+
 -define(get_child_num(_Path_1),
         begin
             case string:str(_Path_1, "\n") of
                 0 ->
                     {_Path_1, 0};
                 _Index ->
-                    case list_to_integer(string:sub_string(_Path_1, _Index + 1)) of
+                    case catch list_to_integer(string:sub_string(_Path_1, _Index + 1)) of
                         {'EXIT',_} ->
                             {_Path_1, 0};
                         _Num->
@@ -217,6 +278,7 @@
                                        leo_date:date_format(),
                                        leo_date:clock(),
                                        _Response]}})
+            %% ?notify_metrics(<<"GET">>,_Bucket,_Size)
         end).
 -define(access_log_put(_Bucket, _Path, _Size, _Response),
         begin
@@ -233,6 +295,7 @@
                                        _Response
                                       ]}
               })
+            %% ?notify_metrics(<<"PUT">>,_Bucket,_Size)
         end).
 -define(access_log_delete(_Bucket, _Path, _Size, _Response),
         begin
@@ -249,6 +312,7 @@
                                        _Response
                                       ]}
               })
+            %% ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
         end).
 -define(access_log_head(_Bucket, _Path, _Response),
         begin
@@ -266,4 +330,3 @@
                                       ]}
               })
         end).
-
