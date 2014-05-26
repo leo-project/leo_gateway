@@ -91,8 +91,8 @@ start(_Type, _StartArgs) ->
     %% access-logger (file-appender)
     case application:get_env(leo_gateway, is_enable_access_log) of
         {ok, true} ->
-            ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
-                                              LogDir, ?LOG_FILENAME_ACCESS);
+            ok = leo_logger_client_base:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
+                                            LogDir, ?LOG_FILENAME_ACCESS);
         _ ->
             void
     end,

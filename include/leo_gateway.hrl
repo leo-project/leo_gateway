@@ -268,7 +268,7 @@
 -define(access_log_get(_Bucket, _Path, _Size, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
@@ -283,7 +283,7 @@
 -define(access_log_put(_Bucket, _Path, _Size, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
@@ -300,7 +300,7 @@
 -define(access_log_delete(_Bucket, _Path, _Size, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
@@ -317,7 +317,7 @@
 -define(access_log_head(_Bucket, _Path, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),

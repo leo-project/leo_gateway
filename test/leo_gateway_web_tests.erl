@@ -141,8 +141,8 @@ gen_tests_2(Arg) ->
 
 setup(InitFun, TermFun) ->
     ok = leo_logger_client_message:new("./", ?LOG_LEVEL_WARN),
-    ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
-                                      "./", ?LOG_FILENAME_ACCESS),
+    ok = leo_logger_client_base:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
+                                    "./", ?LOG_FILENAME_ACCESS),
 
     io:format(user, "cwd:~p~n",[os:cmd("pwd")]),
     [] = os:cmd("epmd -daemon"),
