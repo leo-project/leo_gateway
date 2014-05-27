@@ -77,26 +77,26 @@ prop_http_req() ->
             end).
 
 meck_begin(Method, Bucket, Path, RawResp) ->
-    meck:new(leo_s3_auth),
+    meck:new(leo_s3_auth, [non_strict]),
     meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"AccessKey">>}),
     meck_begin_1(Method, Bucket, Path, RawResp).
 meck_begin_1(Method, Bucket, Path, RawResp) when length(Bucket) > 0 andalso length(Path) > 0 ->
-    meck:new(leo_gateway_rpc_handler),
+    meck:new(leo_gateway_rpc_handler, [non_strict]),
     meck:expect(leo_gateway_rpc_handler, Method, 1, RawResp),
     meck:expect(leo_gateway_rpc_handler, Method, 2, RawResp),
     meck:expect(leo_gateway_rpc_handler, Method, 3, RawResp),
     meck:expect(leo_gateway_rpc_handler, Method, 4, RawResp);
 meck_begin_1('put', _Bucket, _Path, RawResp) ->
-    meck:new(leo_s3_http_bucket),
+    meck:new(leo_s3_http_bucket, [non_strict]),
     meck:expect(leo_s3_http_bucket, put_bucket, 2, RawResp);
 meck_begin_1('delete', _Bucket, _Path, RawResp) ->
-    meck:new(leo_s3_http_bucket),
+    meck:new(leo_s3_http_bucket, [non_strict]),
     meck:expect(leo_s3_http_bucket, delete_bucket, 2, RawResp);
 meck_begin_1('head', _Bucket, _Path, RawResp) ->
-    meck:new(leo_s3_http_bucket),
+    meck:new(leo_s3_http_bucket, [non_strict]),
     meck:expect(leo_s3_http_bucket, head_bucket, 2, RawResp);
 meck_begin_1('get', _Bucket, _Path, RawResp) ->
-    meck:new(leo_s3_http_bucket),
+    meck:new(leo_s3_http_bucket, [non_strict]),
     meck:expect(leo_s3_http_bucket, get_bucket_list, 6, RawResp).
 
 meck_end(Bucket, Path) ->

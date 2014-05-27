@@ -158,7 +158,7 @@ setup(InitFun, TermFun) ->
 
     ok = leo_misc:init_env(),
 
-    meck:new(leo_redundant_manager_api),
+    meck:new(leo_redundant_manager_api, [non_strict]),
     meck:expect(leo_redundant_manager_api, get_redundancies_by_key,
                 fun(_Method, _Key) ->
                         {ok, #redundancies{id = 0,
@@ -168,17 +168,17 @@ setup(InitFun, TermFun) ->
                                                                     available = true}],
                                            n = 2, r = 1, w = 1, d = 1}}
                 end),
-    meck:new(leo_s3_endpoint),
+    meck:new(leo_s3_endpoint, [non_strict]),
     meck:expect(leo_s3_endpoint, get_endpoints, 0, {ok, [{endpoint, <<"localhost">>, 0}]}),
 
-    meck:new(leo_s3_bucket),
+    meck:new(leo_s3_bucket, [non_strict]),
     meck:expect(leo_s3_bucket, get_acls, 1,
                 {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
                                        permissions = [read, write]}]}),
 
-    meck:new(leo_metrics_req),
+    meck:new(leo_metrics_req, [non_strict]),
     meck:expect(leo_metrics_req, notify, fun(_) -> ok end),
-    ok = rpc:call(Node1, meck, new,    [leo_metrics_req, [no_link]]),
+    ok = rpc:call(Node1, meck, new,    [leo_metrics_req, [no_link, non_strict]]),
     ok = rpc:call(Node1, meck, expect, [leo_metrics_req, notify, fun(_) -> ok end]),
 
     code:add_path("../cherly/ebin"),
@@ -235,7 +235,7 @@ get_bucket_list_error_([_TermFun, _Node0, Node1]) ->
             timer:sleep(150),
 
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_directory, [no_link]]),
+                          [leo_storage_handler_directory, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_directory,
                            find_by_parent_dir, 1, {error, some_error}]),
@@ -265,7 +265,7 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
             timer:sleep(150),
 
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_directory, [no_link]]),
+                          [leo_storage_handler_directory, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_directory, find_by_parent_dir, 4, {ok, []}]),
 
@@ -292,7 +292,7 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
             timer:sleep(150),
 
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_directory, [no_link]]),
+                          [leo_storage_handler_directory, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_directory, find_by_parent_dir,
                            4, {ok,
@@ -353,7 +353,7 @@ get_bucket_acl_normal1_([_TermFun, _Node0,_Node1]) ->
                                       #bucket_acl_info{user_id = ?GRANTEE_AUTHENTICATED_USER,
                                                        permissions = [full_control]}]
                               }}),
-            meck:new(leo_s3_auth, [no_link]),
+            meck:new(leo_s3_auth, [no_link, non_strict]),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, ["hoge"]}),
             try
                 {ok, {SC,Body}} =
@@ -374,11 +374,11 @@ get_bucket_acl_normal1_([_TermFun, _Node0,_Node1]) ->
 head_object_notfound_([_TermFun, Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node0, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node0, meck, expect,
                           [leo_storage_handler_object, head, 2, {error, not_found}]),
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, head, 2, {error, not_found}]),
             try
@@ -400,7 +400,7 @@ head_object_notfound_([_TermFun, Node0, Node1]) ->
 
 head_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
-            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link]]),
+            ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, head, 2, {error, foobar}]),
 
             try
@@ -422,7 +422,7 @@ head_object_error_([_TermFun, _Node0, Node1]) ->
 head_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, head, 2,
                            {ok, #?METADATA{
@@ -464,7 +464,7 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
 get_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3, {error, foobar}]),
             try
@@ -492,11 +492,11 @@ get_object_error_([_TermFun, _Node0, Node1]) ->
 get_object_notfound_([_TermFun, Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node0, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node0, meck, expect,
                           [leo_storage_handler_object, get, 3, {error, not_found}]),
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3, {error, not_found}]),
             try
@@ -525,7 +525,7 @@ get_object_notfound_([_TermFun, Node0, Node1]) ->
 get_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3,
                            {ok, #?METADATA{
@@ -576,7 +576,7 @@ range_object_normal3_([_TermFun, _Node0, Node1]) ->
 range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, head, 2,
                            {ok, #?METADATA{
@@ -643,11 +643,11 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
 delete_object_notfound_([_TermFun, Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node0, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node0, meck, expect,
                           [leo_storage_handler_object, delete, 2, {error, not_found}]),
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, delete, 2, {error, not_found}]),
 
@@ -673,7 +673,7 @@ delete_object_notfound_([_TermFun, Node0, Node1]) ->
 delete_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, delete, 2, {error, foobar}]),
 
@@ -704,7 +704,7 @@ delete_object_error_([_TermFun, _Node0, Node1]) ->
 delete_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, delete, 2, ok]),
 
@@ -727,7 +727,7 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
 put_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, put, 2, {error, foobar}]),
 
@@ -757,7 +757,7 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
 put_object_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
-                          [leo_storage_handler_object, [no_link]]),
+                          [leo_storage_handler_object, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, put, 2, {ok, 1}]),
 
