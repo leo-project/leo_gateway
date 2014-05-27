@@ -10,3 +10,6 @@ leofs_gateway.sh
 *.json
 *.bak
 erl_crash.dump
+src/*_xdr.erl
+src/*_svc.erl
+src/*.hrl
