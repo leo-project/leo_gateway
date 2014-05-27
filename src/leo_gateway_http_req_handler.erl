@@ -82,7 +82,7 @@ handle(?HTTP_GET, Req, Key, #req_params{range_header = RangeHeader,
 handle(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
                                                      has_inner_cache = true,
                                                      handler = Handler} = Params) ->
-    case leo_cache_api:get_filepath(Key) of
+    case catch leo_cache_api:get_filepath(Key) of
         {ok, CacheMeta} when CacheMeta#cache_meta.file_path /= [] ->
             CachedObj = #cache{
                            etag         = CacheMeta#cache_meta.md5,
@@ -94,12 +94,12 @@ handle(?HTTP_GET = HTTPMethod, Req, Key, #req_params{is_cached = true,
                           },
             Handler:get_object_with_cache(Req, Key, CachedObj, Params);
         _ ->
-            case leo_cache_api:get(Key) of
-                not_found ->
-                    handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false});
+            case catch leo_cache_api:get(Key) of
                 {ok, CachedObj0} ->
                     CachedObj1 = binary_to_term(CachedObj0),
-                    Handler:get_object_with_cache(Req, Key, CachedObj1, Params)
+                    Handler:get_object_with_cache(Req, Key, CachedObj1, Params);
+                _ ->
+                    handle(HTTPMethod, Req, Key, Params#req_params{is_cached = false})
             end
     end;
 

@@ -173,7 +173,7 @@ handle_call(stop, _From, State) ->
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
             #state{key = Key, transport = Transport, socket = Socket} = State) ->
-    Ref1 = case leo_cache_api:put_begin_tran(Key) of
+    Ref1 = case catch leo_cache_api:put_begin_tran(Key) of
                {ok, Ref} -> Ref;
                _ -> undefined
            end,
@@ -381,7 +381,7 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref, Transport, Sock
 
             case Transport:send(Socket, Bin) of
                 ok ->
-                    leo_cache_api:put(Ref, OriginKey, Bin),
+                    catch leo_cache_api:put(Ref, OriginKey, Bin),
                     handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref, Transport, Socket);
                 {error, Cause} ->
                     ?error("handle_loop/9", "key:~s, index:~p, cause:~p",

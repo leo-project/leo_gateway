@@ -166,7 +166,7 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
 -spec(purge(string()) -> ok).
 purge(Path) ->
     BinPath = list_to_binary(Path),
-    _ = leo_cache_api:delete(BinPath),
+    _ = (catch leo_cache_api:delete(BinPath)),
     ok.
 
 

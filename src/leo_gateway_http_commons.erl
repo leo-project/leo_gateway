@@ -125,12 +125,14 @@ onrequest(#cache_condition{expire = Expire}, FunGenKey) ->
 
 onrequest_1(?HTTP_GET, Req, Expire, FunGenKey) ->
     {_Bucket, Key} = FunGenKey(Req),
-    Ret = leo_cache_api:get(Key),
+    Ret = (catch leo_cache_api:get(Key)),
     onrequest_2(Req, Expire, Key, Ret);
 onrequest_1(_, Req,_,_) ->
     Req.
 
 onrequest_2(Req,_Expire,_Key, not_found) ->
+    Req;
+onrequest_2(Req,_Expire,_Key, {'EXIT', _Cause}) ->
     Req;
 onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
     #cache{mtime        = MTime,
@@ -143,7 +145,7 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
 
     case (Diff > Expire) of
         true ->
-            _ = leo_cache_api:delete(Key),
+            _ = (catch leo_cache_api:delete(Key)),
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
@@ -194,7 +196,7 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                                            size  = byte_size(Body),
                                            body  = Body,
                                            content_type = ?http_content_type(Header1)}),
-                            _ = leo_cache_api:put(Key, Bin),
+                            _ = (catch leo_cache_api:put(Key, Bin)),
 
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
                             Header3 = [{?HTTP_HEAD_RESP_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
@@ -231,7 +233,7 @@ get_object(Req, Key, #req_params{bucket = Bucket,
                                                 content_type = Mime,
                                                 body = RespObject,
                                                 size = byte_size(RespObject)}),
-                    leo_cache_api:put(Key, Val);
+                    catch leo_cache_api:put(Key, Val);
                 false ->
                     void
             end,
@@ -309,7 +311,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
                                         body = RespObject,
                                         size = byte_size(RespObject)
                                        }),
-            leo_cache_api:put(Key, Val),
+            catch leo_cache_api:put(Key, Val),
 
             ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Header = [?SERVER_HEADER,
