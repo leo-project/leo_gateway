@@ -55,6 +55,23 @@ formalize_path(Path) ->
             Path
     end.
 
+%%
+%% Valid path patterns for LeoFS
+%%
+%% 1. /$BucketName/
+%% 2. /$BucketName
+is_valid_mount_dir(<<$/,Rest/binary>>) ->
+    %% trim last /
+    Path = formalize_path(Rest),
+    case leo_s3_bucket:find_bucket_by_name(Path) of
+        {ok, _Bucket} ->
+            true;
+        _ ->
+            false
+    end;
+is_valid_mount_dir(_Path) ->
+    false.
+
 mount_add_entry(MountDir, Addr) ->
     MountPointDict = case application:get_env(?MODULE, mount_point) of
         undefined ->
@@ -106,7 +123,7 @@ mountproc_mnt_3(MountDir0, Clnt, #state{debug = Debug} = State) ->
     end,
     % validate path
     MountDir = formalize_path(MountDir0),
-    case filelib:is_dir(MountDir) of
+    case is_valid_mount_dir(MountDir) of
         true ->
             {ok, {Addr, _Port}}= rpc_proto:client_ip(Clnt),
             mount_add_entry(MountDir, Addr),
