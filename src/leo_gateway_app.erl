@@ -28,6 +28,8 @@
 -author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
+-include("leo_gateway_nfs_mount3.hrl").
+-include("leo_gateway_nfs_proto3.hrl").
 -include("leo_http.hrl").
 -include_lib("leo_cache/include/leo_cache.hrl").
 -undef(error).
@@ -40,7 +42,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
--export([start/2, stop/1, prep_stop/1,
+-export([start/0, start/2, stop/1, prep_stop/1,
          inspect_cluster_status/2, profile_output/0, get_options/0]).
 
 -define(CHECK_INTERVAL, 3000).
@@ -68,6 +70,45 @@
                                             get_members_from_manager(X)}).
 -endif.
 
+% for debug
+start() ->
+    application:ensure_started(crypto),
+    application:ensure_started(snmp),
+    application:ensure_started(ssl),
+    application:ensure_started(ranch),
+    application:ensure_started(asn1),
+    application:load(rpc_server),
+    % argments for mountd
+    MountdArgs = {rpc_app_arg,
+                  mountd3,
+                  128,
+                  [{port, 22050}],
+                  ?MOUNTPROG,
+                  mountprog,
+                  [],
+                  ?MOUNTVERS3,
+                  ?MOUNTVERS3,
+                  true,
+                  leo_gateway_nfs_mount3_svc,
+                  [],
+                  []},
+    % argments for nfsd
+    NfsdArgs = {rpc_app_arg,
+                  nfsd3,
+                  128,
+                  [{port, 2049}],
+                  ?NFS3_PROGRAM,
+                  nfs3_program,
+                  [],
+                  ?NFS_V3,
+                  ?NFS_V3,
+                  true,
+                  leo_gateway_nfs_proto3_svc,
+                  [],
+                  []},
+    application:set_env(rpc_server, args, [MountdArgs, NfsdArgs]),
+    application:ensure_started(rpc_server),
+    application:start(leo_gateway).
 
 %%--------------------------------------------------------------------
 %% API
@@ -198,7 +239,7 @@ after_process_0({ok, _Pid} = Res) ->
             end,
 
             %% Launch SNMPA
-            ok = leo_statistics_api:start_link(leo_gateway),
+            catch leo_statistics_api:start_link(leo_gateway),
             ok = leo_statistics_api:create_tables(ram_copies, [node()]),
             ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
             ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
