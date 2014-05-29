@@ -638,6 +638,40 @@
   {default, false}
  ]}.
 
+%% @doc
+{mapping,
+ "rpc_server.args",
+ "rpc_server.args",
+ [
+  {default, [
+   {rpc_app_arg,
+    mountd3, 
+    128, 
+    [{port, 22050}],
+    100005,
+    mountprog,
+    [],
+    3,
+    3,
+    true,
+    leo_gateway_nfs_mount3_svc,
+    [],
+    []},
+   {rpc_app_arg, 
+    nfsd3, 
+    128, 
+    [{port, 2049}],
+    100003,
+    nfs3_program,
+    [],
+    3,
+    3,
+    true,
+    leo_gateway_nfs_proto3_svc,
+    [],
+    []}]
+  }
+ ]}.
 
 %% --------------------------------------------------------------------
 %% VM.ARGS
