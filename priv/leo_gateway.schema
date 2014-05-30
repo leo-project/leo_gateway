@@ -640,6 +640,15 @@
 
 %% @doc
 {mapping,
+ "rpc_server.debug",
+ "rpc_server.debug",
+ [
+  {datatype, {enum, [true, false]}},
+  {default, true}
+ ]}.
+
+%% @doc
+{mapping,
  "rpc_server.args",
  "rpc_server.args",
  [

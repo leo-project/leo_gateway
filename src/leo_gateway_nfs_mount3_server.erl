@@ -13,7 +13,7 @@
 }).
 
 init(_Args) ->
-    Debug = case application:get_env(?MODULE, debug) of
+    Debug = case application:get_env(rpc_server, debug) of
         undefined ->
             false;
         {ok, Val} ->
