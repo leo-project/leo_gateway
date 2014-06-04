@@ -1,4 +1,5 @@
 -module(leo_gateway_nfs_proto3_server).
+-include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include("leo_gateway_nfs_proto3.hrl").
@@ -26,11 +27,6 @@
          nfsproc3_pathconf_3/3,
          nfsproc3_commit_3/3,
          nfsproc3_fsinfo_3/3]).
-
--record(simplenfs_ongoing_readdir, {
-    filelist  :: list(file:filename_all()),
-    pos       :: pos_integer()
-}).
 
 -record(state, {
     debug      :: boolean(),
@@ -79,100 +75,52 @@ handle_info(Req, #state{debug = Debug} = S) ->
 terminate(_Reason, _S) ->
     ok.
 
-%% about readdir
-%% dict(CookieVerf::binary(), ReadDir::#simplenfs_ongoing_readdir{}), 
-readdir_add_entry(Path) ->
-    ReadDirDict = case application:get_env(simplenfs, ongoing_readdir) of
+readdir_get_entry(<<0,0,0,0,0,0,0,0>>, Path) ->
+    <<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
+    readdir_get_entry(CookieVerf, Path);
+readdir_get_entry(CookieVerf, Path) ->
+    Marker = case application:get_env(simplenfs, CookieVerf) of
         undefined ->
-            dict:new();
-        {ok, Val} ->
-            Val
+            <<>>;
+        {ok, Ret} ->
+            Ret
     end,
-    readdir_add_entry(Path, ReadDirDict).
-readdir_add_entry(Path, ReadDirDict) ->
-    case file:list_dir(Path) of
-        {ok, FileList}->
-            %% gen cookie verfier
-            %% @TODO must be uniq
-            <<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
-            %% store new simplenfs_ongoing_readdir
-            ReadDir = #simplenfs_ongoing_readdir{filelist = FileList, pos = 0},
-            NewReadDirDict = dict:store(CookieVerf, ReadDir, ReadDirDict),
-            application:set_env(simplenfs, ongoing_readdir, NewReadDirDict),
-            {ok, CookieVerf, ReadDir};
-        {error, _Reason}->
-            %% return empty
+    {ok, #redundancies{nodes = Redundancies}} =
+        leo_redundant_manager_api:get_redundancies_by_key(get, Path),
+    case leo_gateway_rpc_handler:invoke(Redundancies,
+                                        leo_storage_handler_directory,
+                                        find_by_parent_dir,
+                                        [Path, <<"/">>, Marker, 100],
+                                        []) of
+        {ok, Meta} when is_list(Meta) =:= true ->
+            Last = lists:last(Meta),
+            application:set_env(simplenfs, CookieVerf, Last#metadata.key),
+            EOF = length(Meta) =:= 100, % @todo need to detect EOF correctly
+            {ok, CookieVerf, Meta, EOF};
+        _Error ->
             %% @TODO error handling
-            {ok, <<>>, []} 
-    end.
-
-readdir_set_entry(CookieVerf, ReadDir) ->
-    ReadDirDict = case application:get_env(simplenfs, ongoing_readdir) of
-        undefined ->
-            dict:new();
-        {ok, Val} ->
-            Val
-    end,
-    readdir_set_entry(CookieVerf, ReadDir, ReadDirDict).
-readdir_set_entry(CookieVerf, ReadDir, ReadDirDict) ->
-    NewReadDirDict = dict:store(CookieVerf, ReadDir, ReadDirDict),
-    application:set_env(simplenfs, ongoing_readdir, NewReadDirDict).
-
-readdir_get_entry(CookieVerf) ->
-    case application:get_env(simplenfs, ongoing_readdir) of
-        undefined ->
-            {ok, CookieVerf, []};
-        {ok, ReadDirDict} ->
-            case dict:find(CookieVerf, ReadDirDict) of
-                {ok, ReadDir} ->
-                    {ok, CookieVerf, ReadDir};
-                error ->
-                    {ok, CookieVerf, []}
-            end
+            {ok, <<>>, [], true} 
     end.
 
 readdir_del_entry(CookieVerf) ->
-    case application:get_env(simplenfs, ongoing_readdir) of
-        {ok, ReadDirDict} ->
-            NewReadDirDict = dict:erase(CookieVerf, ReadDirDict),
-            application:set_env(simplenfs, ongoing_readdir, NewReadDirDict);
-        undefined ->
-            void
-    end.
+    application:set_env(simplenfs, CookieVerf, undefined).
 
-readdir_create_resp(Path, ReadDir, NumEntry) ->
-    readdir_create_resp(Path, ReadDir, NumEntry, void).
-readdir_create_resp(_Path,
-            #simplenfs_ongoing_readdir{filelist = FileList,
-                                       pos      = Pos} = ReadDir, NumEntry, Resp)
-            when length(FileList) == Pos orelse NumEntry == 0 ->
-    {Resp, ReadDir};
-readdir_create_resp(Dir,
-            #simplenfs_ongoing_readdir{filelist = FileList,
-                                       pos      = Pos} = ReadDir, NumEntry, Resp) ->
-    Name = lists:nth(Pos + 1, FileList),
-    FilePath = filename:join(Dir, Name),
-    case file:read_file_info(FilePath, [{time, posix}]) of
-        {ok, FileInfo} ->
-            NewResp = {FileInfo#file_info.inode,
-                     Name,
-                     0,
-                     {true, %% post_op_attr
-                         void % @todo file_info2fattr3(FileInfo)
-                     },
-                     {true, {FilePath}}, %% post_op_fh3
-                     Resp
-                    },
-            readdir_create_resp(Dir,
-                                ReadDir#simplenfs_ongoing_readdir{pos = Pos + 1},
-                                NumEntry - 1,
-                                NewResp);
-        {error, _Reason} ->
-            readdir_create_resp(Dir,
-                                ReadDir#simplenfs_ongoing_readdir{pos = Pos + 1},
-                                NumEntry - 1,
-                                Resp)
-    end.
+readdir_create_resp(Path, Meta) ->
+    readdir_create_resp(Path, Meta, void).
+readdir_create_resp(_Path, [], Resp) ->
+    Resp;
+readdir_create_resp(_Path, [#metadata{key = Key}|Rest], Resp) ->
+    FilePath = <<"/", Key/binary>>,
+    NewResp = {0, % @todo to be specified unique id
+               filename:basename(Key),
+               0,
+               {true, %% post_op_attr
+                   void % @todo file_info2fattr3(FileInfo)
+               },
+               {true, {FilePath}}, %% post_op_fh3
+               Resp
+              },
+    readdir_create_resp(_Path, Rest, NewResp).
 
 -define(UNIX_TIME_BASE, 62167219200).
 unix_time() -> 
@@ -666,12 +614,7 @@ nfsproc3_readdirplus_3({{Path}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Cln
         true -> io:format(user, "[readdirplus]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
-        <<0,0,0,0,0,0,0,0>> ->
-            readdir_add_entry(Path);
-        CookieVerf ->
-            readdir_get_entry(CookieVerf)
-    end,
+    {ok, NewCookieVerf, ReadDir, EOF} = readdir_get_entry(CookieVerf, Path),
     case ReadDir of
         [] ->
             % empty response
@@ -690,14 +633,12 @@ nfsproc3_readdirplus_3({{Path}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Cln
             % create response
             % @TODO
             % # of entries should be determinted by _MaxCnt
-            {Resp, NewReadDir} = readdir_create_resp(Path, ReadDir, 10),
-            #simplenfs_ongoing_readdir{filelist = FileList, pos = Pos} = NewReadDir,
-            EOF = (length(FileList) == Pos),
+            Resp = readdir_create_resp(Path, ReadDir),
             case EOF of
                 true -> 
                     readdir_del_entry(NewCookieVerf);
                 false ->
-                    readdir_set_entry(NewCookieVerf, NewReadDir)
+                    void
             end,
             {reply,
                 {'NFS3_OK',
