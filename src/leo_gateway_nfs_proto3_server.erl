@@ -75,11 +75,37 @@ handle_info(Req, #state{debug = Debug} = S) ->
 terminate(_Reason, _S) ->
     ok.
 
+is_file(Path) ->
+    case leo_gateway_rpc_handler:head(Path) of
+        {ok, _} ->
+            true;
+        _ ->
+            false
+    end.
+
+% Having child entries? 
+is_dir(Path) ->
+    {ok, #redundancies{nodes = Redundancies}} =
+        leo_redundant_manager_api:get_redundancies_by_key(get, Path),
+    io:format(user, "[debug]is_dir path:~p~n", [Path]),
+    case leo_gateway_rpc_handler:invoke(Redundancies,
+                                        leo_storage_handler_directory,
+                                        find_by_parent_dir,
+                                        [Path, <<"/">>, <<>>, 100],
+                                        []) of
+        {ok, Meta} when is_list(Meta) =:= true andalso length(Meta) > 0 ->
+    io:format(user, "[debug]is_dir list:~p~n", [Meta]),
+            true;
+        _Error ->
+    io:format(user, "[debug]is_dir err:~p~n", [_Error]),
+            false 
+    end.
+
 readdir_get_entry(<<0,0,0,0,0,0,0,0>>, Path) ->
     <<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
     readdir_get_entry(CookieVerf, Path);
 readdir_get_entry(CookieVerf, Path) ->
-    Marker = case application:get_env(simplenfs, CookieVerf) of
+    Marker = case application:get_env(?MODULE, CookieVerf) of
         undefined ->
             <<>>;
         {ok, Ret} ->
@@ -87,6 +113,7 @@ readdir_get_entry(CookieVerf, Path) ->
     end,
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
+    io:format(user, "[debug]cookie:~p path:~p marker:~p red:~p~n",[CookieVerf, Path, Marker, Redundancies]),
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
@@ -94,7 +121,7 @@ readdir_get_entry(CookieVerf, Path) ->
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
             Last = lists:last(Meta),
-            application:set_env(simplenfs, CookieVerf, Last#metadata.key),
+            application:set_env(?MODULE, CookieVerf, Last#metadata.key),
             EOF = length(Meta) =:= 100, % @todo need to detect EOF correctly
             {ok, CookieVerf, Meta, EOF};
         _Error ->
@@ -103,19 +130,19 @@ readdir_get_entry(CookieVerf, Path) ->
     end.
 
 readdir_del_entry(CookieVerf) ->
-    application:set_env(simplenfs, CookieVerf, undefined).
+    application:set_env(?MODULE, CookieVerf, undefined).
 
 readdir_create_resp(Path, Meta) ->
     readdir_create_resp(Path, Meta, void).
 readdir_create_resp(_Path, [], Resp) ->
     Resp;
-readdir_create_resp(_Path, [#metadata{key = Key}|Rest], Resp) ->
+readdir_create_resp(_Path, [#metadata{key = Key} = Meta|Rest], Resp) ->
     FilePath = <<"/", Key/binary>>,
     NewResp = {0, % @todo to be specified unique id
                filename:basename(Key),
                0,
                {true, %% post_op_attr
-                   void % @todo file_info2fattr3(FileInfo)
+                   meta2fattr3(Meta)
                },
                {true, {FilePath}}, %% post_op_fh3
                Resp
@@ -163,6 +190,24 @@ meta2fattr3(Meta) ->
      {UT, 0}, % last modification
      {UT, 0}}.% last change
 
+% @todo
+s3dir2fattr3() ->
+    Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
+    UT = gs2unix_time(Now),
+    {'NF3DIR',
+     8#00666,  % @todo determin based on ACL? protection mode bits
+     0,   % # of hard links
+     0,   % @todo determin base on ACL? uid
+     0,   % @todo gid
+     4096,  % @todo how to calc?
+     4096,  % @todo actual size used at disk(LeoFS should return `body + metadata + header/footer`)
+     {0, 0}, % data used for special file(in Linux first is major, second is minor number)
+     0, % fsid
+     0, % @todo Unique ID to be specifed fieldid 
+     {UT, 0}, % last access
+     {UT, 0}, % last modification
+     {UT, 0}}.% last change
+
 bucket2fattr3(Bucket) ->
     UT = gs2unix_time(Bucket#?BUCKET.last_modified_at),
     {'NF3DIR',
@@ -178,6 +223,14 @@ bucket2fattr3(Bucket) ->
      {UT, 0}, % last access
      {UT, 0}, % last modification
      {UT, 0}}.% last change
+
+path2dir(Path) ->
+    case binary:last(Path) of
+        $/ ->
+            Path;
+        _ ->
+            <<Path/binary, "/">>
+    end.
 
 binary_is_contained(<<>>, _Char) ->
     false;
@@ -208,7 +261,19 @@ nfsproc3_getattr_3({{<<$/, Path/binary>>}}, Clnt, #state{debug = Debug} = State)
                     }}, 
                     State};
                 {error, not_found} ->
-                    {reply, {'NFS3ERR_NOENT', void}, State};
+                    Path4S3Dir = path2dir(Path),
+                    case is_dir(Path4S3Dir) of
+                        true ->
+                            {reply, 
+                            {'NFS3_OK',
+                            {
+                              % fattr
+                              s3dir2fattr3()
+                            }}, 
+                            State};
+                        false ->
+                            {reply, {'NFS3ERR_NOENT', void}, State}
+                    end;
                 {error, Reason} ->
                     io:format(user, "[debug]read_file_info failed reason:~p~n", [Reason]),
                     {reply, {'NFS3ERR_IO', Reason}, State}
@@ -276,18 +341,22 @@ nfsproc3_lookup_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
         true -> io:format(user, "[lookup]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    Path = filename:join(Dir, Name),
-    case file:read_file_info(Path, [{time, posix}]) of
-        {ok, _FileInfo} ->
+    Path4FS = filename:join(Dir, Name),
+    %% leading '/' must be trimed
+    <<"/", Path4S3/binary>> = Path4FS,
+    %% A path for directory must be trailing with '/'
+    Path4S3Dir = path2dir(Path4S3),
+    case is_file(Path4S3) orelse is_dir(Path4S3Dir) of
+        true ->
             {reply, 
                 {'NFS3_OK',
                 {
-                    {Path}, %% pre_op_attr
-                    {true, void}, %% @todo post_op_attr for obj
+                    {Path4FS}, %% pre_op_attr
+                    {false, void}, %% post_op_attr for obj
                     {false, void}  %% post_op_attr for dir
                 }}, 
                 State};
-        {error, _} ->
+        false ->
             {reply, 
                 {'NFS3ERR_NOENT',
                 {
@@ -609,12 +678,14 @@ nfsproc3_readdir_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_readdirplus_3({{Path}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_readdirplus_3({{<<"/", Path/binary>>}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[readdirplus]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    {ok, NewCookieVerf, ReadDir, EOF} = readdir_get_entry(CookieVerf, Path),
+    Path4S3Dir = path2dir(Path),
+    {ok, NewCookieVerf, ReadDir, EOF} = readdir_get_entry(CookieVerf, Path4S3Dir),
+    io:format(user, "[debug] cookie:~p list:~p~n",[NewCookieVerf, ReadDir]),
     case ReadDir of
         [] ->
             % empty response
@@ -633,7 +704,7 @@ nfsproc3_readdirplus_3({{Path}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Cln
             % create response
             % @TODO
             % # of entries should be determinted by _MaxCnt
-            Resp = readdir_create_resp(Path, ReadDir),
+            Resp = readdir_create_resp(Path4S3Dir, ReadDir),
             case EOF of
                 true -> 
                     readdir_del_entry(NewCookieVerf);
