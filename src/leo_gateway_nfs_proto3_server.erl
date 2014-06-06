@@ -113,7 +113,6 @@ readdir_get_entry(CookieVerf, Path) ->
     end,
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
-    io:format(user, "[debug]cookie:~p path:~p marker:~p red:~p~n",[CookieVerf, Path, Marker, Redundancies]),
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
@@ -121,8 +120,8 @@ readdir_get_entry(CookieVerf, Path) ->
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
             Last = lists:last(Meta),
-            application:set_env(?MODULE, CookieVerf, Last#metadata.key),
-            EOF = length(Meta) =:= 100, % @todo need to detect EOF correctly
+            application:set_env(?MODULE, CookieVerf, Last#?METADATA.key),
+            EOF = length(Meta) =/= 100, % @todo need to detect EOF correctly
             {ok, CookieVerf, Meta, EOF};
         _Error ->
             %% @TODO error handling
@@ -135,10 +134,11 @@ readdir_del_entry(CookieVerf) ->
 readdir_create_resp(Path, Meta) ->
     readdir_create_resp(Path, Meta, void).
 readdir_create_resp(_Path, [], Resp) ->
+    io:format(user, "[readdir_create_resp]resp:~p~n",[Resp]),
     Resp;
-readdir_create_resp(_Path, [#metadata{key = Key} = Meta|Rest], Resp) ->
+readdir_create_resp(_Path, [#?METADATA{key = Key} = Meta|Rest], Resp) ->
     FilePath = <<"/", Key/binary>>,
-    NewResp = {0, % @todo to be specified unique id
+    NewResp = {inode(FilePath), % @todo to be specified unique id
                filename:basename(Key),
                0,
                {true, %% post_op_attr
@@ -157,6 +157,12 @@ unix_time() ->
 gs2unix_time(GS) ->
     GS - ?UNIX_TIME_BASE.
 
+% @todo to be replaced with truely unique id supported by LeoFS future works 
+inode(Path) ->
+    <<F8:8/binary, _/binary>> = erlang:md5(Path),
+    Hex = leo_hex:binary_to_hex(F8),
+    leo_hex:hex_to_integer(Hex).
+
 sattr_mode2file_info({0, _})   -> undefined;
 sattr_mode2file_info({true, Mode}) -> Mode.
 
@@ -174,6 +180,22 @@ sattr_mtime2file_info({'DONT_CHANGE', _}) -> undefined;
 sattr_mtime2file_info({'SET_TO_SERVER_TIME', _}) -> unix_time();
 sattr_mtime2file_info({_, {MTime, _}})         -> MTime.
 
+meta2fattr3(#?METADATA{dsize = -1}) ->
+    Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
+    UT = gs2unix_time(Now),
+    {'NF3DIR',
+     8#00777,  % @todo determin based on ACL? protection mode bits
+     0,   % # of hard links
+     0,   % @todo determin base on ACL? uid
+     0,   % @todo gid
+     4096,  % file size
+     4096,  % @todo actual size used at disk(LeoFS should return `body + metadata + header/footer`)
+     {0, 0}, % data used for special file(in Linux first is major, second is minor number)
+     0, % fsid
+     0, % @todo Unique ID to be specifed fieldid 
+     {UT, 0}, % last access
+     {UT, 0}, % last modification
+     {UT, 0}};% last change
 meta2fattr3(Meta) ->
     UT = gs2unix_time(Meta#?METADATA.timestamp),
     {'NF3REG',
@@ -195,7 +217,7 @@ s3dir2fattr3() ->
     Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
     UT = gs2unix_time(Now),
     {'NF3DIR',
-     8#00666,  % @todo determin based on ACL? protection mode bits
+     8#00777,  % @todo determin based on ACL? protection mode bits
      0,   % # of hard links
      0,   % @todo determin base on ACL? uid
      0,   % @todo gid
