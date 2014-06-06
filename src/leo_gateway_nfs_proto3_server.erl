@@ -87,17 +87,14 @@ is_file(Path) ->
 is_dir(Path) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
-    io:format(user, "[debug]is_dir path:~p~n", [Path]),
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
                                         [Path, <<"/">>, <<>>, 100],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true andalso length(Meta) > 0 ->
-    io:format(user, "[debug]is_dir list:~p~n", [Meta]),
             true;
         _Error ->
-    io:format(user, "[debug]is_dir err:~p~n", [_Error]),
             false 
     end.
 
@@ -181,7 +178,7 @@ sattr_mtime2file_info({'SET_TO_SERVER_TIME', _}) -> unix_time();
 sattr_mtime2file_info({_, {MTime, _}})         -> MTime.
 
 meta2fattr3(#?METADATA{dsize = -1}) ->
-    Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
+    Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
     UT = gs2unix_time(Now),
     {'NF3DIR',
      8#00777,  % @todo determin based on ACL? protection mode bits
@@ -297,16 +294,13 @@ nfsproc3_getattr_3({{<<$/, Path/binary>>}}, Clnt, #state{debug = Debug} = State)
                             {reply, {'NFS3ERR_NOENT', void}, State}
                     end;
                 {error, Reason} ->
-                    io:format(user, "[debug]read_file_info failed reason:~p~n", [Reason]),
                     {reply, {'NFS3ERR_IO', Reason}, State}
             end;
         %% bucket 
         false ->
-            io:format(user, "[debug]find_bucket path:~p~n", [Path]),
             case leo_s3_bucket:find_bucket_by_name(Path) of
                 {ok, Bucket} ->
                     Attr = bucket2fattr3(Bucket),
-                    io:format(user, "[debug]find_bucket attr:~p~n", [Attr]),
                     {reply, 
                     {'NFS3_OK',
                     {
@@ -314,7 +308,6 @@ nfsproc3_getattr_3({{<<$/, Path/binary>>}}, Clnt, #state{debug = Debug} = State)
                     }}, 
                     State};
                 {error, Reason} ->
-                    io:format(user, "[debug]read_file_info failed reason:~p~n", [Reason]),
                     {reply, {'NFS3ERR_IO', Reason}, State};
                 not_found ->
                     {reply, {'NFS3ERR_NOENT', void}, State}
@@ -413,47 +406,23 @@ nfsproc3_readlink_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_read_3({{Path}, Offset, Count} =_1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_read_3({{<<"/", Path/binary>>}, Offset, Count} =_1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[read]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    case file:open(Path, [read, binary, raw]) of
-        {ok, IoDev} ->
-            try
-                case file:pread(IoDev, Offset, Count) of
-                    {ok, Data} ->
-                        {reply, 
-                            {'NFS3_OK',
-                            {
-                                {false, void}, %% post_op_attr for obj
-                                Count,         %% count read bytes
-                                false,         %% eof
-                                Data
-                            }}, 
-                            State};
-                    eof ->
-                        {reply, 
-                            {'NFS3_OK',
-                            {
-                                {false, void}, %% post_op_attr for obj
-                                0,             %% count read bytes
-                                true,          %% eof
-                                <<>>
-                            }}, 
-                            State};
-                    {error, Reason} ->
-                        io:format(user, "[read]error reason:~p~n",[Reason]),
-                        {reply, 
-                            {'NFS3ERR_IO',
-                            {
-                                {false, void} %% post_op_attr for obj
-                            }}, 
-                            State}
-                end
-            after
-                file:close(IoDev)
-            end;
+    case leo_gateway_rpc_handler:get(Path, Offset, Offset + Count - 1) of
+        {ok, Meta, Body} ->
+            EOF = Meta#?METADATA.dsize =:= (Offset + Count),
+            {reply, 
+                {'NFS3_OK',
+                {
+                    {false, void}, %% post_op_attr for obj
+                    Count,         %% count read bytes
+                    EOF,           %% eof
+                    Body
+                }}, 
+                State};
         {error, Reason} ->
             io:format(user, "[read]open error reason:~p~n",[Reason]),
             {reply, 
@@ -707,7 +676,6 @@ nfsproc3_readdirplus_3({{<<"/", Path/binary>>}, _Cookie, CookieVerf, _DirCnt, _M
     end,
     Path4S3Dir = path2dir(Path),
     {ok, NewCookieVerf, ReadDir, EOF} = readdir_get_entry(CookieVerf, Path4S3Dir),
-    io:format(user, "[debug] cookie:~p list:~p~n",[NewCookieVerf, ReadDir]),
     case ReadDir of
         [] ->
             % empty response
@@ -774,11 +742,11 @@ nfsproc3_fsinfo_3(_1, Clnt, #state{debug = Debug} = State) ->
         {'NFS3_OK',
         {
             {false, void}, %% post_op_attr
-            32768, %% rtmax
-            32768, %% rtperf
+            131072, %% rtmax
+            131072, %% rtperf
             8,    %% rtmult
-            32768, %% wtmax
-            32768, %% wtperf
+            131072, %% wtmax
+            131072, %% wtperf
             8,    %% wtmult
             4096, %% dperf
             1024 * 1024 * 1024 * 4, %% max size of a file
