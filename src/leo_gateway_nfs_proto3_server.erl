@@ -39,6 +39,7 @@
         {false, void}
     }
 ).
+-define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
 
 init(_Args) ->
     Debug = case application:get_env(rpc_server, debug) of
@@ -134,17 +135,23 @@ readdir_create_resp(_Path, [], Resp) ->
     io:format(user, "[readdir_create_resp]resp:~p~n",[Resp]),
     Resp;
 readdir_create_resp(_Path, [#?METADATA{key = Key} = Meta|Rest], Resp) ->
-    FilePath = <<"/", Key/binary>>,
-    NewResp = {inode(FilePath), % @todo to be specified unique id
-               filename:basename(Key),
-               0,
-               {true, %% post_op_attr
-                   meta2fattr3(Meta)
-               },
-               {true, {FilePath}}, %% post_op_fh3
-               Resp
-              },
-    readdir_create_resp(_Path, Rest, NewResp).
+    FileName = filename:basename(Key),
+    case FileName of
+        ?NFS_DUMMY_FILE4S3DIR ->
+            readdir_create_resp(_Path, Rest, Resp);
+        _ ->
+            FilePath = <<"/", Key/binary>>,
+            NewResp = {inode(FilePath), % @todo to be specified unique id
+                       FileName,
+                       0,
+                       {true, %% post_op_attr
+                           meta2fattr3(Meta)
+                       },
+                       {true, {FilePath}}, %% post_op_fh3
+                       Resp
+                      },
+            readdir_create_resp(_Path, Rest, NewResp)
+    end.
 
 -define(UNIX_TIME_BASE, 62167219200).
 unix_time() -> 
@@ -466,7 +473,7 @@ nfsproc3_create_3({{{Dir}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug 
     FilePath = filename:join(Dir, Name),
     <<"/", FilePath4S3/binary>> = FilePath, 
     case leo_gateway_rpc_handler:put(FilePath4S3, <<>>) of
-        ok ->
+        {ok, _}->
             {reply, 
                 {'NFS3_OK',
                 {
@@ -490,9 +497,10 @@ nfsproc3_mkdir_3({{{Dir}, Name}, _How} = _1, Clnt, #state{debug = Debug} = State
         true -> io:format(user, "[mkdir]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    DirPath = filename:join(Dir, Name),
-    case file:make_dir(DirPath) of
-        ok ->
+    <<"/", DirPath/binary>> = filename:join(Dir, Name),
+    DummyFile4S3Dir = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
+    case leo_gateway_rpc_handler:put(DummyFile4S3Dir, <<>>) of
+        {ok, _}->
             {reply, 
                 {'NFS3_OK',
                 {
