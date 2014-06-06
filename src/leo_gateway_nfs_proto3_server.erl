@@ -314,43 +314,26 @@ nfsproc3_getattr_3({{<<$/, Path/binary>>}}, Clnt, #state{debug = Debug} = State)
             end
     end.
      
-nfsproc3_setattr_3({{Path},
-                    {Mode,
-                     UID,
-                     GID,
+% @todo for now do nothing
+nfsproc3_setattr_3({{_Path},
+                    {_Mode,
+                     _UID,
+                     _GID,
                      _,
-                     ATime,
-                     MTime
+                     _ATime,
+                     _MTime
                     },_Guard} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[setattr]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    FileInfo = #file_info{
-            mode = sattr_mode2file_info(Mode),
-            uid  = sattr_uid2file_info(UID),
-            gid  = sattr_gid2file_info(GID),
-            atime = sattr_atime2file_info(ATime),
-            mtime = sattr_mtime2file_info(MTime)
-            },
-    case file:write_file_info(Path, FileInfo, [{time, posix}]) of
-        ok ->
-            {reply, 
-                {'NFS3_OK',
-                {
-                    ?SIMPLENFS_WCC_EMPTY
-                }}, 
-                State};
-        {error, Reason} ->
-            io:format(user, "[setattr]error reason:~p~n",[Reason]),
-            {reply, 
-                {'NFS3ERR_IO',
-                {
-                    ?SIMPLENFS_WCC_EMPTY
-                }}, 
-                State}
-    end.
- 
+    {reply, 
+        {'NFS3_OK',
+        {
+            ?SIMPLENFS_WCC_EMPTY
+        }}, 
+        State}.
+         
 nfsproc3_lookup_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[lookup]args:~p client:~p~n",[_1, Clnt]);
@@ -475,21 +458,15 @@ nfsproc3_write_3({{Path}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{de
     end.
     
  
-nfsproc3_create_3({{{Dir}, Name}, {CreateMode, _How}} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_create_3({{{Dir}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[create]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    OpenModes = case CreateMode of
-        'UNCHECKED' ->
-            [write];
-        _ ->
-            [write, exclusive]
-    end,
     FilePath = filename:join(Dir, Name),
-    case file:open(FilePath, OpenModes) of
-        {ok, IoDev} ->
-            catch file:close(IoDev),
+    <<"/", FilePath4S3/binary>> = FilePath, 
+    case leo_gateway_rpc_handler:put(FilePath4S3, <<>>) of
+        ok ->
             {reply, 
                 {'NFS3_OK',
                 {
@@ -570,7 +547,8 @@ nfsproc3_remove_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
         false -> void
     end,
     FilePath = filename:join(Dir, Name),
-    case file:delete(FilePath) of
+    <<"/", FilePath4S3/binary>> = FilePath, 
+    case leo_gateway_rpc_handler:delete(FilePath4S3) of
         ok ->
             {reply, 
                 {'NFS3_OK',
