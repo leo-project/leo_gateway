@@ -1,4 +1,6 @@
 -module(leo_gateway_nfs_proto3_server).
+-include("leo_gateway.hrl").
+-include("leo_http.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
@@ -162,6 +164,55 @@ readdir_create_resp(_Path, [#?METADATA{key = Key} = Meta|Rest], Resp) ->
                        Resp
                       },
             readdir_create_resp(_Path, Rest, NewResp)
+    end.
+
+rename(SrcKey, DstKey) ->
+    case leo_gateway_rpc_handler:get(SrcKey) of
+        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
+            rename_1(DstKey, Meta, RespObject);
+        {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
+            rename_large_object_1(DstKey, Meta);
+        Error ->
+            Error %% {error, not_found} | {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
+    end.
+rename_1(Key, Meta, Bin) ->
+    Size = size(Bin),
+    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
+        {ok, _ETag} ->
+            rename_2(Meta);
+        Error ->
+            Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
+    end.
+rename_2(Meta) ->
+    case leo_gateway_rpc_handler:delete(Meta#?METADATA.key) of
+        ok ->
+            ok;
+        {error, not_found} ->
+            ok;
+        Error ->
+            Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
+    end.
+rename_large_object_1(Key, Meta) ->
+    % Params to be applied with configurations about large object
+    LargeObjectProp   = ?env_large_object_properties(),
+    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
+                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    Params = #req_params{chunked_obj_len = ChunkedObjLen},
+    case leo_gateway_http_commons:move_large_object(Meta, Key, Params) of
+        ok ->
+            rename_large_object_2(Meta);
+        Error ->
+            Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
+    end.
+rename_large_object_2(Meta) ->
+    case leo_gateway_large_object_handler:delete_chunked_objects(
+           Meta#?METADATA.key, Meta#?METADATA.cnumber) of
+        ok ->
+            ok;
+        {error, not_found} ->
+            ok;
+        Error ->
+            Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
     end.
 
 -define(UNIX_TIME_BASE, 62167219200).
@@ -619,10 +670,20 @@ nfsproc3_rename_3({{{SrcDir}, SrcName}, {{DstDir}, DstName}} =_1, Clnt, #state{d
     end,
     Src = filename:join(SrcDir, SrcName),
     Dst = filename:join(DstDir, DstName),
-    case file:rename(Src, Dst) of
+    <<"/", Src4S3/binary>> = Src,
+    <<"/", Dst4S3/binary>> = Dst,
+    case rename(Src4S3, Dst4S3) of
         ok ->
             {reply, 
                 {'NFS3_OK',
+                {
+                    ?SIMPLENFS_WCC_EMPTY, %% src
+                    ?SIMPLENFS_WCC_EMPTY  %% dst
+                }}, 
+                State};
+        {error, not_found} ->
+            {reply, 
+                {'NFS3ERR_NOENT',
                 {
                     ?SIMPLENFS_WCC_EMPTY, %% src
                     ?SIMPLENFS_WCC_EMPTY  %% dst
