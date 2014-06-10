@@ -84,17 +84,28 @@ is_file(Path) ->
             false
     end.
 
-% Having child entries? 
-is_dir(Path) ->
+get_dir_entries(Path) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
-    case leo_gateway_rpc_handler:invoke(Redundancies,
-                                        leo_storage_handler_directory,
-                                        find_by_parent_dir,
-                                        [Path, <<"/">>, <<>>, 100],
-                                        []) of
+    leo_gateway_rpc_handler:invoke(Redundancies,
+                                   leo_storage_handler_directory,
+                                   find_by_parent_dir,
+                                   [Path, <<"/">>, <<>>, 100],
+                                   []).
+
+is_dir(Path) ->
+    case get_dir_entries(Path) of
         {ok, Meta} when is_list(Meta) =:= true andalso length(Meta) > 0 ->
             true;
+        _Error ->
+            false 
+    end.
+
+is_empty_dir(Path) ->
+    case get_dir_entries(Path) of
+        {ok, MetaList} when is_list(MetaList) ->
+            FilteredList = [Meta || Meta <- MetaList, filename:basename(Meta#?METADATA.key) =/= ?NFS_DUMMY_FILE4S3DIR],
+            length(FilteredList) =:= 0;
         _Error ->
             false 
     end.
@@ -580,24 +591,27 @@ nfsproc3_rmdir_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
         false -> void
     end,
     DirPath = filename:join(Dir, Name),
-    case file:del_dir(DirPath) of
-        ok ->
+    <<"/", Path4S3/binary>> = DirPath,
+    Path4S3Dir = path2dir(Path4S3),
+    case is_empty_dir(Path4S3Dir) of
+        true ->
+            DummyFile4S3Dir = filename:join(Path4S3Dir, ?NFS_DUMMY_FILE4S3DIR),
+            catch leo_gateway_rpc_handler:delete(DummyFile4S3Dir),
             {reply, 
                 {'NFS3_OK',
                 {
                     ?SIMPLENFS_WCC_EMPTY
                 }}, 
                 State};
-        {error, Reason} ->
-            io:format(user, "[rmdir]reason:~p~n",[Reason]),
+        false ->
             {reply, 
-                {'NFS3ERR_IO',
+                {'NFS3ERR_NOTEMPTY',
                 {
                     ?SIMPLENFS_WCC_EMPTY
                 }}, 
                 State}
     end.
- 
+     
 nfsproc3_rename_3({{{SrcDir}, SrcName}, {{DstDir}, DstName}} =_1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[rename]args:~p client:~p~n",[_1, Clnt]);
