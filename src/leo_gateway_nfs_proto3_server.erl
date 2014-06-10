@@ -210,6 +210,7 @@ rename_large_object_2(Meta) ->
     case leo_gateway_large_object_handler:delete_chunked_objects(
            Meta#?METADATA.key, Meta#?METADATA.cnumber) of
         ok ->
+            catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
             ok;
         {error, not_found} ->
             ok;
