@@ -361,6 +361,7 @@ put_large_object_3(Req, Meta) ->
     case leo_gateway_large_object_handler:delete_chunked_objects(
            Meta#?METADATA.key, Meta#?METADATA.cnumber) of
         ok ->
+            catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
