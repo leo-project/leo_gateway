@@ -217,7 +217,7 @@ meta2fattr3(Meta) ->
      {UT, 0}}.% last change
 
 % @todo
-s3dir2fattr3() ->
+s3dir2fattr3(Dir) ->
     Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
     UT = gs2unix_time(Now),
     {'NF3DIR',
@@ -229,7 +229,7 @@ s3dir2fattr3() ->
      4096,  % @todo actual size used at disk(LeoFS should return `body + metadata + header/footer`)
      {0, 0}, % data used for special file(in Linux first is major, second is minor number)
      0, % fsid
-     0, % @todo Unique ID to be specifed fieldid 
+     inode(Dir), % @todo Unique ID to be specifed fieldid 
      {UT, 0}, % last access
      {UT, 0}, % last modification
      {UT, 0}}.% last change
@@ -245,7 +245,7 @@ bucket2fattr3(Bucket) ->
      4096,  % @todo actual size used at disk
      {0, 0}, % data used for special file(in Linux first is major, second is minor number)
      0, % fsid
-     0, % @todo Unique ID to be specifed fieldid 
+     inode(Bucket), % @todo Unique ID to be specifed fieldid 
      {UT, 0}, % last access
      {UT, 0}, % last modification
      {UT, 0}}.% last change
@@ -294,7 +294,7 @@ nfsproc3_getattr_3({{<<$/, Path/binary>>}}, Clnt, #state{debug = Debug} = State)
                             {'NFS3_OK',
                             {
                               % fattr
-                              s3dir2fattr3()
+                              s3dir2fattr3(Path4S3Dir)
                             }}, 
                             State};
                         false ->
