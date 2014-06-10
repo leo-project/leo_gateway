@@ -42,6 +42,8 @@
     }
 ).
 -define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
+-undef(DEF_SEPARATOR).
+-define(DEF_SEPARATOR, <<"\n">>).
 
 init(_Args) ->
     Debug = case application:get_env(rpc_server, debug) of
@@ -213,6 +215,87 @@ rename_large_object_2(Meta) ->
             ok;
         Error ->
             Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
+    end.
+
+get_range(Key, Start, End) ->
+    case leo_gateway_rpc_handler:head(Key) of
+        {ok, #?METADATA{del = 0, cnumber = 0} = _Meta} ->
+            get_range_small(Key, Start, End);
+        {ok, #?METADATA{del = 0, cnumber = N, dsize = ObjectSize, csize = CS} = Meta} ->
+            {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
+            {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
+            {ok, _Pos, Bin} = get_range_large(Key, NewStartPos, NewEndPos, N, Index, CurPos, <<>>),
+            {ok, Meta, Bin};
+        Error ->
+            Error
+    end.
+get_range_small(Key, Start, End) ->
+    case leo_gateway_rpc_handler:get(Key, Start, End) of
+        {ok, Meta, Bin} ->
+            {ok, Meta, Bin};
+        {error, Cause} ->
+            {error, Cause}
+    end.
+move_curpos2head(Start, ChunkedSize, CurPos, Idx) when (CurPos + ChunkedSize - 1) < Start ->
+    move_curpos2head(Start, ChunkedSize, CurPos + ChunkedSize, Idx + 1);
+move_curpos2head(_Start, _ChunkedSize, CurPos, Idx) ->
+    {CurPos, Idx}.
+calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
+    NewStartPos = ObjectSize + EndPos,
+    NewEndPos   = ObjectSize - 1,
+    {NewStartPos, NewEndPos};
+calc_pos(StartPos, 0, ObjectSize) ->
+    {StartPos, ObjectSize - 1};
+calc_pos(StartPos, EndPos, _ObjectSize) ->
+    {StartPos, EndPos}.
+get_range_large(_Key,_Start,_End, Total, Total, CurPos, Acc) ->
+    {ok, CurPos, Acc};
+get_range_large(_Key,_Start, End,_Total,_Index, CurPos, Acc) when CurPos > End ->
+    {ok, CurPos, Acc};
+get_range_large(Key, Start, End, Total, Index, CurPos, Acc) ->
+    IndexBin = list_to_binary(integer_to_list(Index + 1)),
+    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:head(Key2) of
+        {ok, #?METADATA{cnumber = 0, dsize = CS}} ->
+            {NewPos, Bin} = get_chunk(Key2, Start, End, CurPos, CS),
+            get_range_large(Key, Start, End, Total, Index + 1, NewPos, <<Acc/binary, Bin/binary>>);
+        {ok, #?METADATA{cnumber = GrandChildNum}} ->
+            case get_range_large(Key2, Start, End, GrandChildNum, 0, CurPos, Acc) of
+                {ok, NewPos, NewAcc} ->
+                    get_range_large(Key, Start, End, Total, Index + 1, NewPos, NewAcc);
+                {error, Cause} ->
+                    {error, Cause}
+            end;
+        {error, Cause} ->
+            {error, Cause}
+    end.
+get_chunk(_Key, Start, _End, CurPos, ChunkSize) when (CurPos + ChunkSize - 1) < Start ->
+    %% skip proc
+    {CurPos + ChunkSize, <<>>};
+get_chunk(Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
+                                                                  (CurPos + ChunkSize - 1) =< End ->
+    %% whole get
+    case leo_gateway_rpc_handler:get(Key) of
+        {ok, _Meta, Bin} ->
+            {CurPos + ChunkSize, Bin};
+        Error ->
+            Error
+    end;
+get_chunk(Key, Start, End, CurPos, ChunkSize) ->
+    %% partial get
+    StartPos = case Start =< CurPos of
+                   true -> 0;
+                   false -> Start - CurPos
+               end,
+    EndPos = case (CurPos + ChunkSize - 1) =< End of
+                 true -> ChunkSize - 1;
+                 false -> End - CurPos
+             end,
+    case leo_gateway_rpc_handler:get(Key, StartPos, EndPos) of
+        {ok, _Meta, Bin} ->
+            {CurPos + ChunkSize, Bin};
+        {error, Cause} ->
+            {error, Cause}
     end.
 
 -define(UNIX_TIME_BASE, 62167219200).
@@ -463,7 +546,7 @@ nfsproc3_read_3({{<<"/", Path/binary>>}, Offset, Count} =_1, Clnt, #state{debug 
         true -> io:format(user, "[read]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    case leo_gateway_rpc_handler:get(Path, Offset, Offset + Count - 1) of
+    case get_range(Path, Offset, Offset + Count - 1) of
         {ok, Meta, Body} ->
             EOF = Meta#?METADATA.dsize =:= (Offset + Count),
             {reply, 
