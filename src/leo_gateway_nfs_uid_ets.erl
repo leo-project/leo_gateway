@@ -5,7 +5,7 @@
 -define(UID_ETS_TBL, uid_ets_tbl).
 
 init(_Params) ->
-    ets:new(?UID_ETS_TBL, [set, named_table]),
+    catch ets:new(?UID_ETS_TBL, [set, named_table, public]),
     ok.
 
 new(Path4S3) ->

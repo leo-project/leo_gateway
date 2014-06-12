@@ -46,6 +46,8 @@
 -define(DEF_SEPARATOR, <<"\n">>).
 
 init(_Args) ->
+    %% Initialize at mount server process
+    %%leo_gateway_nfs_uid_ets:init(_Args),
     Debug = case application:get_env(rpc_server, debug) of
         undefined ->
             false;
@@ -155,14 +157,14 @@ readdir_create_resp(_Path, [#?METADATA{key = Key} = Meta|Rest], Resp) ->
         ?NFS_DUMMY_FILE4S3DIR ->
             readdir_create_resp(_Path, Rest, Resp);
         _ ->
-            FilePath = <<"/", Key/binary>>,
-            NewResp = {inode(FilePath), % @todo to be specified unique id
+            {ok, UID} = leo_gateway_nfs_uid_ets:new(Key),
+            NewResp = {inode(UID),
                        FileName,
                        0,
                        {true, %% post_op_attr
                            meta2fattr3(Meta)
                        },
-                       {true, {FilePath}}, %% post_op_fh3
+                       {true, {UID}}, %% post_op_fh3
                        Resp
                       },
             readdir_create_resp(_Path, Rest, NewResp)
@@ -391,7 +393,7 @@ bucket2fattr3(Bucket) ->
      4096,  % @todo actual size used at disk
      {0, 0}, % data used for special file(in Linux first is major, second is minor number)
      0, % fsid
-     inode(Bucket), % @todo Unique ID to be specifed fieldid 
+     inode(Bucket#?BUCKET.name), % @todo Unique ID to be specifed fieldid 
      {UT, 0}, % last access
      {UT, 0}, % last modification
      {UT, 0}}.% last change
@@ -414,11 +416,13 @@ binary_is_contained(<<_Other:8, Rest/binary>>, Char) ->
 nfsproc3_null_3(_Clnt, State) ->
     {reply, [], State}.
  
-nfsproc3_getattr_3({{<<$/, Path/binary>>}}, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_getattr_3({{UID}}, Clnt, #state{debug = Debug} = State) ->
     case Debug of
-        true -> io:format(user, "[getattr]args:~p client:~p~n",[Path, Clnt]);
+        true -> io:format(user, "[getattr]args:~p client:~p~n",[UID, Clnt]);
         false -> void
     end,
+    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
+    io:format(user, "[debug]path:~p~n",[Path]),
     case binary_is_contained(Path, $/) of
         %% object
         true ->
@@ -454,6 +458,7 @@ nfsproc3_getattr_3({{<<$/, Path/binary>>}}, Clnt, #state{debug = Debug} = State)
             case leo_s3_bucket:find_bucket_by_name(Path) of
                 {ok, Bucket} ->
                     Attr = bucket2fattr3(Bucket),
+    io:format(user, "[debug]bucket:~p attr:~p~n",[Bucket, Attr]),
                     {reply, 
                     {'NFS3_OK',
                     {
@@ -487,22 +492,24 @@ nfsproc3_setattr_3({{_Path},
         }}, 
         State}.
          
-nfsproc3_lookup_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[lookup]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    Path4FS = filename:join(Dir, Name),
-    %% leading '/' must be trimed
-    <<"/", Path4S3/binary>> = Path4FS,
+    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    Path4S3 = filename:join(Dir, Name),
     %% A path for directory must be trailing with '/'
     Path4S3Dir = path2dir(Path4S3),
+    io:format(user, "[lookup]path:~p~n",[Path4S3Dir]),
     case is_file(Path4S3) orelse is_dir(Path4S3Dir) of
         true ->
+            {ok, FileUID} = leo_gateway_nfs_uid_ets:new(Path4S3),
+    io:format(user, "[lookup]new uid:~p path:~p~n",[FileUID, Path4S3]),
             {reply, 
                 {'NFS3_OK',
                 {
-                    {Path4FS}, %% pre_op_attr
+                    {FileUID}, %% nfs_fh3
                     {false, void}, %% post_op_attr for obj
                     {false, void}  %% post_op_attr for dir
                 }}, 
@@ -542,11 +549,12 @@ nfsproc3_readlink_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_read_3({{<<"/", Path/binary>>}, Offset, Count} =_1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[read]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
+    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     case get_range(Path, Offset, Offset + Count - 1) of
         {ok, Meta, Body} ->
             EOF = Meta#?METADATA.dsize =:= (Offset + Count),
@@ -569,11 +577,12 @@ nfsproc3_read_3({{<<"/", Path/binary>>}, Offset, Count} =_1, Clnt, #state{debug 
                 State} 
     end.
  
-nfsproc3_write_3({{Path}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[write]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
+    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     case file:open(Path, [read, write, binary, raw]) of
         {ok, IoDev} ->
             try
@@ -611,19 +620,20 @@ nfsproc3_write_3({{Path}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{de
     end.
     
  
-nfsproc3_create_3({{{Dir}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[create]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    FilePath = filename:join(Dir, Name),
-    <<"/", FilePath4S3/binary>> = FilePath, 
+    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    FilePath4S3 = filename:join(Dir, Name),
     case leo_gateway_rpc_handler:put(FilePath4S3, <<>>) of
         {ok, _}->
+            {ok, FileUID} = leo_gateway_nfs_uid_ets:new(FilePath4S3),
             {reply, 
                 {'NFS3_OK',
                 {
-                    {true, {FilePath}}, %% post_op file handle
+                    {true, {FileUID}}, %% post_op file handle
                     {false, void},      %% post_op_attr
                     ?SIMPLENFS_WCC_EMPTY
                 }}, 
@@ -638,12 +648,13 @@ nfsproc3_create_3({{{Dir}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug 
                 State}
     end.
  
-nfsproc3_mkdir_3({{{Dir}, Name}, _How} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[mkdir]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    <<"/", DirPath/binary>> = filename:join(Dir, Name),
+    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    DirPath = filename:join(Dir, Name),
     DummyFile4S3Dir = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
     case leo_gateway_rpc_handler:put(DummyFile4S3Dir, <<>>) of
         {ok, _}->
@@ -695,13 +706,13 @@ nfsproc3_mknod_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_remove_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[remove]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    FilePath = filename:join(Dir, Name),
-    <<"/", FilePath4S3/binary>> = FilePath, 
+    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    FilePath4S3 = filename:join(Dir, Name),
     case leo_gateway_rpc_handler:delete(FilePath4S3) of
         ok ->
             {reply, 
@@ -720,13 +731,13 @@ nfsproc3_remove_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
                 State}
     end.
          
-nfsproc3_rmdir_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[rmdir]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    DirPath = filename:join(Dir, Name),
-    <<"/", Path4S3/binary>> = DirPath,
+    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    Path4S3 = filename:join(Dir, Name),
     Path4S3Dir = path2dir(Path4S3),
     case is_empty_dir(Path4S3Dir) of
         true ->
@@ -747,15 +758,15 @@ nfsproc3_rmdir_3({{{Dir}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
                 State}
     end.
      
-nfsproc3_rename_3({{{SrcDir}, SrcName}, {{DstDir}, DstName}} =_1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[rename]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
-    Src = filename:join(SrcDir, SrcName),
-    Dst = filename:join(DstDir, DstName),
-    <<"/", Src4S3/binary>> = Src,
-    <<"/", Dst4S3/binary>> = Dst,
+    {ok, SrcDir} = leo_gateway_nfs_uid_ets:get(SrcUID),
+    {ok, DstDir} = leo_gateway_nfs_uid_ets:get(DstUID),
+    Src4S3 = filename:join(SrcDir, SrcName),
+    Dst4S3 = filename:join(DstDir, DstName),
     case rename(Src4S3, Dst4S3) of
         ok ->
             {reply, 
@@ -814,11 +825,12 @@ nfsproc3_readdir_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_readdirplus_3({{<<"/", Path/binary>>}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, #state{debug = Debug} = State) ->
+nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
         true -> io:format(user, "[readdirplus]args:~p client:~p~n",[_1, Clnt]);
         false -> void
     end,
+    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     Path4S3Dir = path2dir(Path),
     {ok, NewCookieVerf, ReadDir, EOF} = readdir_get_entry(CookieVerf, Path4S3Dir),
     case ReadDir of
