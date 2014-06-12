@@ -242,16 +242,43 @@ put_range(Key, Start, End, Data) ->
     end.
 put_range_small2large(_Key, _Start, _End, _Data, _SrcMeta, _SrcObj) ->
     ok.
-put_range_small2small(_Key, _Start, _End, _Data, _SrcMeta, _SrcObj) ->
-    ok.
+put_range_small2small(Key, Start, End, Data, SrcMeta, SrcObj) ->
+    % result to be merged with existing data blocks
+    Data2 = case Start > SrcMeta#?METADATA.dsize of
+        true ->
+            <<SrcObj/binary, 0:(8*(Start - SrcMeta#?METADATA.dsize)), Data/binary>>;
+        false ->
+            case (End + 1) < SrcMeta#?METADATA.dsize of
+                true ->
+                    <<Head:Start/binary, _/binary>> = SrcObj,
+                    <<_:End/binary, Tail/binary>> = SrcObj,
+                    <<Head/binary, Data/binary, Tail/binary>>;
+                false ->
+                    <<Head:Start/binary, _/binary>> = SrcObj,
+                    <<Head/binary, Data/binary>>
+            end
+    end,
+    case leo_gateway_rpc_handler:put(Key, Data2) of
+        {ok, _} ->
+            ok;
+        Error ->
+            Error
+    end.
 put_range_large2large(_Key, _Start, _End, _Data, _SrcMeta) ->
     ok.
 put_range_large2small(_Key, _Start, _End, _Data, _SrcMeta) ->
     ok.
 put_range_nothing2large(_Key, _Start, _End, _Data) ->
     ok.
-put_range_nothing2small(_Key, _Start, _End, _Data) ->
-    ok.
+put_range_nothing2small(Key, Start, _End, Data) ->
+    % zero pdding to be added until the position reached Start
+    Data2 = <<0:(Start*8), Data/binary>>,
+    case leo_gateway_rpc_handler:put(Key, Data2) of
+        {ok, _} ->
+            ok;
+        Error ->
+            Error
+    end.
 
 %% functions for read operation
 get_range(Key, Start, End) ->
