@@ -149,7 +149,6 @@ readdir_del_entry(CookieVerf) ->
 readdir_create_resp(Path, Meta) ->
     readdir_create_resp(Path, Meta, void).
 readdir_create_resp(_Path, [], Resp) ->
-    io:format(user, "[readdir_create_resp]resp:~p~n",[Resp]),
     Resp;
 readdir_create_resp(_Path, [#?METADATA{key = Key} = Meta|Rest], Resp) ->
     FileName = filename:basename(Key),
@@ -219,7 +218,42 @@ rename_large_object_2(Meta) ->
         Error ->
             Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
     end.
+%% functions for write operation
+put_range(Key, Start, End, Data) ->
+    LargeObjectProp   = ?env_large_object_properties(),
+    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
+                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    IsLarge = (End + 1) > ChunkedObjLen,
+    case leo_gateway_rpc_handler:get(Key) of
+        {ok, #?METADATA{cnumber = 0} = SrcMeta, SrcObj} when IsLarge =:= true ->
+            put_range_small2large(Key, Start, End, Data, SrcMeta, SrcObj);
+        {ok, #?METADATA{cnumber = 0} = SrcMeta, SrcObj} when IsLarge =:= false ->
+            put_range_small2small(Key, Start, End, Data, SrcMeta, SrcObj);
+        {ok, #?METADATA{cnumber = _CNum} = SrcMeta, _} when IsLarge =:= true ->
+            put_range_large2large(Key, Start, End, Data, SrcMeta);
+        {ok, #?METADATA{cnumber = _CNum} = SrcMeta, _} when IsLarge =:= false ->
+            put_range_large2small(Key, Start, End, Data, SrcMeta);
+        {error, not_found} when IsLarge =:= true ->
+            put_range_nothing2large(Key, Start, End, Data);
+        {error, not_found} when IsLarge =:= false ->
+            put_range_nothing2small(Key, Start, End, Data);
+        {error, Cause} ->
+            {error, Cause}
+    end.
+put_range_small2large(_Key, _Start, _End, _Data, _SrcMeta, _SrcObj) ->
+    ok.
+put_range_small2small(_Key, _Start, _End, _Data, _SrcMeta, _SrcObj) ->
+    ok.
+put_range_large2large(_Key, _Start, _End, _Data, _SrcMeta) ->
+    ok.
+put_range_large2small(_Key, _Start, _End, _Data, _SrcMeta) ->
+    ok.
+put_range_nothing2large(_Key, _Start, _End, _Data) ->
+    ok.
+put_range_nothing2small(_Key, _Start, _End, _Data) ->
+    ok.
 
+%% functions for read operation
 get_range(Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{del = 0, cnumber = 0} = _Meta} ->
@@ -422,7 +456,6 @@ nfsproc3_getattr_3({{UID}}, Clnt, #state{debug = Debug} = State) ->
         false -> void
     end,
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
-    io:format(user, "[debug]path:~p~n",[Path]),
     case binary_is_contained(Path, $/) of
         %% object
         true ->
@@ -458,7 +491,6 @@ nfsproc3_getattr_3({{UID}}, Clnt, #state{debug = Debug} = State) ->
             case leo_s3_bucket:find_bucket_by_name(Path) of
                 {ok, Bucket} ->
                     Attr = bucket2fattr3(Bucket),
-    io:format(user, "[debug]bucket:~p attr:~p~n",[Bucket, Attr]),
                     {reply, 
                     {'NFS3_OK',
                     {
@@ -501,11 +533,9 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
     Path4S3 = filename:join(Dir, Name),
     %% A path for directory must be trailing with '/'
     Path4S3Dir = path2dir(Path4S3),
-    io:format(user, "[lookup]path:~p~n",[Path4S3Dir]),
     case is_file(Path4S3) orelse is_dir(Path4S3Dir) of
         true ->
             {ok, FileUID} = leo_gateway_nfs_uid_ets:new(Path4S3),
-    io:format(user, "[lookup]new uid:~p path:~p~n",[FileUID, Path4S3]),
             {reply, 
                 {'NFS3_OK',
                 {
@@ -583,34 +613,19 @@ nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{deb
         false -> void
     end,
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
-    case file:open(Path, [read, write, binary, raw]) of
-        {ok, IoDev} ->
-            try
-                case file:pwrite(IoDev, Offset, Data) of
-                    ok ->
-                        {reply, 
-                            {'NFS3_OK',
-                            {
-                                ?SIMPLENFS_WCC_EMPTY,
-                                Count,
-                                'DATA_SYNC',
-                                State#state.write_verf
-                            }}, 
-                            State};
-                    {error, Reason} ->
-                        io:format(user, "[write]error file:~p reason:~p~n",[Path ,Reason]),
-                        {reply, 
-                            {'NFS3ERR_IO',
-                            {
-                                ?SIMPLENFS_WCC_EMPTY
-                            }}, 
-                            State}
-                end
-            after
-                file:close(IoDev)
-            end;
+    case put_range(Path, Offset, Offset + Count - 1, Data) of
+        ok ->
+            {reply, 
+                {'NFS3_OK',
+                {
+                    ?SIMPLENFS_WCC_EMPTY,
+                    Count,
+                    'DATA_SYNC',
+                    State#state.write_verf
+                }}, 
+                State};
         {error, Reason} ->
-            io:format(user, "[write]open error reason:~p~n",[Reason]),
+            io:format(user, "[write]error file:~p reason:~p~n",[Path ,Reason]),
             {reply, 
                 {'NFS3ERR_IO',
                 {
@@ -618,7 +633,6 @@ nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{deb
                 }}, 
                 State}
     end.
-    
  
 nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
