@@ -230,10 +230,8 @@ put_range(Key, Start, End, Data) ->
             put_range_small2large(Key, Start, End, Data, SrcMeta, SrcObj);
         {ok, #?METADATA{cnumber = 0} = SrcMeta, SrcObj} when IsLarge =:= false ->
             put_range_small2small(Key, Start, End, Data, SrcMeta, SrcObj);
-        {ok, #?METADATA{cnumber = _CNum} = SrcMeta, _} when IsLarge =:= true ->
-            put_range_large2large(Key, Start, End, Data, SrcMeta);
-        {ok, #?METADATA{cnumber = _CNum} = SrcMeta, _} when IsLarge =:= false ->
-            put_range_large2small(Key, Start, End, Data, SrcMeta);
+        {ok, #?METADATA{cnumber = _CNum} = SrcMeta, _} ->
+            put_range_large2any(Key, Start, End, Data, SrcMeta);
         {error, not_found} when IsLarge =:= true ->
             put_range_nothing2large(Key, Start, End, Data);
         {error, not_found} when IsLarge =:= false ->
@@ -241,7 +239,7 @@ put_range(Key, Start, End, Data) ->
         {error, Cause} ->
             {error, Cause}
     end.
-put_range_small2large(Key, Start, End, Data, SrcMeta, SrcObj) ->
+put_range_small2large(Key, Start, _End, Data, SrcMeta, SrcObj) ->
     % result to be merged with existing data blocks
     Data2 = case Start > SrcMeta#?METADATA.dsize of
         true ->
@@ -278,10 +276,39 @@ put_range_small2small(Key, Start, End, Data, SrcMeta, SrcObj) ->
         Error ->
             Error
     end.
-put_range_large2large(_Key, _Start, _End, _Data, _SrcMeta) ->
-    ok.
-put_range_large2small(_Key, _Start, _End, _Data, _SrcMeta) ->
-    ok.
+put_range_large2any(Key, Start, End, Data, SrcMeta) ->
+    LargeObjectProp   = ?env_large_object_properties(),
+    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len', 
+                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    IndexStart = Start div ChunkedObjLen + 1,
+    IndexEnd   = End div ChunkedObjLen + 1,
+    case IndexStart =:= IndexEnd of
+        true ->
+            Offset = Start rem ChunkedObjLen,
+            Size = End - Start + 1,
+            large_obj_partial_update(Key, Data, IndexStart, Offset, Size);
+        false ->
+            % head
+            HeadOffset = Start rem ChunkedObjLen,
+            HeadSize = ChunkedObjLen - HeadOffset,
+            <<HeadData:HeadSize/binary, Rest/binary>> = Data,
+            large_obj_partial_update(Key, HeadData, IndexStart, HeadOffset, HeadSize),
+            % middle
+            Rest3 = lists:foldl(
+                        fun(Index, <<MidData:ChunkedObjLen/binary, Rest2/binary>>) ->
+                            large_obj_partial_update(Key, MidData, Index),
+                            Rest2
+                        end,
+                        Rest, 
+                        lists:seq(IndexStart + 1, IndexEnd - 1)),
+            % tail
+            TailOffset = 0,
+            TailSize = End rem ChunkedObjLen + 1,
+            large_obj_partial_update(Key, Rest3, IndexEnd, TailOffset, TailSize)
+    end,
+    NumChunks = erlang:max(IndexEnd, SrcMeta#?METADATA.cnumber),
+    large_obj_partial_commit(Key, NumChunks, ChunkedObjLen).
+
 put_range_nothing2large(Key, Start, _End, Data) ->
     Data2 = <<0:(Start*8), Data/binary>>,
     case large_obj_update(Key, Data2) of
@@ -331,6 +358,67 @@ large_obj_commit(Handler, Key, Size, ChunkedObjLen) ->
             {error, ?ERROR_NOT_MATCH_LENGTH};
         {_, Cause} ->
             {error, Cause}
+    end.
+
+large_obj_partial_update(Key, Data, Index) ->
+    IndexBin = list_to_binary(integer_to_list(Index)),
+    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:put(Key2, Data, size(Data), Index) of
+        {ok, _ETag} ->
+            ok;
+        {error, Cause} ->
+            {error, Cause}
+    end.
+large_obj_partial_update(Key, Data, Index, Offset, Size) ->
+    IndexBin = list_to_binary(integer_to_list(Index)),
+    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:get(Key2) of
+        {ok, Meta, Bin} ->
+            Data2 = case Offset > Meta#?METADATA.dsize of
+                true ->
+                    <<Bin/binary, 0:(8*(Offset - Meta#?METADATA.dsize)), Data/binary>>;
+                false ->
+                    case (Offset + Size + 1) < Meta#?METADATA.dsize of
+                        true ->
+                            End = Offset + Size,
+                            <<Head:Offset/binary, _/binary>> = Bin,
+                            <<_:End/binary, Tail/binary>> = Bin,
+                            <<Head/binary, Data/binary, Tail/binary>>;
+                        false ->
+                            <<Head:Offset/binary, _/binary>> = Bin,
+                            <<Head/binary, Data/binary>>
+                    end
+            end,
+            case leo_gateway_rpc_handler:put(Key2, Data2, size(Data2), Index) of
+                {ok, _ETag} ->
+                    ok;
+                {error, Cause} ->
+                    {error, Cause}
+            end;
+        {error, Cause} ->
+            {error, Cause}
+    end.
+large_obj_partial_commit(Key, NumChunks, ChunkSize) ->
+    % update parent object metadata like size, chunk size, # of chunks, md5
+    large_obj_partial_commit(NumChunks, Key, NumChunks, ChunkSize, {0, crypto:hash_init(md5)}).
+large_obj_partial_commit(0, Key, NumChunks, ChunkSize, {TotalSize, MD5Context}) ->
+    Digest = crypto:hash_final(MD5Context),
+    IntDigest = leo_hex:raw_binary_to_integer(Digest),
+    case leo_gateway_rpc_handler:put(Key, <<>>, TotalSize, ChunkSize, NumChunks, IntDigest) of
+        {ok, _} ->
+            ok;
+        Error ->
+            Error
+    end;
+large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, {TotalSize, MD5Context}) ->
+    PartNumBin = list_to_binary(integer_to_list(PartNum)),
+    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, PartNumBin/binary >>,
+    case leo_gateway_rpc_handler:get(Key2) of
+        {ok, #?METADATA{dsize = Size}, Body} ->
+            NewMD5Context = crypto:hash_update(MD5Context, Body),
+            large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, {TotalSize + Size, NewMD5Context});
+        Error ->
+            Error
     end.
 
 %% functions for read operation
@@ -993,11 +1081,11 @@ nfsproc3_fsinfo_3(_1, Clnt, #state{debug = Debug} = State) ->
         {'NFS3_OK',
         {
             {false, void}, %% post_op_attr
-            131072, %% rtmax
-            131072, %% rtperf
+            524288, %% rtmax
+            524288, %% rtperf
             8,    %% rtmult
-            131072, %% wtmax
-            131072, %% wtperf
+            524288, %% wtmax
+            524288, %% wtperf
             8,    %% wtmult
             4096, %% dperf
             1024 * 1024 * 1024 * 4, %% max size of a file
