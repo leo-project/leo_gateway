@@ -218,6 +218,7 @@ rename_large_object_2(Meta) ->
         Error ->
             Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
     end.
+
 %% functions for write operation
 put_range(Key, Start, End, Data) ->
     LargeObjectProp   = ?env_large_object_properties(),
@@ -240,8 +241,21 @@ put_range(Key, Start, End, Data) ->
         {error, Cause} ->
             {error, Cause}
     end.
-put_range_small2large(_Key, _Start, _End, _Data, _SrcMeta, _SrcObj) ->
-    ok.
+put_range_small2large(Key, Start, End, Data, SrcMeta, SrcObj) ->
+    % result to be merged with existing data blocks
+    Data2 = case Start > SrcMeta#?METADATA.dsize of
+        true ->
+            <<SrcObj/binary, 0:(8*(Start - SrcMeta#?METADATA.dsize)), Data/binary>>;
+        false ->
+            <<Head:Start/binary, _/binary>> = SrcObj,
+            <<Head/binary, Data/binary>>
+    end,
+    case large_obj_update(Key, Data2) of
+        ok ->
+            ok;
+        Error ->
+            Error
+    end.
 put_range_small2small(Key, Start, End, Data, SrcMeta, SrcObj) ->
     % result to be merged with existing data blocks
     Data2 = case Start > SrcMeta#?METADATA.dsize of
@@ -268,8 +282,14 @@ put_range_large2large(_Key, _Start, _End, _Data, _SrcMeta) ->
     ok.
 put_range_large2small(_Key, _Start, _End, _Data, _SrcMeta) ->
     ok.
-put_range_nothing2large(_Key, _Start, _End, _Data) ->
-    ok.
+put_range_nothing2large(Key, Start, _End, Data) ->
+    Data2 = <<0:(Start*8), Data/binary>>,
+    case large_obj_update(Key, Data2) of
+        ok ->
+            ok;
+        Error ->
+            Error
+    end.
 put_range_nothing2small(Key, Start, _End, Data) ->
     % zero pdding to be added until the position reached Start
     Data2 = <<0:(Start*8), Data/binary>>,
@@ -278,6 +298,39 @@ put_range_nothing2small(Key, Start, _End, Data) ->
             ok;
         Error ->
             Error
+    end.
+
+%% functions for handling a large object
+large_obj_update(Key, Data) ->
+    LargeObjectProp   = ?env_large_object_properties(),
+    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len', 
+                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    {ok, Handler} = leo_gateway_large_object_handler:start_link(Key, ChunkedObjLen),
+    case catch leo_gateway_large_object_handler:put(Handler, Data) of
+        ok ->
+            large_obj_commit(Handler, Key, size(Data), ChunkedObjLen);
+        {_, Cause} ->
+            ok = leo_gateway_large_object_handler:rollback(Handler),
+            {error, Cause}
+    end.
+
+large_obj_commit(Handler, Key, Size, ChunkedObjLen) ->
+    case catch leo_gateway_large_object_handler:result(Handler) of
+        {ok, #large_obj_info{length = TotalSize,
+                             num_of_chunks = TotalChunks,
+                             md5_context   = Digest}} when Size == TotalSize ->
+            Digest_1 = leo_hex:raw_binary_to_integer(Digest),
+            case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
+                                             ChunkedObjLen, TotalChunks, Digest_1) of
+                {ok, _ETag} ->
+                    ok;
+                {error, Cause} ->
+                    {error, Cause}
+            end;
+        {ok, _} ->
+            {error, ?ERROR_NOT_MATCH_LENGTH};
+        {_, Cause} ->
+            {error, Cause}
     end.
 
 %% functions for read operation
@@ -636,7 +689,7 @@ nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, #state{debug = Debug} = State)
  
 nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{debug = Debug} = State) ->
     case Debug of
-        true -> io:format(user, "[write]args:~p client:~p~n",[_1, Clnt]);
+        true -> io:format(user, "[write]uid:~p offset:~p count:~p client:~p~n",[UID, Offset, Count, Clnt]);
         false -> void
     end,
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
