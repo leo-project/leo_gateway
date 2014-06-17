@@ -118,13 +118,14 @@ readdir_get_entry(CookieVerf, Path) ->
                                         find_by_parent_dir,
                                         [Path, <<"/">>, Marker, 100],
                                         []) of
-        {ok, Meta} when is_list(Meta) =:= true ->
+        {ok, []} ->
+            {ok, CookieVerf, [], true};
+        {ok, Meta} when is_list(Meta) ->
             Last = lists:last(Meta),
             application:set_env(?MODULE, CookieVerf, Last#?METADATA.key),
             EOF = length(Meta) =/= 100, % @todo need to detect EOF correctly
             {ok, CookieVerf, Meta, EOF};
         _Error ->
-            %% @TODO error handling
             {ok, <<>>, [], true} 
     end.
 
