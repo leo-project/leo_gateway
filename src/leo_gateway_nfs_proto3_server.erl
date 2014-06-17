@@ -395,28 +395,34 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
                 {error, Cause} ->
                     {error, Cause}
             end;
+        {error, not_found} ->
+            Data2 = <<0:(Offset*8), Data/binary>>,
+            case leo_gateway_rpc_handler:put(Key2, Data2, size(Data2), Index) of
+                {ok, _ETag} ->
+                    ok;
+                {error, Cause} ->
+                    {error, Cause}
+            end;
         {error, Cause} ->
             {error, Cause}
     end.
 large_obj_partial_commit(Key, NumChunks, ChunkSize) ->
-    % update parent object metadata like size, chunk size, # of chunks, md5
-    large_obj_partial_commit(NumChunks, Key, NumChunks, ChunkSize, {0, crypto:hash_init(md5)}).
-large_obj_partial_commit(0, Key, NumChunks, ChunkSize, {TotalSize, MD5Context}) ->
-    Digest = crypto:hash_final(MD5Context),
-    IntDigest = leo_hex:raw_binary_to_integer(Digest),
-    case leo_gateway_rpc_handler:put(Key, <<>>, TotalSize, ChunkSize, NumChunks, IntDigest) of
+    % update parent object metadata like size, chunk size, # of chunks
+    % @todo for now MD5 will be updated as `0` to avoid a performance degradation
+    large_obj_partial_commit(NumChunks, Key, NumChunks, ChunkSize, 0).
+large_obj_partial_commit(0, Key, NumChunks, ChunkSize, TotalSize) ->
+    case leo_gateway_rpc_handler:put(Key, <<>>, TotalSize, ChunkSize, NumChunks, 0) of
         {ok, _} ->
             ok;
         Error ->
             Error
     end;
-large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, {TotalSize, MD5Context}) ->
+large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
     PartNumBin = list_to_binary(integer_to_list(PartNum)),
     Key2 = << Key/binary, ?DEF_SEPARATOR/binary, PartNumBin/binary >>,
-    case leo_gateway_rpc_handler:get(Key2) of
-        {ok, #?METADATA{dsize = Size}, Body} ->
-            NewMD5Context = crypto:hash_update(MD5Context, Body),
-            large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, {TotalSize + Size, NewMD5Context});
+    case leo_gateway_rpc_handler:head(Key2) of
+        {ok, #?METADATA{dsize = Size}} ->
+            large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, TotalSize + Size);
         Error ->
             Error
     end.
