@@ -525,7 +525,7 @@ sattr_mtime2file_info({'DONT_CHANGE', _}) -> undefined;
 sattr_mtime2file_info({'SET_TO_SERVER_TIME', _}) -> unix_time();
 sattr_mtime2file_info({_, {MTime, _}})         -> MTime.
 
-meta2fattr3(#?METADATA{dsize = -1}) ->
+meta2fattr3(#?METADATA{dsize = -1, key = Key}) ->
     Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
     UT = gs2unix_time(Now),
     {'NF3DIR',
@@ -537,22 +537,22 @@ meta2fattr3(#?METADATA{dsize = -1}) ->
      4096,  % @todo actual size used at disk(LeoFS should return `body + metadata + header/footer`)
      {0, 0}, % data used for special file(in Linux first is major, second is minor number)
      0, % fsid
-     0, % @todo Unique ID to be specifed fieldid 
+     inode(Key),
      {UT, 0}, % last access
      {UT, 0}, % last modification
      {UT, 0}};% last change
-meta2fattr3(Meta) ->
-    UT = gs2unix_time(Meta#?METADATA.timestamp),
+meta2fattr3(#?METADATA{key = Key, timestamp = TS, dsize = Size}) ->
+    UT = gs2unix_time(TS),
     {'NF3REG',
      8#00666,  % @todo determin based on ACL? protection mode bits
      0,   % # of hard links
      0,   % @todo determin base on ACL? uid
      0,   % @todo gid
-     Meta#?METADATA.dsize,  % file size
-     Meta#?METADATA.dsize,  % @todo actual size used at disk(LeoFS should return `body + metadata + header/footer`)
+     Size,  % file size
+     Size,  % @todo actual size used at disk(LeoFS should return `body + metadata + header/footer`)
      {0, 0}, % data used for special file(in Linux first is major, second is minor number)
      0, % fsid
-     0, % @todo Unique ID to be specifed fieldid 
+     inode(Key), % @todo Unique ID to be specifed fieldid 
      {UT, 0}, % last access
      {UT, 0}, % last modification
      {UT, 0}}.% last change
