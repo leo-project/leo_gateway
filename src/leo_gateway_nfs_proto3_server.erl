@@ -4,6 +4,7 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
+-include_lib("leo_logger/include/leo_logger.hrl").
 -include("leo_gateway_nfs_proto3.hrl").
 -include_lib("kernel/include/file.hrl").
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -31,7 +32,6 @@
          nfsproc3_fsinfo_3/3]).
 
 -record(state, {
-    debug      :: boolean(),
     write_verf :: binary() %% to be consistent during a single boot session
 }).
 
@@ -46,37 +46,19 @@
 -define(DEF_SEPARATOR, <<"\n">>).
 
 init(_Args) ->
-    %% Initialize at mount server process
-    %%leo_gateway_nfs_uid_ets:init(_Args),
-    Debug = case application:get_env(rpc_server, debug) of
-        undefined ->
-            false;
-        {ok, Val} ->
-            Val
-    end,
-    State = #state{debug = Debug,
-                   write_verf = crypto:rand_bytes(8)},
+    State = #state{write_verf = crypto:rand_bytes(8)},
     {ok, State}.
  
-handle_call(Req, _From, #state{debug = Debug} = S) ->
-    case Debug of
-        true -> io:format(user, "[handle_call]req:~p from:~p~n",[Req, _From]);
-        false -> void
-    end,
+handle_call(Req, _From, S) ->
+    ?debug("handle_call", "req:~p from:~p", [Req, _From]),
     {reply, [], S}.
  
-handle_cast(Req, #state{debug = Debug} = S) ->
-    case Debug of
-        true -> io:format(user, "[handle_cast]req:~p~n",[Req]);
-        false -> void
-    end,
+handle_cast(Req, S) ->
+    ?debug("handle_cast", "req:~p", [Req]),
     {reply, [], S}.
  
-handle_info(Req, #state{debug = Debug} = S) ->
-    case Debug of
-        true -> io:format(user, "[handle_info]req:~p~n",[Req]);
-        false -> void
-    end,
+handle_info(Req, S) ->
+    ?debug("handle_info", "req:~p", [Req]),
     {noreply, S}.
  
 terminate(_Reason, _S) ->
@@ -84,8 +66,11 @@ terminate(_Reason, _S) ->
 
 is_file(Path) ->
     case leo_gateway_rpc_handler:head(Path) of
-        {ok, _} ->
+        {ok, #?METADATA{del = 0}} ->
             true;
+        {ok, _} ->
+            %% deleted(del = 1)
+            false;
         _ ->
             false
     end.
@@ -624,11 +609,8 @@ binary_is_contained(<<_Other:8, Rest/binary>>, Char) ->
 nfsproc3_null_3(_Clnt, State) ->
     {reply, [], State}.
  
-nfsproc3_getattr_3({{UID}}, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[getattr]args:~p client:~p~n",[UID, Clnt]);
-        false -> void
-    end,
+nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
+    ?debug("nfsproc3_getattr_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     case binary_is_contained(Path, $/) of
         %% object
@@ -686,11 +668,8 @@ nfsproc3_setattr_3({{_Path},
                      _,
                      _ATime,
                      _MTime
-                    },_Guard} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[setattr]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+                    },_Guard} = _1, Clnt, State) ->
+    ?debug("nfsproc3_setattr_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -698,11 +677,8 @@ nfsproc3_setattr_3({{_Path},
         }}, 
         State}.
          
-nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[lookup]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
+    ?debug("nfsproc3_lookup_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
     Path4S3 = filename:join(Dir, Name),
     %% A path for directory must be trailing with '/'
@@ -727,11 +703,8 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
                 State}
     end.
  
-nfsproc3_access_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[access]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_access_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_access_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -740,11 +713,8 @@ nfsproc3_access_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_readlink_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[readlink]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_readlink_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_readlink_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -753,11 +723,8 @@ nfsproc3_readlink_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[read]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
+    ?debug("nfsproc3_read_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     case get_range(Path, Offset, Offset + Count - 1) of
         {ok, Meta, Body} ->
@@ -781,11 +748,9 @@ nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, #state{debug = Debug} = State)
                 State} 
     end.
  
-nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[write]uid:~p offset:~p count:~p client:~p~n",[UID, Offset, Count, Clnt]);
-        false -> void
-    end,
+nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, State) ->
+    ?debug("nfsproc3_write_3", "uid:~p offset:~p count:~p client:~p", 
+           [UID, Offset, Count, Clnt]),
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     case put_range(Path, Offset, Offset + Count - 1, Data) of
         ok ->
@@ -808,11 +773,8 @@ nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, #state{deb
                 State}
     end.
  
-nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[create]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, State) ->
+    ?debug("nfsproc3_create_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
     FilePath4S3 = filename:join(Dir, Name),
     case leo_gateway_rpc_handler:put(FilePath4S3, <<>>) of
@@ -836,11 +798,8 @@ nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, #state{debug 
                 State}
     end.
  
-nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[mkdir]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, State) ->
+    ?debug("nfsproc3_mkdir_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
     DirPath = filename:join(Dir, Name),
     DummyFile4S3Dir = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
@@ -866,11 +825,8 @@ nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, #state{debug = Debug} = State
                 State}
     end.
  
-nfsproc3_symlink_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[symlink]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_symlink_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_symlink_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -880,11 +836,8 @@ nfsproc3_symlink_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_mknod_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[mknod]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_mknod_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_mknod_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -894,11 +847,8 @@ nfsproc3_mknod_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[remove]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, State) ->
+    ?debug("nfsproc3_remove_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
     FilePath4S3 = filename:join(Dir, Name),
     case leo_gateway_rpc_handler:delete(FilePath4S3) of
@@ -919,11 +869,8 @@ nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
                 State}
     end.
          
-nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[rmdir]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
+    ?debug("nfsproc3_rmdir_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
     Path4S3 = filename:join(Dir, Name),
     Path4S3Dir = path2dir(Path4S3),
@@ -946,11 +893,8 @@ nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, #state{debug = Debug} = State) ->
                 State}
     end.
      
-nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[rename]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) ->
+    ?debug("nfsproc3_rename_3", "args:~p client:~p", [_1, Clnt]),
     {ok, SrcDir} = leo_gateway_nfs_uid_ets:get(SrcUID),
     {ok, DstDir} = leo_gateway_nfs_uid_ets:get(DstUID),
     Src4S3 = filename:join(SrcDir, SrcName),
@@ -983,11 +927,8 @@ nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, #state{d
                 State}
     end.
  
-nfsproc3_link_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[link]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_link_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_link_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_NG',
         {
@@ -996,11 +937,8 @@ nfsproc3_link_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_readdir_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[readdir]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_readdir_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_readdir_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -1013,11 +951,8 @@ nfsproc3_readdir_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[readdirplus]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
+    ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     Path4S3Dir = path2dir(Path),
     {ok, NewCookieVerf, ReadDir, EOF} = readdir_get_entry(CookieVerf, Path4S3Dir),
@@ -1059,11 +994,8 @@ nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt
                 State}
     end.
 
-nfsproc3_fsstat_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[fsstat]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_fsstat_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_fsstat_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -1078,11 +1010,8 @@ nfsproc3_fsstat_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_fsinfo_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[fsinfo]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_fsinfo_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_fsinfo_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -1100,11 +1029,8 @@ nfsproc3_fsinfo_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_pathconf_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[pathconf]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_pathconf_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_pathconf_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
@@ -1118,11 +1044,8 @@ nfsproc3_pathconf_3(_1, Clnt, #state{debug = Debug} = State) ->
         }}, 
         State}.
  
-nfsproc3_commit_3(_1, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[commit]args:~p client:~p~n",[_1, Clnt]);
-        false -> void
-    end,
+nfsproc3_commit_3(_1, Clnt, State) ->
+    ?debug("nfsproc3_commit_3", "args:~p client:~p", [_1, Clnt]),
     {reply, 
         {'NFS3_OK',
         {
