@@ -1017,11 +1017,11 @@ nfsproc3_fsinfo_3(_1, Clnt, State) ->
         {'NFS3_OK',
         {
             {false, void}, %% post_op_attr
-            524288, %% rtmax
-            524288, %% rtperf
+            5242880, %% rtmax
+            5242880, %% rtperf
             8,    %% rtmult
-            524288, %% wtmax
-            524288, %% wtperf
+            5242880, %% wtmax
+            5242880, %% wtperf
             8,    %% wtmult
             4096, %% dperf
             1024 * 1024 * 1024 * 4, %% max size of a file
