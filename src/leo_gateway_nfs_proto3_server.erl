@@ -45,6 +45,10 @@
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
+% @doc
+% Called only once from a parent rpc server process to initialize this module
+% during starting a leo_storage server.
+-spec(init(any()) -> {ok, any()}).
 init(_Args) ->
     State = #state{write_verf = crypto:rand_bytes(8)},
     {ok, State}.
@@ -64,6 +68,9 @@ handle_info(Req, S) ->
 terminate(_Reason, _S) ->
     ok.
 
+% @doc
+% Returns true if Path refers to a file, and false otherwise.
+-spec(is_file(binary()) -> boolean()).
 is_file(Path) ->
     case leo_gateway_rpc_handler:head(Path) of
         {ok, #?METADATA{del = 0}} ->
@@ -75,6 +82,10 @@ is_file(Path) ->
             false
     end.
 
+% @doc
+% Lists file's metadatas stored in Path(directory)
+-spec(get_dir_entries(binary()) ->
+      {ok, list(#?METADATA{})}|{error, any()}).
 get_dir_entries(Path) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
@@ -84,6 +95,9 @@ get_dir_entries(Path) ->
                                    [Path, <<"/">>, <<>>, 100],
                                    []).
 
+% @doc
+% Returns true if Path refers to a directory, and false otherwise.
+-spec(is_dir(binary()) -> boolean()).
 is_dir(Path) ->
     case get_dir_entries(Path) of
         {ok, Meta} when is_list(Meta) =:= true andalso length(Meta) > 0 ->
@@ -92,6 +106,10 @@ is_dir(Path) ->
             false 
     end.
 
+% @doc
+% Returns true if Path refers to a directory which have child files, 
+% and false otherwise.
+-spec(is_empty_dir(binary()) -> boolean()).
 is_empty_dir(Path) ->
     case get_dir_entries(Path) of
         {ok, MetaList} when is_list(MetaList) ->
@@ -101,6 +119,12 @@ is_empty_dir(Path) ->
             false 
     end.
 
+% @doc
+% Returns list of file's metadatas stored under the Path.
+% if the number of files is larger than 100, returned list is partial
+% so to get all of files, you need to call this function repeatedly with a cookie verifier which returned at first function call
+-spec(readdir_get_entry(binary(), binary()) -> 
+      {ok, binary(), list(#?METADATA{}), boolean()}).
 readdir_get_entry(<<0,0,0,0,0,0,0,0>>, Path) ->
     <<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
     readdir_get_entry(CookieVerf, Path);
@@ -128,10 +152,16 @@ readdir_get_entry(CookieVerf, Path) ->
         _Error ->
             {ok, <<>>, [], true} 
     end.
-
+% @doc
+% Delete a cookies verifier which returned by readdir_get_entry
+-spec(readdir_del_entry(binary()) -> ok).
 readdir_del_entry(CookieVerf) ->
     application:set_env(?MODULE, CookieVerf, undefined).
 
+% @doc
+% Create a rpc response for a readdir3 request
+-spec(readdir_create_resp(binary(), list(#?METADATA{})) ->
+      void | tuple()).
 readdir_create_resp(Path, Meta) ->
     readdir_create_resp(Path, Meta, void).
 readdir_create_resp(_Path, [], Resp) ->
@@ -155,6 +185,10 @@ readdir_create_resp(_Path, [#?METADATA{key = Key} = Meta|Rest], Resp) ->
             readdir_create_resp(_Path, Rest, NewResp)
     end.
 
+% @doc
+% Rename the file SrcKey to DstKey
+-spec(rename(binary(), binary()) ->
+      ok | {error, any()}).
 rename(SrcKey, DstKey) ->
     case leo_gateway_rpc_handler:get(SrcKey) of
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -206,6 +240,13 @@ rename_large_object_2(Meta) ->
     end.
 
 %% functions for write operation
+%%
+
+% @doc
+% Update a part of the file which start position to be updated is Start 
+% and the end position is End
+-spec(put_range(binary(), pos_integer(), pos_integer(), binary()) ->
+      ok | {error, any()}).
 put_range(Key, Start, End, Data) ->
     LargeObjectProp   = ?env_large_object_properties(),
     ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
@@ -314,6 +355,12 @@ put_range_nothing2small(Key, Start, _End, Data) ->
     end.
 
 %% functions for handling a large object
+%%
+
+% @doc
+% Update the whole file which is handled as a large object in LeoFS
+-spec(large_obj_update(binary(), binary()) ->
+      ok | {error, any()}).
 large_obj_update(Key, Data) ->
     LargeObjectProp   = ?env_large_object_properties(),
     ChunkedObjLen     = leo_misc:get_value('chunked_obj_len', 
@@ -346,6 +393,10 @@ large_obj_commit(Handler, Key, Size, ChunkedObjLen) ->
             {error, Cause}
     end.
 
+% @doc
+% Update the chunked file which is a part of a large object in LeoFS
+-spec(large_obj_partial_update(binary(), binary(), pos_integer()) ->
+      ok | {error, any()}).
 large_obj_partial_update(Key, Data, Index) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
     Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
@@ -392,9 +443,13 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
         {error, Cause} ->
             {error, Cause}
     end.
+
+% @doc
+% Update the metadata of a large file to reflect the total file size
+% @todo Chucksum(MD5) also have to be updated
+-spec(large_obj_partial_commit(binary(), pos_integer(), pos_integer()) ->
+      ok | {error, any()}).
 large_obj_partial_commit(Key, NumChunks, ChunkSize) ->
-    % update parent object metadata like size, chunk size, # of chunks
-    % @todo for now MD5 will be updated as `0` to avoid a performance degradation
     large_obj_partial_commit(NumChunks, Key, NumChunks, ChunkSize, 0).
 large_obj_partial_commit(0, Key, NumChunks, ChunkSize, TotalSize) ->
     case leo_gateway_rpc_handler:put(Key, <<>>, TotalSize, ChunkSize, NumChunks, 0) of
@@ -414,6 +469,13 @@ large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
     end.
 
 %% functions for read operation
+%%
+
+% @doc
+% Retrieve a part of the file which start position is Start 
+% and the end position is End
+-spec(get_range(binary(), pos_integer(), pos_integer()) ->
+      {ok, #?METADATA{}, binary()}| {error, any()}).
 get_range(Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{del = 0, cnumber = 0} = _Meta} ->
@@ -496,14 +558,26 @@ get_chunk(Key, Start, End, CurPos, ChunkSize) ->
     end.
 
 -define(UNIX_TIME_BASE, 62167219200).
+% @doc
+% Return the current time with unix time format
+-spec(unix_time() ->
+      pos_integer()).
 unix_time() -> 
     % calendar:datetime_to_gregorian_seconds({{1970,1,1},{0,0,0}}) = 62167219200
     calendar:datetime_to_gregorian_seconds(calendar:universal_time()) - ?UNIX_TIME_BASE.
 
+% @doc
+% Convert from the gregorian second to the unix time
+-spec(gs2unix_time(pos_integer()) ->
+      pos_integer()).
 gs2unix_time(GS) ->
     GS - ?UNIX_TIME_BASE.
 
+% @doc
+% Return the inode of Path
 % @todo to be replaced with truely unique id supported by LeoFS future works 
+-spec(inode(binary()) ->
+      integer()).
 inode(Path) ->
     <<F8:8/binary, _/binary>> = erlang:md5(Path),
     Hex = leo_hex:binary_to_hex(F8),
@@ -526,6 +600,10 @@ sattr_mtime2file_info({'DONT_CHANGE', _}) -> undefined;
 sattr_mtime2file_info({'SET_TO_SERVER_TIME', _}) -> unix_time();
 sattr_mtime2file_info({_, {MTime, _}})         -> MTime.
 
+% @doc
+% Convert from #?METADATA{} format to the format codes erpcgen generated expect
+-spec(meta2fattr3(#?METADATA{}) ->
+      tuple()).
 meta2fattr3(#?METADATA{dsize = -1, key = Key}) ->
     Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
     UT = gs2unix_time(Now),
@@ -558,7 +636,10 @@ meta2fattr3(#?METADATA{key = Key, timestamp = TS, dsize = Size}) ->
      {UT, 0}, % last modification
      {UT, 0}}.% last change
 
-% @todo
+% @doc
+% Convert from the directory path to the format codes erpcgen generated expect
+-spec(s3dir2fattr3(binary()) ->
+      tuple()).
 s3dir2fattr3(Dir) ->
     Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
     UT = gs2unix_time(Now),
@@ -576,6 +657,10 @@ s3dir2fattr3(Dir) ->
      {UT, 0}, % last modification
      {UT, 0}}.% last change
 
+% @doc
+% Convert from #?BUCKET to the format codes erpcgen generated expect
+-spec(bucket2fattr3(#?BUCKET{}) ->
+      tuple()).
 bucket2fattr3(Bucket) ->
     UT = gs2unix_time(Bucket#?BUCKET.last_modified_at),
     {'NF3DIR',
@@ -592,6 +677,10 @@ bucket2fattr3(Bucket) ->
      {UT, 0}, % last modification
      {UT, 0}}.% last change
 
+% @doc
+% Convert from the file path to the path trailing '/'
+-spec(path2dir(binary()) ->
+      binary()).
 path2dir(Path) ->
     case binary:last(Path) of
         $/ ->
@@ -600,6 +689,10 @@ path2dir(Path) ->
             <<Path/binary, "/">>
     end.
 
+% @doc
+% Return true if the specified binary contain _Char, and false otherwise
+-spec(binary_is_contained(binary(), char()) ->
+      boolean()).
 binary_is_contained(<<>>, _Char) ->
     false;
 binary_is_contained(<<Char:8, _Rest/binary>>, Char) ->
