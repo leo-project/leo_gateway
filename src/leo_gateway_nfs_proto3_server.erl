@@ -1,6 +1,7 @@
 -module(leo_gateway_nfs_proto3_server).
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
+-include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
@@ -700,6 +701,35 @@ binary_is_contained(<<Char:8, _Rest/binary>>, Char) ->
 binary_is_contained(<<_Other:8, Rest/binary>>, Char) ->
     binary_is_contained(Rest, Char).
 
+% @doc
+% Return total disk usage on LeoFS in byte
+-spec(du_get_disk_usage() -> 
+      {ok, {Total::pos_integer(), Free::pos_integer()}}| {error, any()}).
+du_get_disk_usage() ->
+    StorageNodes = case leo_redundant_manager_api:get_members() of
+        {ok, Members} ->
+            Nodes = [_N || #member{node  = _N,
+                                   state = ?STATE_RUNNING} <- Members],
+            Nodes;
+        not_found ->
+            [];
+        {error,_Cause} ->
+            [] 
+    end,
+    du_get_disk_usage(StorageNodes, {0, 0}).
+
+du_get_disk_usage([], {Total, Free}) ->
+    {ok, {erlang:round(Total * 1024), erlang:round(Free * 1024)}};
+du_get_disk_usage([Node|Rest], {SumTotal, SumFree}) ->
+    case rpc:call(Node, leo_storage_api, get_disk_usage, [], 5000) of
+        {ok, {Total, Free}} ->
+            du_get_disk_usage(Rest, {SumTotal + Total, SumFree + Free});
+        {badrpc, Cause} ->
+            {error, Cause};
+        Error ->
+            Error
+    end.
+
 nfsproc3_null_3(_Clnt, State) ->
     {reply, [], State}.
  
@@ -1090,17 +1120,18 @@ nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt
 
 nfsproc3_fsstat_3(_1, Clnt, State) ->
     ?debug("nfsproc3_fsstat_3", "args:~p client:~p", [_1, Clnt]),
+    {ok, {Total, Free}} = du_get_disk_usage(),
     {reply, 
         {'NFS3_OK',
         {
             {false, void}, %% post_op_attr
-            8192, %% total size
-            1024, %% free size
-            1024, %% free size(for auth user)
-            16,   %% # of files
-            8,    %% # of free file slots
-            8,    %% # of free file slots(for auth user)
-            10    %% invarsec
+            Total,         %% total size
+            Free,          %% free size
+            Free,          %% free size(for auth user)
+            16,            %% # of files
+            8,             %% # of free file slots
+            8,             %% # of free file slots(for auth user)
+            10             %% invarsec
         }}, 
         State}.
  
