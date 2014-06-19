@@ -50,7 +50,7 @@ CMD_TOUCH="touch $TOUCHED_FILE"
 function ls_validate_num_of_childs() {
     DIR=$1
     NUM_OF_CHILD=$2
-    if [ `ls $DIR| wc -l` -eq $2 ]; then
+    if [ `ls $DIR| wc -l` -eq $NUM_OF_CHILD ]; then
         return 0
     else
         return 1
@@ -88,6 +88,16 @@ function du_validate_size_in_mbyte() {
     fi
 }
 
+function make_many_files() {
+    DIR=$1
+    NUM=$2
+    for i in `seq 1 $NUM`
+    do
+        touch $DIR/$i
+    done
+    return 0
+}
+
 # Tests
 {
     # try block
@@ -113,6 +123,8 @@ function du_validate_size_in_mbyte() {
     eval $CMD_TOUCH &&
     stat_validate_size $DST_1M_FILE 1048576 &&
     du_validate_size_in_mbyte $MOUNT_DIR 2 &&
+    make_many_files $MOUNT_DIR 200 &&
+    ls_validate_num_of_childs $MOUNT_DIR 202 &&
     echo "[Success]All tests passed."
 } || 
 {
