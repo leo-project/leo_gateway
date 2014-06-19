@@ -8,6 +8,7 @@ RET=
 FNAME_1K=1k.dat
 FNAME_1M=1m.dat
 FNAME_50M=50m.dat
+FNAME_TOUCH=newfile
 
 # Generate test files
 TMP_UID=`uuidgen`
@@ -22,6 +23,7 @@ DST_50M_FILE=$MOUNT_DIR/$FNAME_50M
 DST_SUB_DIR=$MOUNT_DIR/sub1/sub2/sub3
 DST_SUB_ROOT_DIR=$MOUNT_DIR/sub1
 DST_50M_FILE2=$DST_SUB_DIR/$FNAME_50M
+TOUCHED_FILE=$MOUNT_DIR/$FNAME_TOUCH
 dd if=/dev/urandom of=$TMP_1K_FILE bs=1024 count=1
 dd if=/dev/urandom of=$TMP_1M_FILE bs=1024 count=1024
 dd if=/dev/urandom of=$TMP_50M_FILE bs=1048576 count=50
@@ -42,6 +44,7 @@ CMD_MV_50M="mv $DST_50M_FILE $DST_50M_FILE2"
 CMD_RM_50M="rm $DST_50M_FILE2"
 CMD_RMDIR_SUB="rmdir $DST_SUB_DIR"
 CMD_RM_SUB_ROOT="rm -rf $DST_SUB_ROOT_DIR"
+CMD_TOUCH="touch $TOUCHED_FILE"
 
 # Functions
 function ls_validate_num_of_childs() {
@@ -64,6 +67,27 @@ function find_validate_name_exp() {
         return 1
     fi
 }
+
+function stat_validate_size() {
+    FILE=$1
+    SIZE=$2
+    if [ `stat $FILE --format=%s` -eq $SIZE ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+function du_validate_size_in_mbyte() {
+    DIR=$1
+    SIZE=$2
+    if [ `du -m $DIR|awk '{print $1}'` -eq $SIZE ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Tests
 {
     # try block
@@ -86,6 +110,9 @@ function find_validate_name_exp() {
     eval $CMD_RMDIR_SUB &&
     eval $CMD_RM_SUB_ROOT &&
     ls_validate_num_of_childs $MOUNT_DIR 1 &&
+    eval $CMD_TOUCH &&
+    stat_validate_size $DST_1M_FILE 1048576 &&
+    du_validate_size_in_mbyte $MOUNT_DIR 2 &&
     echo "[Success]All tests passed."
 } || 
 {
