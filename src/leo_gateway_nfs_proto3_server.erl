@@ -45,6 +45,7 @@
 -define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
+-define(NFS_READDIRPLUS_NUM_OF_RESPONSE, 15).
 
 % @doc
 % Called only once from a parent rpc server process to initialize this module
@@ -93,7 +94,7 @@ get_dir_entries(Path) ->
     leo_gateway_rpc_handler:invoke(Redundancies,
                                    leo_storage_handler_directory,
                                    find_by_parent_dir,
-                                   [Path, <<"/">>, <<>>, 100],
+                                   [Path, <<"/">>, <<>>, ?NFS_READDIRPLUS_NUM_OF_RESPONSE],
                                    []).
 
 % @doc
@@ -122,7 +123,7 @@ is_empty_dir(Path) ->
 
 % @doc
 % Returns list of file's metadatas stored under the Path.
-% if the number of files is larger than 100, returned list is partial
+% if the number of files is larger than ?NFS_READDIRPLUS_NUM_OF_RESPONSE, returned list is partial
 % so to get all of files, you need to call this function repeatedly with a cookie verifier which returned at first function call
 -spec(readdir_get_entry(binary(), binary()) -> 
       {ok, binary(), list(#?METADATA{}), boolean()}).
@@ -141,14 +142,14 @@ readdir_get_entry(CookieVerf, Path) ->
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
-                                        [Path, <<"/">>, Marker, 100],
+                                        [Path, <<"/">>, Marker, ?NFS_READDIRPLUS_NUM_OF_RESPONSE],
                                         []) of
         {ok, []} ->
             {ok, CookieVerf, [], true};
         {ok, Meta} when is_list(Meta) ->
             Last = lists:last(Meta),
             application:set_env(?MODULE, CookieVerf, Last#?METADATA.key),
-            EOF = length(Meta) =/= 100, % @todo need to detect EOF correctly
+            EOF = length(Meta) =/= ?NFS_READDIRPLUS_NUM_OF_RESPONSE,
             {ok, CookieVerf, Meta, EOF};
         _Error ->
             {ok, <<>>, [], true} 
