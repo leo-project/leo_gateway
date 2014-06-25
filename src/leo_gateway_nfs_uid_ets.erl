@@ -2,19 +2,29 @@
 -behaviour(leo_gateway_nfs_uid_behaviour).
 -export([init/1, new/1, get/1, delete/1, get_uid_list/0, get_path_list/0]).
 
--define(UID_ETS_TBL, uid_ets_tbl).
+-define(UID2PATH_ETS_TBL, uid2path_ets_tbl).
+-define(PATH2UID_ETS_TBL, path2uid_ets_tbl).
 
 init(_Params) ->
-    catch ets:new(?UID_ETS_TBL, [set, named_table, public]),
+    catch ets:new(?UID2PATH_ETS_TBL, [set, named_table, public]),
+    catch ets:new(?PATH2UID_ETS_TBL, [set, named_table, public]),
     ok.
 
 new(Path4S3) ->
-    UID = v4(),
-    ets:insert(?UID_ETS_TBL, {UID, Path4S3}),
-    {ok, UID}.
+    Ret = ets:lookup(?PATH2UID_ETS_TBL, Path4S3),
+    case Ret of
+        [] ->
+            NewUID = v4(),
+            ets:insert(?UID2PATH_ETS_TBL, {NewUID, Path4S3}),
+            ets:insert(?PATH2UID_ETS_TBL, {Path4S3, NewUID}),
+            {ok, NewUID};
+        [{_, UID}|_] ->
+            %% already exists
+            {ok, UID}
+    end.
 
 get(UID) ->
-    Ret = ets:lookup(?UID_ETS_TBL, UID),
+    Ret = ets:lookup(?UID2PATH_ETS_TBL, UID),
     case Ret of
         [] ->
             not_found;
@@ -23,14 +33,21 @@ get(UID) ->
     end.
 
 delete(UID) ->
-    ets:delete(?UID_ETS_TBL, UID),
-    ok.
+    Ret = ets:lookup(?UID2PATH_ETS_TBL, UID),
+    case Ret of
+        [] ->
+            ok;
+        [{_, Path4S3}|_] ->
+            catch ets:delete(?UID2PATH_ETS_TBL, UID),
+            catch ets:delete(?PATH2UID_ETS_TBL, Path4S3),
+            ok
+    end.
 
 get_uid_list() ->
-    {ok, lists:flatten(ets:match(?UID_ETS_TBL, {'$1', '_'}))}.
+    {ok, lists:flatten(ets:match(?UID2PATH_ETS_TBL, {'$1', '_'}))}.
 
 get_path_list() ->
-    {ok, lists:flatten(ets:match(?UID_ETS_TBL, {'_', '$1'}))}.
+    {ok, lists:flatten(ets:match(?UID2PATH_ETS_TBL, {'_', '$1'}))}.
 
 % private
 % Generates a random binary UUID.
