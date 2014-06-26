@@ -9,6 +9,7 @@
 -include("leo_gateway_nfs_proto3.hrl").
 -include_lib("kernel/include/file.hrl").
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+         path_relative2abs/1,
          nfsproc3_null_3/2,
          nfsproc3_getattr_3/3,
          nfsproc3_setattr_3/3,
@@ -45,7 +46,7 @@
 -define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
--define(NFS_READDIRPLUS_NUM_OF_RESPONSE, 15).
+-define(NFS_READDIRPLUS_NUM_OF_RESPONSE, 10).
 
 % @doc
 % Called only once from a parent rpc server process to initialize this module
@@ -139,6 +140,7 @@ readdir_get_entry(CookieVerf, Path) ->
     end,
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
+    ?debug("readdir_get_entry", "cookie:~p path:~p marker:~p~n", [CookieVerf, Path, Marker]),
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
@@ -150,7 +152,19 @@ readdir_get_entry(CookieVerf, Path) ->
             Last = lists:last(Meta),
             application:set_env(?MODULE, CookieVerf, Last#?METADATA.key),
             EOF = length(Meta) =/= ?NFS_READDIRPLUS_NUM_OF_RESPONSE,
-            {ok, CookieVerf, Meta, EOF};
+            ?debug("readdir_get_entry/2", "last:~p eof:~p~n", [Last, EOF]),
+            NewMeta = case EOF of
+                true ->
+                    %% add current(.) and parent(..) directories
+                    CuurentDirKey = << Path/binary, <<".">>/binary >>,
+                    CurrentDir = #?METADATA{key = CuurentDirKey, dsize = -1},
+                    ParentDirKey = << Path/binary, <<"..">>/binary >>,
+                    ParentDir = #?METADATA{key = ParentDirKey, dsize = -1},
+                    [CurrentDir, ParentDir|Meta];
+                false ->
+                    Meta
+            end,
+            {ok, CookieVerf, NewMeta, EOF};
         _Error ->
             {ok, <<>>, [], true} 
     end.
@@ -168,18 +182,26 @@ readdir_create_resp(Path, Meta) ->
     readdir_create_resp(Path, Meta, void).
 readdir_create_resp(_Path, [], Resp) ->
     Resp;
-readdir_create_resp(_Path, [#?METADATA{key = Key} = Meta|Rest], Resp) ->
+readdir_create_resp(_Path, [#?METADATA{key = Key, dsize = Size} = Meta|Rest], Resp) ->
+    NormalizedKey = case Size of
+        -1 ->
+            % dir to be normalized(means expand .|.. chars)
+            path_relative2abs(Key);
+        _ ->
+            % file
+            Key
+    end,
     FileName = filename:basename(Key),
     case FileName of
         ?NFS_DUMMY_FILE4S3DIR ->
             readdir_create_resp(_Path, Rest, Resp);
         _ ->
-            {ok, UID} = leo_gateway_nfs_uid_ets:new(Key),
-            NewResp = {inode(UID),
+            {ok, UID} = leo_gateway_nfs_uid_ets:new(NormalizedKey),
+            NewResp = {inode(NormalizedKey),
                        FileName,
                        0,
                        {true, %% post_op_attr
-                           meta2fattr3(Meta)
+                           meta2fattr3(Meta#?METADATA{key = NormalizedKey})
                        },
                        {true, {UID}}, %% post_op_fh3
                        Resp
@@ -692,6 +714,26 @@ path2dir(Path) ->
     end.
 
 % @doc
+% Convert from a relative file path to a absolute one
+-spec(path_relative2abs(binary()) ->
+      binary()).
+path_relative2abs(P) ->
+    path_relative2abs(binary:split(P, <<"/">>, [global, trim]), []).
+
+path_relative2abs([], []) ->
+    <<"/">>;
+path_relative2abs([], Acc) ->
+    filename:join(lists:reverse(Acc));
+path_relative2abs([<<>>|Rest], Acc) ->
+    path_relative2abs(Rest, Acc);
+path_relative2abs([<<".">>|Rest], Acc) ->
+    path_relative2abs(Rest, Acc);
+path_relative2abs([<<"..">>|Rest], Acc) ->
+    path_relative2abs(Rest, tl(Acc));
+path_relative2abs([Segment|Rest], Acc) ->
+    path_relative2abs(Rest, [Segment|Acc]).
+
+% @doc
 % Return true if the specified binary contain _Char, and false otherwise
 -spec(binary_is_contained(binary(), char()) ->
       boolean()).
@@ -1100,6 +1142,7 @@ nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt
             % @TODO
             % # of entries should be determinted by _MaxCnt
             Resp = readdir_create_resp(Path4S3Dir, ReadDir),
+            ?debug("nfsproc3_readdirplus_3", "resp:~p~n", [Resp]),
             case EOF of
                 true -> 
                     readdir_del_entry(NewCookieVerf);
@@ -1143,12 +1186,12 @@ nfsproc3_fsinfo_3(_1, Clnt, State) ->
         {
             {false, void}, %% post_op_attr
             5242880, %% rtmax
-            5242880, %% rtperf
+            5242880, %% rtperf(limited at client up to 1024 * 1024)
             8,    %% rtmult
-            5242880, %% wtmax
+            5242880, %% wtmaxa(limited at client up to 1024 * 1024)
             5242880, %% wtperf
             8,    %% wtmult
-            4096, %% dperf
+            5242880, %% dperf (limited at client up to 32768)
             1024 * 1024 * 1024 * 4, %% max size of a file
             {1, 0}, %% time_delta
             0     %% properties
