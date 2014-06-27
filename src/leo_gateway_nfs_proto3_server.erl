@@ -175,13 +175,13 @@ readdir_del_entry(CookieVerf) ->
 
 % @doc
 % Create a rpc response for a readdir3 request
--spec(readdir_create_resp(binary(), list(#?METADATA{})) ->
+-spec(readdir_create_resp(binary(), list(#?METADATA{}), integer()) ->
       void | tuple()).
-readdir_create_resp(Path, Meta) ->
-    readdir_create_resp(Path, Meta, void).
-readdir_create_resp(_Path, [], Resp) ->
+readdir_create_resp(Path, Meta, Cookie) ->
+    readdir_create_resp(Path, Meta, length(Meta) + Cookie, void).
+readdir_create_resp(_Path, [], _, Resp) ->
     Resp;
-readdir_create_resp(_Path, [#?METADATA{key = Key, dsize = Size} = Meta|Rest], Resp) ->
+readdir_create_resp(_Path, [#?METADATA{key = Key, dsize = Size} = Meta|Rest], Cookie, Resp) ->
     NormalizedKey = case Size of
         -1 ->
             % dir to be normalized(means expand .|.. chars)
@@ -193,19 +193,19 @@ readdir_create_resp(_Path, [#?METADATA{key = Key, dsize = Size} = Meta|Rest], Re
     FileName = filename:basename(Key),
     case FileName of
         ?NFS_DUMMY_FILE4S3DIR ->
-            readdir_create_resp(_Path, Rest, Resp);
+            readdir_create_resp(_Path, Rest, Cookie, Resp);
         _ ->
             {ok, UID} = leo_gateway_nfs_uid_ets:new(NormalizedKey),
             NewResp = {inode(NormalizedKey),
                        FileName,
-                       0,
+                       Cookie,
                        {true, %% post_op_attr
                            meta2fattr3(Meta#?METADATA{key = NormalizedKey})
                        },
                        {true, {UID}}, %% post_op_fh3
                        Resp
                       },
-            readdir_create_resp(_Path, Rest, NewResp)
+            readdir_create_resp(_Path, Rest, Cookie - 1, NewResp)
     end.
 
 % @doc
@@ -1118,7 +1118,7 @@ nfsproc3_readdir_3(_1, Clnt, State) ->
         }}, 
         State}.
  
-nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
+nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     Path4S3Dir = path2dir(Path),
@@ -1141,7 +1141,7 @@ nfsproc3_readdirplus_3({{UID}, _Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt
             % create response
             % @TODO
             % # of entries should be determinted by _MaxCnt
-            Resp = readdir_create_resp(Path4S3Dir, ReadDir),
+            Resp = readdir_create_resp(Path4S3Dir, ReadDir, Cookie),
             ?debug("nfsproc3_readdirplus_3", "resp:~p~n", [Resp]),
             case EOF of
                 true -> 
