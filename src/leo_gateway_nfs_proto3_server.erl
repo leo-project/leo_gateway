@@ -129,7 +129,8 @@ is_empty_dir(Path) ->
 -spec(readdir_get_entry(binary(), binary()) -> 
       {ok, binary(), list(#?METADATA{}), boolean()}).
 readdir_get_entry(<<0,0,0,0,0,0,0,0>>, Path) ->
-    <<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
+    %<<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
+    CookieVerf = crypto:rand_bytes(8),
     readdir_get_entry(CookieVerf, Path);
 readdir_get_entry(CookieVerf, Path) ->
     Marker = case application:get_env(?MODULE, CookieVerf) of
@@ -140,7 +141,6 @@ readdir_get_entry(CookieVerf, Path) ->
     end,
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
-    ?debug("readdir_get_entry", "cookie:~p path:~p marker:~p~n", [CookieVerf, Path, Marker]),
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
@@ -152,7 +152,6 @@ readdir_get_entry(CookieVerf, Path) ->
             Last = lists:last(Meta),
             application:set_env(?MODULE, CookieVerf, Last#?METADATA.key),
             EOF = length(Meta) =/= ?NFS_READDIRPLUS_NUM_OF_RESPONSE,
-            ?debug("readdir_get_entry/2", "last:~p eof:~p~n", [Last, EOF]),
             NewMeta = case EOF of
                 true ->
                     %% add current(.) and parent(..) directories
@@ -605,6 +604,7 @@ gs2unix_time(GS) ->
 inode(Path) ->
     <<F8:8/binary, _/binary>> = erlang:md5(Path),
     Hex = leo_hex:binary_to_hex(F8),
+    ?debug("inode", "path:~p inode:~p~n", [Path, Hex]),
     leo_hex:hex_to_integer(Hex).
 
 sattr_mode2file_info({0, _})   -> undefined;
@@ -800,7 +800,7 @@ nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
                             {'NFS3_OK',
                             {
                               % fattr
-                              s3dir2fattr3(Path4S3Dir)
+                              s3dir2fattr3(Path)
                             }}, 
                             State};
                         false ->
