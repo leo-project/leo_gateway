@@ -49,10 +49,12 @@ CMD_TOUCH="touch $TOUCHED_FILE"
 # Functions
 function ls_validate_num_of_childs() {
     DIR=$1
-    NUM_OF_CHILD=$2
-    if [ `ls $DIR| wc -l` -eq $NUM_OF_CHILD ]; then
+    TOBE=$2
+    ASIS=`ls $DIR| wc -l`
+    if [ $ASIS -eq $TOBE ]; then
         return 0
     else
+        echo "[Failed]ls_validate_num_of_childs expected:$TOBE value:$ASIS"
         return 1
     fi
 }
@@ -64,6 +66,7 @@ function find_validate_name_exp() {
     if [ `find $DIR -name $NAME` = $TOBE ]; then
         return 0
     else
+        echo "[Failed]find_validate_name_exp expected:$TOBE value:$NAME"
         return 1
     fi
 }
@@ -71,9 +74,11 @@ function find_validate_name_exp() {
 function stat_validate_size() {
     FILE=$1
     SIZE=$2
-    if [ `stat $FILE --format=%s` -eq $SIZE ]; then
+    TOBE=`stat $FILE --format=%s`
+    if [ $TOBE -eq $SIZE ]; then
         return 0
     else
+        echo "[Failed]stat_validate_size expected:$TOBE value:$SIZE"
         return 1
     fi
 }
@@ -81,9 +86,11 @@ function stat_validate_size() {
 function du_validate_size_in_mbyte() {
     DIR=$1
     SIZE=$2
-    if [ `du -m $DIR|awk '{print $1}'` -eq $SIZE ]; then
+    TOBE=`du -m $DIR|awk '{print $1}'`
+    if [ $TOBE -eq $SIZE ]; then
         return 0
     else
+        echo "[Failed]du_validate_size_in_mbyte expected:$TOBE value:$SIZE"
         return 1
     fi
 }
@@ -110,7 +117,7 @@ function make_many_files() {
     eval $CMD_DIFF_1K &&
     eval $CMD_DIFF_1M &&
     eval $CMD_DIFF_50M &&
-    ls_validate_num_of_childs $MOUNT_DIR 4 &&
+    ls_validate_num_of_childs $MOUNT_DIR 4 && 
     eval $CMD_RM_1K &&
     ls_validate_num_of_childs $MOUNT_DIR 3 &&
     eval $CMD_MV_50M &&
@@ -123,8 +130,8 @@ function make_many_files() {
     eval $CMD_TOUCH &&
     stat_validate_size $DST_1M_FILE 1048576 &&
     du_validate_size_in_mbyte $MOUNT_DIR 2 &&
-    make_many_files $MOUNT_DIR 100 &&
-    ls_validate_num_of_childs $MOUNT_DIR 102 &&
+    make_many_files $MOUNT_DIR 90 &&
+    ls_validate_num_of_childs $MOUNT_DIR 92 &&
     echo "[Success]All tests passed."
 } || 
 {
