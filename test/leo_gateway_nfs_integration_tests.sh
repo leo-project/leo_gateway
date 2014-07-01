@@ -130,8 +130,8 @@ function make_many_files() {
     eval $CMD_TOUCH &&
     stat_validate_size $DST_1M_FILE 1048576 &&
     du_validate_size_in_mbyte $MOUNT_DIR 2 &&
-    make_many_files $MOUNT_DIR 97 &&
-    ls_validate_num_of_childs $MOUNT_DIR 99 &&
+    make_many_files $MOUNT_DIR 100 &&
+    ls_validate_num_of_childs $MOUNT_DIR 102 &&
     echo "[Success]All tests passed."
 } || 
 {

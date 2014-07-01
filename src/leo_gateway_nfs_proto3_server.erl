@@ -131,14 +131,21 @@ is_empty_dir(Path) ->
 readdir_get_entry(<<0,0,0,0,0,0,0,0>>, Path) ->
     %<<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
     CookieVerf = crypto:rand_bytes(8),
-    readdir_get_entry(CookieVerf, Path);
+    readdir_get_entry(CookieVerf, Path, <<>>);
 readdir_get_entry(CookieVerf, Path) ->
-    Marker = case application:get_env(?MODULE, CookieVerf) of
+    case application:get_env(?MODULE, CookieVerf) of
         undefined ->
-            <<>>;
+            ?debug("readdir_get_entry", "***unknown cookie*** cookie:~p~n", [CookieVerf]),
+            {ok, CookieVerf, [], true};
+        {ok, undefined}->
+            ?debug("readdir_get_entry", "***already respond eof in the previous msg*** cookie:~p~n", [CookieVerf]),
+            {ok, CookieVerf, [], true};
         {ok, Ret} ->
-            Ret
-    end,
+            ?debug("readdir_get_entry", "***cookie existing*** cookie:~p marker:~p~n", [CookieVerf, Ret]),
+            readdir_get_entry(CookieVerf, Path, Ret)
+    end.
+
+readdir_get_entry(CookieVerf, Path, Marker) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
     case leo_gateway_rpc_handler:invoke(Redundancies,
@@ -147,6 +154,7 @@ readdir_get_entry(CookieVerf, Path) ->
                                         [Path, <<"/">>, Marker, ?NFS_READDIRPLUS_NUM_OF_RESPONSE],
                                         []) of
         {ok, []} ->
+            ?debug("readdir_get_entry", "***empty response*** cookie:~p~n", [CookieVerf]),
             {ok, CookieVerf, [], true};
         {ok, Meta} when is_list(Meta) ->
             Last = lists:last(Meta),
@@ -165,6 +173,7 @@ readdir_get_entry(CookieVerf, Path) ->
             end,
             {ok, CookieVerf, NewMeta, EOF};
         _Error ->
+            ?debug("readdir_get_entry", "error:~p~n", [_Error]),
             {ok, <<>>, [], true} 
     end.
 % @doc
@@ -604,7 +613,6 @@ gs2unix_time(GS) ->
 inode(Path) ->
     <<F8:8/binary, _/binary>> = erlang:md5(Path),
     Hex = leo_hex:binary_to_hex(F8),
-    ?debug("inode", "path:~p inode:~p~n", [Path, Hex]),
     leo_hex:hex_to_integer(Hex).
 
 sattr_mode2file_info({0, _})   -> undefined;
@@ -1126,11 +1134,13 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
     case ReadDir of
         [] ->
             % empty response
+            readdir_del_entry(NewCookieVerf),
+            ?debug("nfsproc3_readdirplus_3", "***empty response***~n", []),
             {reply, 
                 {'NFS3_OK',
                 {
-                    {false, void}, %% post_op_attr
-                    <<"00000000">>, %% cookie verfier
+                    {false, void},       %% post_op_attr
+                    NewCookieVerf,       %% cookie verfier
                     {%% dir_list(empty)
                         void, %% pre_op_attr
                         true  %% eof
@@ -1142,7 +1152,7 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
             % @TODO
             % # of entries should be determinted by _MaxCnt
             Resp = readdir_create_resp(Path4S3Dir, ReadDir, Cookie),
-            ?debug("nfsproc3_readdirplus_3", "resp:~p~n", [Resp]),
+            ?debug("nfsproc3_readdirplus_3", "eof:~p resp:~p~n", [EOF, Resp]),
             case EOF of
                 true -> 
                     readdir_del_entry(NewCookieVerf);
