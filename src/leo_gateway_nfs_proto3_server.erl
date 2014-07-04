@@ -33,6 +33,10 @@
          nfsproc3_commit_3/3,
          nfsproc3_fsinfo_3/3]).
 
+-record(ongoing_readdir, {
+    filelist  :: list(#?METADATA{})
+}).
+
 -record(state, {
     write_verf :: binary() %% to be consistent during a single boot session
 }).
@@ -47,6 +51,7 @@
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 -define(NFS_READDIRPLUS_NUM_OF_RESPONSE, 10).
+-define(LEOFS_NUM_OF_LIST_DIR, 1000).
 
 % @doc
 % Called only once from a parent rpc server process to initialize this module
@@ -122,60 +127,75 @@ is_empty_dir(Path) ->
             false 
     end.
 
-% @doc
-% Returns list of file's metadatas stored under the Path.
-% if the number of files is larger than ?NFS_READDIRPLUS_NUM_OF_RESPONSE, returned list is partial
-% so to get all of files, you need to call this function repeatedly with a cookie verifier which returned at first function call
--spec(readdir_get_entry(binary(), binary()) -> 
-      {ok, binary(), list(#?METADATA{}), boolean()}).
-readdir_get_entry(<<0,0,0,0,0,0,0,0>>, Path) ->
-    %<<CookieVerf:8/binary, _/binary>> = erlang:md5(Path),
-    CookieVerf = crypto:rand_bytes(8),
-    readdir_get_entry(CookieVerf, Path, <<>>);
-readdir_get_entry(CookieVerf, Path) ->
-    case application:get_env(?MODULE, CookieVerf) of
-        undefined ->
-            ?debug("readdir_get_entry", "***unknown cookie*** cookie:~p~n", [CookieVerf]),
-            {ok, CookieVerf, [], true};
-        {ok, undefined}->
-            ?debug("readdir_get_entry", "***already respond eof in the previous msg*** cookie:~p~n", [CookieVerf]),
-            {ok, CookieVerf, [], true};
-        {ok, Ret} ->
-            ?debug("readdir_get_entry", "***cookie existing*** cookie:~p marker:~p~n", [CookieVerf, Ret]),
-            readdir_get_entry(CookieVerf, Path, Ret)
-    end.
-
-readdir_get_entry(CookieVerf, Path, Marker) ->
+-spec(list_dir(binary()) -> 
+      {ok, list(#?METADATA{})}|{error, any()}).
+list_dir(Path) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Path),
+    list_dir(Redundancies, Path, <<>>, []).
+list_dir(Redundancies, Path, Marker, Acc) ->
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
-                                        [Path, <<"/">>, Marker, ?NFS_READDIRPLUS_NUM_OF_RESPONSE],
+                                        [Path, <<"/">>, Marker, ?LEOFS_NUM_OF_LIST_DIR],
                                         []) of
         {ok, []} ->
-            ?debug("readdir_get_entry", "***empty response*** cookie:~p~n", [CookieVerf]),
-            {ok, CookieVerf, [], true};
+            %% add current(.) and parent(..) directories
+            CuurentDirKey = << Path/binary, <<".">>/binary >>,
+            CurrentDir = #?METADATA{key = CuurentDirKey, dsize = -1},
+            ParentDirKey = << Path/binary, <<"..">>/binary >>,
+            ParentDir = #?METADATA{key = ParentDirKey, dsize = -1},
+            {ok, [CurrentDir, ParentDir|Acc]};
         {ok, Meta} when is_list(Meta) ->
             Last = lists:last(Meta),
-            application:set_env(?MODULE, CookieVerf, Last#?METADATA.key),
-            EOF = length(Meta) =/= ?NFS_READDIRPLUS_NUM_OF_RESPONSE,
-            NewMeta = case EOF of
-                true ->
-                    %% add current(.) and parent(..) directories
+            TrimedKey = trim_trailing_pathsep(Last#?METADATA.key),
+            case Marker of
+                TrimedKey ->
                     CuurentDirKey = << Path/binary, <<".">>/binary >>,
                     CurrentDir = #?METADATA{key = CuurentDirKey, dsize = -1},
                     ParentDirKey = << Path/binary, <<"..">>/binary >>,
                     ParentDir = #?METADATA{key = ParentDirKey, dsize = -1},
-                    [CurrentDir, ParentDir|Meta];
-                false ->
-                    Meta
-            end,
-            {ok, CookieVerf, NewMeta, EOF};
-        _Error ->
-            ?debug("readdir_get_entry", "error:~p~n", [_Error]),
-            {ok, <<>>, [], true} 
+                    {ok, [CurrentDir, ParentDir|Acc]};
+                _Other ->
+                    list_dir(Redundancies, Path, TrimedKey, Meta ++ Acc)
+            end;
+        Error ->
+            ?error("list_dir", "cause:~p~n", [Error]),
+            Error
     end.
+
+% @doc
+% Returns list of file's metadatas stored under the Path.
+-spec(readdir_add_entry(binary()) -> 
+      {ok, binary(), list(#?METADATA{})}).
+readdir_add_entry(Path) ->
+    case list_dir(Path) of
+        {ok, FileList}->
+            %% gen cookie verfier
+            CookieVerf = crypto:rand_bytes(8),
+            ReadDir = #ongoing_readdir{filelist = FileList},
+            application:set_env(?MODULE, CookieVerf, ReadDir),
+            {ok, CookieVerf, ReadDir};
+         Error ->
+            Error
+    end.
+
+readdir_get_entry(CookieVerf) ->
+    case application:get_env(?MODULE, CookieVerf) of
+        undefined ->
+            {ok, CookieVerf, []};
+        {ok, undefined}->
+            {ok, CookieVerf, []};
+        {ok, Ret} ->
+            {ok, CookieVerf, Ret}
+    end.
+
+% @doc
+% Set a cookies verifier which returned by readdir_get_entry
+-spec(readdir_set_entry(binary(), #ongoing_readdir{}) -> ok).
+readdir_set_entry(CookieVerf, ReadDir) ->
+    application:set_env(?MODULE, CookieVerf, ReadDir).
+
 % @doc
 % Delete a cookies verifier which returned by readdir_get_entry
 -spec(readdir_del_entry(binary()) -> ok).
@@ -184,13 +204,34 @@ readdir_del_entry(CookieVerf) ->
 
 % @doc
 % Create a rpc response for a readdir3 request
--spec(readdir_create_resp(binary(), list(#?METADATA{}), integer()) ->
+-spec(readdir_create_resp(binary(), integer(), #ongoing_readdir{}, integer()) ->
       void | tuple()).
-readdir_create_resp(Path, Meta, Cookie) ->
-    readdir_create_resp(Path, Meta, length(Meta) + Cookie, void).
-readdir_create_resp(_Path, [], _, Resp) ->
-    Resp;
-readdir_create_resp(_Path, [#?METADATA{key = Key, dsize = Size} = Meta|Rest], Cookie, Resp) ->
+readdir_create_resp(Path, Cookie,
+            #ongoing_readdir{filelist = FileList} = ReadDir, NumEntry) ->
+    {StartCookie, EOF} = case length(FileList) =< (Cookie + NumEntry) of
+        true ->
+            {length(FileList), true};
+        false ->
+            {Cookie + NumEntry, false}
+    end,
+    readdir_create_resp(Path, 
+                        StartCookie, 
+                        ReadDir, 
+                        Cookie, 
+                        EOF,
+                        void).
+
+readdir_create_resp(_Path, CurCookie,
+                    _ReadDir,
+                    Cookie, EOF, Resp)
+            when CurCookie =:= Cookie ->
+    {Resp, EOF};
+
+readdir_create_resp(Path, CurCookie,
+                    #ongoing_readdir{filelist = FileList} = ReadDir, 
+                    Cookie, EOF, Resp) ->
+    Meta = lists:nth(CurCookie, FileList),
+    #?METADATA{key = Key, dsize = Size} = Meta,
     NormalizedKey = case Size of
         -1 ->
             % dir to be normalized(means expand .|.. chars)
@@ -202,19 +243,31 @@ readdir_create_resp(_Path, [#?METADATA{key = Key, dsize = Size} = Meta|Rest], Co
     FileName = filename:basename(Key),
     case FileName of
         ?NFS_DUMMY_FILE4S3DIR ->
-            readdir_create_resp(_Path, Rest, Cookie, Resp);
+            readdir_create_resp(Path, 
+                                CurCookie - 1, 
+                                ReadDir,
+                                Cookie, 
+                                EOF,
+                                Resp);
         _ ->
             {ok, UID} = leo_gateway_nfs_uid_ets:new(NormalizedKey),
             NewResp = {inode(NormalizedKey),
                        FileName,
-                       Cookie,
+                       CurCookie,
                        {true, %% post_op_attr
                            meta2fattr3(Meta#?METADATA{key = NormalizedKey})
                        },
                        {true, {UID}}, %% post_op_fh3
                        Resp
                       },
-            readdir_create_resp(_Path, Rest, Cookie - 1, NewResp)
+            ?debug("readdir_create_resp", "key:~p cookie:~p~n", 
+                   [NormalizedKey, CurCookie]),
+            readdir_create_resp(Path, 
+                                CurCookie - 1,
+                                ReadDir,
+                                Cookie,
+                                EOF,
+                                NewResp)
     end.
 
 % @doc
@@ -721,6 +774,14 @@ path2dir(Path) ->
             <<Path/binary, "/">>
     end.
 
+trim_trailing_pathsep(Src) ->
+    case binary:last(Src) of
+        $/ ->
+            binary:part(Src, 0, size(Src) - 1);
+        _ ->
+            Src
+    end.
+
 % @doc
 % Convert from a relative file path to a absolute one
 -spec(path_relative2abs(binary()) ->
@@ -1130,12 +1191,16 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
     ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
     Path4S3Dir = path2dir(Path),
-    {ok, NewCookieVerf, ReadDir, EOF} = readdir_get_entry(CookieVerf, Path4S3Dir),
+    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
+        <<0,0,0,0,0,0,0,0>> ->
+            readdir_add_entry(Path4S3Dir);
+        CookieVerf ->
+            readdir_get_entry(CookieVerf)
+    end,
     case ReadDir of
         [] ->
             % empty response
             readdir_del_entry(NewCookieVerf),
-            ?debug("nfsproc3_readdirplus_3", "***empty response***~n", []),
             {reply, 
                 {'NFS3_OK',
                 {
@@ -1148,11 +1213,13 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
                 }}, 
                 State};
         ReadDir ->
+            %?debug("nfsproc3_readdirplus_3", "path:~p list_dir:~p cookie:~p~n", 
+            %       [Path4S3Dir, ReadDir, Cookie]),
             % create response
             % @TODO
             % # of entries should be determinted by _MaxCnt
-            Resp = readdir_create_resp(Path4S3Dir, ReadDir, Cookie),
-            ?debug("nfsproc3_readdirplus_3", "eof:~p resp:~p~n", [EOF, Resp]),
+            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIRPLUS_NUM_OF_RESPONSE),
+            %?debug("nfsproc3_readdirplus_3", "eof:~p resp:~p~n", [EOF, Resp]),
             case EOF of
                 true -> 
                     readdir_del_entry(NewCookieVerf);
