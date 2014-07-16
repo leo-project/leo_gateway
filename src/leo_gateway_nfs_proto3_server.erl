@@ -37,10 +37,6 @@
     filelist  :: list(#?METADATA{})
 }).
 
--record(state, {
-    write_verf :: binary() %% to be consistent during a single boot session
-}).
-
 -define(SIMPLENFS_WCC_EMPTY, 
     {
         {false, void},
@@ -58,8 +54,8 @@
 % during starting a leo_storage server.
 -spec(init(any()) -> {ok, any()}).
 init(_Args) ->
-    State = #state{write_verf = crypto:rand_bytes(8)},
-    {ok, State}.
+    leo_gateway_nfs_state_ets:add_write_verfier(crypto:rand_bytes(8)),
+    {ok, void}.
  
 handle_call(Req, _From, S) ->
     ?debug("handle_call", "req:~p from:~p", [Req, _From]),
@@ -174,33 +170,25 @@ readdir_add_entry(Path) ->
             %% gen cookie verfier
             CookieVerf = crypto:rand_bytes(8),
             ReadDir = #ongoing_readdir{filelist = FileList},
-            application:set_env(?MODULE, CookieVerf, ReadDir),
+            leo_gateway_nfs_state_ets:add_readdir_entry(CookieVerf, ReadDir),
             {ok, CookieVerf, ReadDir};
          Error ->
             Error
     end.
 
 readdir_get_entry(CookieVerf) ->
-    case application:get_env(?MODULE, CookieVerf) of
-        undefined ->
-            {ok, CookieVerf, []};
-        {ok, undefined}->
+    case leo_gateway_nfs_state_ets:get_readdir_entry(CookieVerf) of
+        not_found ->
             {ok, CookieVerf, []};
         {ok, Ret} ->
             {ok, CookieVerf, Ret}
     end.
 
 % @doc
-% Set a cookies verifier which returned by readdir_get_entry
--spec(readdir_set_entry(binary(), #ongoing_readdir{}) -> ok).
-readdir_set_entry(CookieVerf, ReadDir) ->
-    application:set_env(?MODULE, CookieVerf, ReadDir).
-
-% @doc
 % Delete a cookies verifier which returned by readdir_get_entry
 -spec(readdir_del_entry(binary()) -> ok).
 readdir_del_entry(CookieVerf) ->
-    application:set_env(?MODULE, CookieVerf, undefined).
+    leo_gateway_nfs_state_ets:del_readdir_entry(CookieVerf).
 
 % @doc
 % Create a rpc response for a readdir3 request
@@ -250,7 +238,7 @@ readdir_create_resp(Path, CurCookie,
                                 EOF,
                                 Resp);
         _ ->
-            {ok, UID} = leo_gateway_nfs_uid_ets:new(NormalizedKey),
+            {ok, UID} = leo_gateway_nfs_state_ets:add_path(NormalizedKey),
             NewResp = {inode(NormalizedKey),
                        FileName,
                        CurCookie,
@@ -847,7 +835,7 @@ nfsproc3_null_3(_Clnt, State) ->
  
 nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
     ?debug("nfsproc3_getattr_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Path} = leo_gateway_nfs_state_ets:get_path(UID),
     case binary_is_contained(Path, $/) of
         %% object
         true ->
@@ -915,13 +903,13 @@ nfsproc3_setattr_3({{_Path},
          
 nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
     ?debug("nfsproc3_lookup_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Dir} = leo_gateway_nfs_state_ets:get_path(UID),
     Path4S3 = filename:join(Dir, Name),
     %% A path for directory must be trailing with '/'
     Path4S3Dir = path2dir(Path4S3),
     case is_file(Path4S3) orelse is_dir(Path4S3Dir) of
         true ->
-            {ok, FileUID} = leo_gateway_nfs_uid_ets:new(Path4S3),
+            {ok, FileUID} = leo_gateway_nfs_state_ets:add_path(Path4S3),
             {reply, 
                 {'NFS3_OK',
                 {
@@ -961,7 +949,7 @@ nfsproc3_readlink_3(_1, Clnt, State) ->
  
 nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
     ?debug("nfsproc3_read_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Path} = leo_gateway_nfs_state_ets:get_path(UID),
     case get_range(Path, Offset, Offset + Count - 1) of
         {ok, Meta, Body} ->
             EOF = Meta#?METADATA.dsize =:= (Offset + Count),
@@ -987,16 +975,17 @@ nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
 nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, State) ->
     ?debug("nfsproc3_write_3", "uid:~p offset:~p count:~p client:~p", 
            [UID, Offset, Count, Clnt]),
-    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Path} = leo_gateway_nfs_state_ets:get_path(UID),
     case put_range(Path, Offset, Offset + Count - 1, Data) of
         ok ->
+            {ok, WriteVerf} = leo_gateway_nfs_state_ets:get_write_verfier(),
             {reply, 
                 {'NFS3_OK',
                 {
                     ?SIMPLENFS_WCC_EMPTY,
                     Count,
                     'DATA_SYNC',
-                    State#state.write_verf
+                    WriteVerf
                 }}, 
                 State};
         {error, Reason} ->
@@ -1011,11 +1000,11 @@ nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, State) ->
  
 nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, State) ->
     ?debug("nfsproc3_create_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Dir} = leo_gateway_nfs_state_ets:get_path(UID),
     FilePath4S3 = filename:join(Dir, Name),
     case leo_gateway_rpc_handler:put(FilePath4S3, <<>>) of
         {ok, _}->
-            {ok, FileUID} = leo_gateway_nfs_uid_ets:new(FilePath4S3),
+            {ok, FileUID} = leo_gateway_nfs_state_ets:add_path(FilePath4S3),
             {reply, 
                 {'NFS3_OK',
                 {
@@ -1036,7 +1025,7 @@ nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, State) ->
  
 nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, State) ->
     ?debug("nfsproc3_mkdir_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Dir} = leo_gateway_nfs_state_ets:get_path(UID),
     DirPath = filename:join(Dir, Name),
     DummyFile4S3Dir = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
     case leo_gateway_rpc_handler:put(DummyFile4S3Dir, <<>>) of
@@ -1085,7 +1074,7 @@ nfsproc3_mknod_3(_1, Clnt, State) ->
  
 nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, State) ->
     ?debug("nfsproc3_remove_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Dir} = leo_gateway_nfs_state_ets:get_path(UID),
     FilePath4S3 = filename:join(Dir, Name),
     case leo_gateway_rpc_handler:delete(FilePath4S3) of
         ok ->
@@ -1107,7 +1096,7 @@ nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, State) ->
          
 nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
     ?debug("nfsproc3_rmdir_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Dir} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Dir} = leo_gateway_nfs_state_ets:get_path(UID),
     Path4S3 = filename:join(Dir, Name),
     Path4S3Dir = path2dir(Path4S3),
     case is_empty_dir(Path4S3Dir) of
@@ -1131,8 +1120,8 @@ nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
      
 nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) ->
     ?debug("nfsproc3_rename_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, SrcDir} = leo_gateway_nfs_uid_ets:get(SrcUID),
-    {ok, DstDir} = leo_gateway_nfs_uid_ets:get(DstUID),
+    {ok, SrcDir} = leo_gateway_nfs_state_ets:get_path(SrcUID),
+    {ok, DstDir} = leo_gateway_nfs_state_ets:get_path(DstUID),
     Src4S3 = filename:join(SrcDir, SrcName),
     Dst4S3 = filename:join(DstDir, DstName),
     case rename(Src4S3, Dst4S3) of
@@ -1189,7 +1178,7 @@ nfsproc3_readdir_3(_1, Clnt, State) ->
  
 nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
-    {ok, Path} = leo_gateway_nfs_uid_ets:get(UID),
+    {ok, Path} = leo_gateway_nfs_state_ets:get_path(UID),
     Path4S3Dir = path2dir(Path),
     {ok, NewCookieVerf, ReadDir} = case CookieVerf of
         <<0,0,0,0,0,0,0,0>> ->
@@ -1292,11 +1281,12 @@ nfsproc3_pathconf_3(_1, Clnt, State) ->
  
 nfsproc3_commit_3(_1, Clnt, State) ->
     ?debug("nfsproc3_commit_3", "args:~p client:~p", [_1, Clnt]),
+    {ok, WriteVerf} = leo_gateway_nfs_state_ets:get_write_verfier(),
     {reply, 
         {'NFS3_OK',
         {
             ?SIMPLENFS_WCC_EMPTY,
-            State#state.write_verf %% write verfier
+            WriteVerf
         }}, 
         State}.
 

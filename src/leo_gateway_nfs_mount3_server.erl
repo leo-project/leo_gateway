@@ -14,7 +14,7 @@
 
 init(_Args) ->
     io:format(user, "[debug]mountd init called args:~p pid:~p~n",[_Args, self()]),
-    leo_gateway_nfs_uid_ets:init(_Args),
+    leo_gateway_nfs_state_ets:init(_Args),
     Debug = case application:get_env(rpc_server, debug) of
         undefined ->
             false;
@@ -132,7 +132,7 @@ mountproc_mnt_3(MountDir0, Clnt, #state{debug = Debug} = State) ->
             %% @todo gen nfs3_fh
             <<$/, MountDir4S3/binary>> = MountDir,
             io:format(user, "[debug]mnt dir4s3:~p~n",[MountDir4S3]),
-            {ok, UID} = leo_gateway_nfs_uid_ets:new(MountDir4S3),
+            {ok, UID} = leo_gateway_nfs_state_ets:add_path(MountDir4S3),
             io:format(user, "[debug]mnt uid:~p~n",[UID]),
             {reply, {'MNT3_OK', {UID, []}}, State};
         false ->
