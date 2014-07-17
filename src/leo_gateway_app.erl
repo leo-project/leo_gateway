@@ -77,37 +77,7 @@ start() ->
     application:ensure_started(ssl),
     application:ensure_started(ranch),
     application:ensure_started(asn1),
-    application:load(rpc_server),
-    % argments for mountd
-    MountdArgs = {rpc_app_arg,
-                  mountd3,
-                  128,
-                  [{port, 22050}],
-                  ?MOUNTPROG,
-                  mountprog,
-                  [],
-                  ?MOUNTVERS3,
-                  ?MOUNTVERS3,
-                  true,
-                  leo_gateway_nfs_mount3_svc,
-                  [],
-                  []},
-    % argments for nfsd
-    NfsdArgs = {rpc_app_arg,
-                  nfsd3,
-                  128,
-                  [{port, 2049}],
-                  ?NFS3_PROGRAM,
-                  nfs3_program,
-                  [],
-                  ?NFS_V3,
-                  ?NFS_V3,
-                  true,
-                  leo_gateway_nfs_proto3_svc,
-                  [],
-                  []},
-    application:set_env(rpc_server, args, [MountdArgs, NfsdArgs]),
-    application:ensure_started(rpc_server),
+    
     application:start(leo_gateway).
 
 %%--------------------------------------------------------------------
@@ -223,6 +193,52 @@ after_process_0({ok, _Pid} = Res) ->
     case HttpOptions#http_options.handler of
         ?HTTP_HANDLER_EMBED ->
             void;
+        nfs ->
+            %% Retrieve bucket-prop-sync-interval for S3-API
+            BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
+            %% Launch S3Libs:Auth/Bucket/EndPoint
+            ok = leo_s3_libs:start(slave,
+                                   [{'provider', ManagerNodes1},
+                                    {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
+            leo_s3_endpoint:get_endpoints(),
+            %% Launch SNMPA
+            catch leo_statistics_api:start_link(leo_gateway),
+            ok = leo_statistics_api:create_tables(ram_copies, [node()]),
+            ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
+            ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
+            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
+            application:load(rpc_server),
+            % argments for mountd
+            MountdArgs = {rpc_app_arg,
+                          mountd3,
+                          128,
+                          [{port, 22050}],
+                          ?MOUNTPROG,
+                          mountprog,
+                          [],
+                          ?MOUNTVERS3,
+                          ?MOUNTVERS3,
+                          true,
+                          leo_gateway_nfs_mount3_svc,
+                          [],
+                          []},
+            % argments for nfsd
+            NfsdArgs = {rpc_app_arg,
+                          nfsd3,
+                          128,
+                          [{port, 2049}],
+                          ?NFS3_PROGRAM,
+                          nfs3_program,
+                          [],
+                          ?NFS_V3,
+                          ?NFS_V3,
+                          true,
+                          leo_gateway_nfs_proto3_svc,
+                          [],
+                          []},
+            io:format(user, "[debug]nfs started~n", []),
+            application:set_env(rpc_server, args, [MountdArgs, NfsdArgs]),
+            application:ensure_started(rpc_server);
         Handler ->
             case Handler of
                 ?HTTP_HANDLER_S3 ->

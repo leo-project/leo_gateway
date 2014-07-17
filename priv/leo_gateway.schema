@@ -131,7 +131,7 @@
  "http.handler",
  "leo_gateway.http.handler",
  [
-  {datatype, {enum, [s3, rest, embed]}},
+  {datatype, {enum, [s3, rest, embed, nfs]}},
   {default, s3}
  ]}.
 

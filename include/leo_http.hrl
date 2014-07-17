@@ -106,6 +106,7 @@
 -type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST).
 
 -define(convert_to_handler(_V), case _V of
+                                    'nfs'   -> 'nfs';
                                     'rest'  -> ?HTTP_HANDLER_REST;
                                     'swift' -> ?HTTP_HANDLER_SWIFT;
                                     's3'    -> ?HTTP_HANDLER_S3;

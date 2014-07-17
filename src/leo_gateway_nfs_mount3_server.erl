@@ -1,5 +1,6 @@
 -module(leo_gateway_nfs_mount3_server).
 -include("leo_gateway_nfs_mount3.hrl").
+-include_lib("leo_logger/include/leo_logger.hrl").
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          mountproc_null_3/2, 
          mountproc_mnt_3/3,
@@ -8,41 +9,21 @@
          mountproc_umntall_3/2,
          mountproc_export_3/2]).
  
--record(state, {
-    debug      :: boolean()
-}).
-
 init(_Args) ->
     io:format(user, "[debug]mountd init called args:~p pid:~p~n",[_Args, self()]),
     leo_gateway_nfs_state_ets:init(_Args),
-    Debug = case application:get_env(rpc_server, debug) of
-        undefined ->
-            false;
-        {ok, Val} ->
-            Val
-    end,
-    State = #state{debug = Debug},
-    {ok, State}.
+    {ok, void}.
  
-handle_call(Req, _From, #state{debug = Debug} = S) ->
-    case Debug of
-        true -> io:format(user, "[handle_call]req:~p from:~p~n",[Req, _From]);
-        false -> void
-    end,
+handle_call(Req, _From, S) ->
+    ?debug("handle_call", "req:~p from:~p", [Req, _From]),
     {reply, [], S}.
  
-handle_cast(Req, #state{debug = Debug} = S) ->
-    case Debug of
-        true -> io:format(user, "[handle_cast]req:~p~n",[Req]);
-        false -> void
-    end,
+handle_cast(Req, S) ->
+    ?debug("handle_cast", "req:~p", [Req]),
     {reply, [], S}.
  
-handle_info(Req, #state{debug = Debug} = S) ->
-    case Debug of
-        true -> io:format(user, "[handle_info]req:~p~n",[Req]);
-        false -> void
-    end,
+handle_info(Req, S) ->
+    ?debug("handle_info", "req:~p", [Req]),
     {noreply, S}.
  
 terminate(_Reason, _S) ->
@@ -68,7 +49,8 @@ is_valid_mount_dir(<<$/,Rest/binary>>) ->
     case leo_s3_bucket:find_bucket_by_name(Path) of
         {ok, _Bucket} ->
             true;
-        _ ->
+        Error ->
+            ?error("is_valid_mount_dir", "err:~p", [Error]),
             false
     end;
 is_valid_mount_dir(_Path) ->
@@ -116,18 +98,18 @@ mount_del_entry(MountDir, Addr, MountPointDict) ->
 
 %% callback impl
 mountproc_null_3(_Clnt, State) ->
+    ?debug("mountproc_null_3", "clnt:~p", [_Clnt]),
     {reply, [], State}.
  
-mountproc_mnt_3(MountDir0, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[mnt]args:~p client:~p~n",[MountDir0, Clnt]);
-        false -> void
-    end,
+mountproc_mnt_3(MountDir0, Clnt, State) ->
+    ?debug("mountproc_mnt_3", "mount:~p clnt:~p", [MountDir0, Clnt]),
     % validate path
     MountDir = formalize_path(MountDir0),
+    ?debug("mountproc_mnt_3", "formalized mount:~p", [MountDir]),
     case is_valid_mount_dir(MountDir) of
         true ->
             {ok, {Addr, _Port}}= rpc_proto:client_ip(Clnt),
+            ?debug("mountproc_mnt_3", "addr:~p port:~p", [Addr, _Port]),
             mount_add_entry(MountDir, Addr),
             %% @todo gen nfs3_fh
             <<$/, MountDir4S3/binary>> = MountDir,
@@ -139,33 +121,21 @@ mountproc_mnt_3(MountDir0, Clnt, #state{debug = Debug} = State) ->
             {reply, {'MNT3ERR_NOTDIR', []}, State}
     end.
  
-mountproc_dump_3(Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[dump]client:~p~n",[Clnt]);
-        false -> void
-    end,
+mountproc_dump_3(Clnt, State) ->
+    ?debug("mountproc_dump_3", "clnt:~p", [Clnt]),
     {reply, void, State}.
  
-mountproc_umnt_3(MountDir0, Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[umnt]args:~p client:~p~n",[MountDir0, Clnt]);
-        false -> void
-    end,
+mountproc_umnt_3(MountDir0, Clnt, State) ->
+    ?debug("mountproc_umnt_3", "mount:~p clnt:~p", [MountDir0, Clnt]),
     MountDir = formalize_path(MountDir0),
     {ok, {Addr, _Port}}= rpc_proto:client_ip(Clnt),
     catch mount_del_entry(MountDir, Addr),
     {reply, void, State}.
  
-mountproc_umntall_3(Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[umntall]client:~p~n",[Clnt]);
-        false -> void
-    end,
+mountproc_umntall_3(Clnt, State) ->
+    ?debug("mountproc_umntall_3", "clnt:~p", [Clnt]),
     {reply, void, State}.
  
-mountproc_export_3(Clnt, #state{debug = Debug} = State) ->
-    case Debug of
-        true -> io:format(user, "[export]client:~p~n",[Clnt]);
-        false -> void
-    end,
+mountproc_export_3(Clnt, State) ->
+    ?debug("mountproc_export_3", "clnt:~p", [Clnt]),
     {reply, void, State}.
