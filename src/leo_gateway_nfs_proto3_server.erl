@@ -32,6 +32,9 @@
          nfsproc3_commit_3/3,
          nfsproc3_fsinfo_3/3]).
 
+-export([sattr_mode2file_info/1, sattr_uid2file_info/1, sattr_gid2file_info/1,
+         sattr_atime2file_info/1, sattr_mtime2file_info/1, sattr_size2file_info/1]).
+
 -record(ongoing_readdir, {
     filelist  :: list(#?METADATA{})
 }).
@@ -208,6 +211,9 @@ sattr_uid2file_info({true, UID}) -> UID.
 sattr_gid2file_info({0, _})   -> undefined;
 sattr_gid2file_info({true, GID}) -> GID.
 
+sattr_size2file_info({true, Size}) -> Size;
+sattr_size2file_info({_, _})   -> undefined.
+
 sattr_atime2file_info({'DONT_CHANGE', _}) -> undefined;
 sattr_atime2file_info({'SET_TO_SERVER_TIME', _}) -> leo_gateway_nfs_file_handler:unix_time();
 sattr_atime2file_info({_, {ATime, _}})         -> ATime.
@@ -351,21 +357,39 @@ nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
     end.
      
 % @todo for now do nothing
-nfsproc3_setattr_3({{_Path},
+nfsproc3_setattr_3({{FileUID},
                     {_Mode,
                      _UID,
                      _GID,
-                     _,
+                     SattrSize,
                      _ATime,
                      _MTime
                     },_Guard} = _1, Clnt, State) ->
     ?debug("nfsproc3_setattr_3", "args:~p client:~p", [_1, Clnt]),
-    {reply, 
-        {'NFS3_OK',
-        {
-            ?SIMPLENFS_WCC_EMPTY
-        }}, 
-        State}.
+    Size = sattr_size2file_info(SattrSize),
+    case Size of
+        undefined ->
+            {reply, 
+                {'NFS3_OK',
+                {
+                    ?SIMPLENFS_WCC_EMPTY
+                }}, 
+                State};
+        _ ->
+            {ok, Path} = leo_gateway_nfs_state_ets:get_path(FileUID),
+            case leo_gateway_nfs_file_handler:trim(Path, Size) of
+                ok ->
+                    {reply, 
+                        {'NFS3_OK',
+                        {
+                            ?SIMPLENFS_WCC_EMPTY
+                        }}, 
+                        State};
+                {error, Reason}->
+                    {reply, {'NFS3ERR_IO', Reason}, State}
+            end
+    end.
+
          
 nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
     ?debug("nfsproc3_lookup_3", "args:~p client:~p", [_1, Clnt]),

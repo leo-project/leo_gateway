@@ -23,6 +23,8 @@ DST_50M_FILE=$MOUNT_DIR/$FNAME_50M
 DST_SUB_DIR=$MOUNT_DIR/sub1/sub2/sub3
 DST_SUB_ROOT_DIR=$MOUNT_DIR/sub1
 DST_50M_FILE2=$DST_SUB_DIR/$FNAME_50M
+DST_50M_FILE3=$MOUNT_DIR/${FNAME_50M}.3
+DST_50M_FILE4=$MOUNT_DIR/${FNAME_50M}.4
 TOUCHED_FILE=$MOUNT_DIR/$FNAME_TOUCH
 dd if=/dev/urandom of=$TMP_1K_FILE bs=1024 count=1
 dd if=/dev/urandom of=$TMP_1M_FILE bs=1024 count=1024
@@ -36,6 +38,8 @@ CMD_MKDIR="mkdir -p $DST_SUB_DIR"
 CMD_CP_1K="cp $TMP_1K_FILE $DST_1K_FILE"
 CMD_CP_1M="cp $TMP_1M_FILE $DST_1M_FILE"
 CMD_CP_50M="cp $TMP_50M_FILE $DST_50M_FILE"
+CMD_CP_50M3="cp $TMP_50M_FILE $DST_50M_FILE3"
+CMD_CP_50M4="cp $TMP_50M_FILE $DST_50M_FILE4"
 CMD_DIFF_1K="diff $TMP_1K_FILE $DST_1K_FILE"
 CMD_DIFF_1M="diff $TMP_1M_FILE $DST_1M_FILE"
 CMD_DIFF_50M="diff $TMP_50M_FILE $DST_50M_FILE"
@@ -45,6 +49,7 @@ CMD_RM_50M="rm $DST_50M_FILE2"
 CMD_RMDIR_SUB="rmdir $DST_SUB_DIR"
 CMD_RM_SUB_ROOT="rm -rf $DST_SUB_ROOT_DIR"
 CMD_TOUCH="touch $TOUCHED_FILE"
+CMD_DD="dd if=$DST_50M_FILE3 of=$DST_50M_FILE4 bs=128 count=1"
 
 # Functions
 function ls_validate_num_of_childs() {
@@ -130,8 +135,12 @@ function make_many_files() {
     eval $CMD_TOUCH &&
     stat_validate_size $DST_1M_FILE 1048576 &&
     du_validate_size_in_mbyte $MOUNT_DIR 2 &&
+    eval $CMD_CP_50M3 &&
+    eval $CMD_CP_50M4 &&
     make_many_files $MOUNT_DIR 500 &&
-    ls_validate_num_of_childs $MOUNT_DIR 502 &&
+    ls_validate_num_of_childs $MOUNT_DIR 504 &&
+    eval $CMD_DD &&
+    stat_validate_size $DST_50M_FILE4 128 &&
     echo "[Success]All tests passed."
 } || 
 {

@@ -9,7 +9,7 @@
 -include("leo_gateway_nfs_proto3.hrl").
 -include_lib("kernel/include/file.hrl").
 -export([is_file/1, is_dir/1, list_dir/1, list_dir/2, rename/2,
-         write/4, read/3, unix_time/0, gs2unix_time/1]).
+         write/4, read/3, unix_time/0, gs2unix_time/1, trim/2]).
 -export([path2dir/1, path_trim_trailing_sep/1, path_relative2abs/1,
          binary_is_contained/2, get_disk_usage/0]).
 
@@ -483,6 +483,105 @@ unix_time() ->
       pos_integer()).
 gs2unix_time(GS) ->
     GS - ?UNIX_TIME_BASE.
+
+% @doc
+% Trim a file which size is modified to Size
+-spec(trim(binary(), pos_integer()) ->
+      ok | {error, any()}).
+trim(Key, Size) ->
+    LargeObjectProp   = ?env_large_object_properties(),
+    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
+                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    IsLarge = Size > ChunkedObjLen,
+    case leo_gateway_rpc_handler:get(Key) of
+        {ok, #?METADATA{cnumber = 0} = _SrcMeta, SrcObj} when IsLarge =:= false ->
+            %% small to small
+            %% @todo handle expand case
+            <<DstObj:Size/binary, _Rest/binary>> = SrcObj,
+            case leo_gateway_rpc_handler:put(Key, DstObj) of
+                {ok, _} ->
+                    ok;
+                Error ->
+                    Error
+            end;
+        {ok, #?METADATA{cnumber = 0} = _SrcMeta, _SrcObj} ->
+            %% small to large
+            %% @todo handle expand case
+            ok;
+        {ok, #?METADATA{cnumber = CNum} = _SrcMeta, _} when IsLarge =:= true ->
+            %% large to large
+            %% @todo handle expand case
+            End = Size - 1,
+            IndexEnd = End div ChunkedObjLen + 1,
+            % Modify the last chunk
+            TailSize = End rem ChunkedObjLen + 1,
+            case large_obj_partial_trim(Key, IndexEnd, TailSize) of
+                ok ->
+                    % Update the metadata based on Size and IndexEnd
+                    case leo_gateway_rpc_handler:put(Key, <<>>, Size, ChunkedObjLen, IndexEnd, 0) of
+                        {ok, _} ->
+                            % Remove tail chunks between IndexEnd + 1 to CNum
+                            RemovedIdxList = lists:seq(IndexEnd + 1, CNum),
+                            large_obj_delete_chunks(Key, RemovedIdxList),
+                            ok;
+                        Error ->
+                            Error
+                    end;
+                Error ->
+                    Error
+            end;
+        {ok, #?METADATA{cnumber = _CNum} = _SrcMeta, _} ->
+            %% large to small
+            %% Get the first chunk
+            IndexBin = list_to_binary(integer_to_list(1)),
+            Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+            case leo_gateway_rpc_handler:get(Key2) of
+                {ok, _Meta, SrcObj} ->
+                    %% Trim the data by Size
+                    <<DstObj:Size/binary, _Rest/binary>> = SrcObj,
+                    %% Insert the new object as a small object
+                    case leo_gateway_rpc_handler:put(Key, DstObj) of
+                        {ok, _} ->
+                            ok;
+                        Error ->
+                            Error
+                    end;
+                Error ->
+                    Error
+            end
+    end.
+
+%% @private
+large_obj_partial_trim(Key, Index, Size) ->
+    IndexBin = list_to_binary(integer_to_list(Index)),
+    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:get(Key2) of
+        {ok, _Meta, SrcObj} ->
+            <<DstObj:Size/binary, _Rest/binary>> = SrcObj,
+            case leo_gateway_rpc_handler:put(Key2, DstObj) of
+                {ok, _} ->
+                    ok;
+                Error ->
+                    Error 
+            end; 
+        Error ->
+            Error
+    end.
+
+%% @private
+large_obj_delete_chunks(_Key, []) ->
+    ok;
+large_obj_delete_chunks(Key1, [Index1|Rest]) ->
+    Index2 = list_to_binary(integer_to_list(Index1)),
+    Key2   = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
+    case leo_gateway_rpc_handler:delete(Key2) of
+        ok ->
+            void;
+        {error, Cause} ->
+            ?error("large_obj_delete_chunks/2", "key:~s, index:~p, cause:~p",
+                   [binary_to_list(Key1), Index1, Cause])
+    end,
+    large_obj_delete_chunks(Key1, Rest).
 
 % @doc
 % Convert from the file path to the path trailing '/'
