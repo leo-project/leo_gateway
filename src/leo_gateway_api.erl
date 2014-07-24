@@ -50,7 +50,7 @@
 %%----------------------------------------------------------------------
 %% @doc Get node status (gateway).
 %%
--spec(get_node_status() -> {ok, #cluster_node_status{}}).
+-spec(get_node_status() -> {ok, list()}).
 get_node_status() ->
     {ok, Version} = application:get_key(leo_gateway, vsn),
     {RingHashCur, RingHashPrev} =

@@ -106,8 +106,8 @@ onresponse(CacheCondition) ->
 %% For BUCKET-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET buckets and dirs
--spec(get_bucket(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(get_bucket(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false,
                                  qs_prefix     = Prefix}) ->
@@ -148,8 +148,8 @@ get_bucket(Req, Bucket1, #req_params{access_key_id = _AccessKeyId,
     end.
 
 %% @doc Put a bucket
--spec(put_bucket(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(put_bucket(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false}) ->
     Bucket = formalize_bucket(Key),
@@ -181,8 +181,8 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
 
 
 %% @doc Remove a bucket
--spec(delete_bucket(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(delete_bucket(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     case delete_bucket_1(AccessKeyId, Key) of
         ok ->
@@ -190,15 +190,12 @@ delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
         not_found ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
-
 %% @doc Retrieve a bucket-info
--spec(head_bucket(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(head_bucket(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     Bucket = formalize_bucket(Key),
     case head_bucket_1(AccessKeyId, Bucket) of
@@ -217,15 +214,15 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 %% For OBJECT-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Objects
--spec(get_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(get_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 get_object(Req, Key, Params) ->
     leo_gateway_http_commons:get_object(Req, Key, Params).
 
 
 %% @doc GET operation on Objects
--spec(get_object_with_cache(any(), binary(), #cache{}, #req_params{}) ->
-             {ok, any()}).
+-spec(get_object_with_cache(cowboy_req:req(), binary(), #cache{}, #req_params{}) ->
+             {ok, cowboy_req:req()}).
 get_object_with_cache(Req, Key, CacheObj, Params) ->
     leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj,  Params).
 
@@ -244,8 +241,8 @@ get_x_amz_meta_directive(_Req, Other) ->
     Other.
 
 %% @doc POST/PUT operation on Objects
--spec(put_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(put_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 put_object(Req, Key, Params) ->
     put_object(get_x_amz_meta_directive(Req), Req, Key, Params).
 
@@ -358,36 +355,28 @@ put_large_object_2(Req, Key, Meta) ->
     end.
 
 put_large_object_3(Req, Meta) ->
-    case leo_gateway_large_object_handler:delete_chunked_objects(
-           Meta#?METADATA.key, Meta#?METADATA.cnumber) of
-        ok ->
-            catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
-            resp_copy_obj_xml(Req, Meta);
-        {error, not_found} ->
-            resp_copy_obj_xml(Req, Meta);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req)
-    end.
+    leo_gateway_large_object_handler:delete_chunked_objects(
+           Meta#?METADATA.key, Meta#?METADATA.cnumber),
+    catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
+    resp_copy_obj_xml(Req, Meta).
 
 %% @doc DELETE operation on Objects
--spec(delete_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(delete_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 delete_object(Req, Key, Params) ->
     leo_gateway_http_commons:delete_object(Req, Key, Params).
 
 
 %% @doc HEAD operation on Objects
--spec(head_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(head_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 head_object(Req, Key, Params) ->
     leo_gateway_http_commons:head_object(Req, Key, Params).
 
 
 %% @doc RANGE-Query operation on Objects
--spec(range_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(range_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 range_object(Req, Key, Params) ->
     leo_gateway_http_commons:range_object(Req, Key, Params).
 
@@ -817,7 +806,7 @@ auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs, #req_params{is_acl =
 %% @doc Get bucket list
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
--spec(get_bucket_1(string(), none, char()|none, string()|none, integer(), string()|none) ->
+-spec(get_bucket_1(binary(), binary(), char()|none, string()|none, integer(), binary()|none) ->
              {ok, list(), string()}|{error, any()}).
 get_bucket_1(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
     get_bucket_1(AccessKeyId, <<"/">>, Delimiter, Marker, MaxKeys, none);
@@ -859,7 +848,7 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix1) ->
 %% @doc Put a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketPUT.html
--spec(put_bucket_1(string(), string(), string()|none) ->
+-spec(put_bucket_1(string(), binary(), binary()|none) ->
              ok|{error, any()}).
 put_bucket_1([], AccessKeyId, Bucket) ->
     leo_s3_bucket:put(AccessKeyId, Bucket);
@@ -869,7 +858,7 @@ put_bucket_1(CannedACL, AccessKeyId, Bucket) ->
 %% @doc Put a bucket ACL
 %% @private
 %% @see http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTacl.html
--spec(put_bucket_acl_1(string(), string(), string()|none) ->
+-spec(put_bucket_acl_1(string(), binary(), binary()|none) ->
              ok|{error, any()}).
 put_bucket_acl_1(?CANNED_ACL_PRIVATE, AccessKeyId, Bucket) ->
     leo_s3_bucket:update_acls2private(AccessKeyId, Bucket);
@@ -883,8 +872,8 @@ put_bucket_acl_1(_, _AccessKeyId, _Bucket) ->
 %% @doc Delete a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketDELETE.html
--spec(delete_bucket_1(string(), string()|none) ->
-             ok|{error, any()}).
+-spec(delete_bucket_1(binary(), binary()|none) ->
+             ok | not_found | {error, any()}).
 delete_bucket_1(AccessKeyId, Bucket1) ->
     Bucket2 = formalize_bucket(Bucket1),
     ManagerNodes = ?env_manager_nodes(leo_gateway),
@@ -912,8 +901,8 @@ delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
 %% @doc Head a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketHEAD.html
--spec(head_bucket_1(string(), string()|none) ->
-             ok|{error, any()}).
+-spec(head_bucket_1(binary(), binary()|none) ->
+             ok | not_found | {error, any()}).
 head_bucket_1(AccessKeyId, Bucket) ->
     leo_s3_bucket:head(AccessKeyId, Bucket).
 

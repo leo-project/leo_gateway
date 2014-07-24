@@ -77,8 +77,8 @@
 %%----------------------------------------------------------------------
 %% large-object
 -record(large_obj_info, {key = <<>>         :: binary(),
-                         length = 0         :: pos_integer(),
-                         num_of_chunks = 0  :: pos_integer(),
+                         length = 0         :: non_neg_integer(),
+                         num_of_chunks = 0  :: non_neg_integer(),
                          md5_context = <<>> :: binary()
                         }).
 
