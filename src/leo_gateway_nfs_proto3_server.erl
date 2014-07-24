@@ -90,7 +90,7 @@ is_empty_dir(Path) ->
 % Returns list of file's metadatas stored in the specified Path and
 % store that with a verifier to identify and retrieve later.
 -spec(readdir_add_entry(binary()) -> 
-      {ok, binary(), list(#?METADATA{})}).
+      {ok, binary(), #ongoing_readdir{}}).
 readdir_add_entry(Path) ->
     case leo_gateway_nfs_file_handler:list_dir(Path) of
         {ok, FileList}->
@@ -106,11 +106,12 @@ readdir_add_entry(Path) ->
 % @doc
 % @private
 % get resources correspond with a cookies verifier which returned by readdir_get_entry
--spec(readdir_get_entry(binary()) -> ok).
+-spec(readdir_get_entry(binary()) ->
+      {ok, binary(), #ongoing_readdir{} | undefined}).
 readdir_get_entry(CookieVerf) ->
     case leo_gateway_nfs_state_ets:get_readdir_entry(CookieVerf) of
         not_found ->
-            {ok, CookieVerf, []};
+            {ok, CookieVerf, undefined};
         {ok, Ret} ->
             {ok, CookieVerf, Ret}
     end.
@@ -120,7 +121,8 @@ readdir_get_entry(CookieVerf) ->
 % Delete resources correspond with a cookies verifier which returned by readdir_get_entry
 -spec(readdir_del_entry(binary()) -> ok).
 readdir_del_entry(CookieVerf) ->
-    leo_gateway_nfs_state_ets:del_readdir_entry(CookieVerf).
+    leo_gateway_nfs_state_ets:del_readdir_entry(CookieVerf),
+    ok.
 
 % @doc
 % @private
@@ -195,7 +197,7 @@ readdir_create_resp(Path, CurCookie,
 % @private
 % Return the inode of Path
 % @todo to be replaced with truely unique id supported by LeoFS future works 
--spec(inode(binary()) ->
+-spec(inode(binary() | string()) ->
       integer()).
 inode(Path) ->
     <<F8:8/binary, _/binary>> = erlang:md5(Path),
@@ -678,7 +680,7 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
             readdir_get_entry(CookieVerf)
     end,
     case ReadDir of
-        [] ->
+        undefined ->
             % empty response
             readdir_del_entry(NewCookieVerf),
             {reply, 

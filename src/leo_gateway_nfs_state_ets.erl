@@ -43,11 +43,10 @@ del_path(UID) ->
     Ret = ets:lookup(?LEO_GW_NFS_UID2PATH_ETS_TBL, UID),
     case Ret of
         [] ->
-            ok;
+            true;
         [{_, Path4S3}|_] ->
             catch ets:delete(?LEO_GW_NFS_UID2PATH_ETS_TBL, UID),
-            catch ets:delete(?LEO_GW_NFS_PATH2UID_ETS_TBL, Path4S3),
-            ok
+            ets:delete(?LEO_GW_NFS_PATH2UID_ETS_TBL, Path4S3)
     end.
 
 get_uid_list() ->

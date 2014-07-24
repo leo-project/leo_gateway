@@ -47,8 +47,6 @@
 
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
--type(method() :: get | put | delete | head).
-
 -record(req_params, {
           req_id       = 0  :: integer(),
           timestamp    = 0  :: integer(),
@@ -126,34 +124,34 @@ delete(Key) ->
 %% @doc Insert an object into the storage-cluster (regular-case)
 %%
 -spec(put(binary(), binary()) ->
-             ok|{error, any()}).
+             ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body) ->
     Size = byte_size(Body),
     put(Key, Body, Size, 0, 0, 0, 0).
 
 -spec(put(binary(), binary(), integer()) ->
-             ok|{error, any()}).
+             ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body, Size) ->
     put(Key, Body, Size, 0, 0, 0, 0).
 
 %% @doc Insert an object into the storage-cluster (child of chunked-object)
 %%
 -spec(put(binary(), binary(), integer(), integer()) ->
-             ok|{error, any()}).
+             ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body, Size, Index) ->
     put(Key, Body, Size, 0, 0, Index, 0).
 
 %% @doc Insert an object into the storage-cluster (parent of chunked-object)
 %%
 -spec(put(binary(), binary(), integer(), integer(), integer(), integer()) ->
-             ok|{error, any()}).
+             ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body, Size, ChunkedSize, TotalOfChunks, Digest) ->
     put(Key, Body, Size, ChunkedSize, TotalOfChunks, 0, Digest).
 
 %% @doc Insert an object into the storage-cluster
 %%
 -spec(put(binary(), binary(), integer(), integer(), integer(), integer(), integer()) ->
-             ok|{error, any()}).
+             ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_PUT),
     ReqParams = get_request_parameters(put, Key),
@@ -178,7 +176,7 @@ put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
 %% @doc Do invoke rpc calls with handling retries
 %%
 -spec(invoke(list(), atom(), atom(), list(), list()) ->
-             ok|{ok, any()}|{error, any()}).
+                ok|{ok, any()}|{ok, #?METADATA{}, binary()}|{error, any()}).
 invoke([], _Mod, _Method, _Args, Errors) ->
     {error, error_filter(Errors)};
 invoke([#redundant_node{available = false}|T], Mod, Method, Args, Errors) ->
@@ -215,7 +213,7 @@ invoke([#redundant_node{node      = Node,
 
 %% @doc Get request parameters
 %%
--spec(get_request_parameters(method(), string()) ->
+-spec(get_request_parameters(atom(), binary()) ->
              #req_params{}).
 get_request_parameters(Method, Key) ->
     {ok, #redundancies{id = Id, nodes = Redundancies}} =

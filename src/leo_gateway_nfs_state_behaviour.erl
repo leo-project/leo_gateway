@@ -19,5 +19,5 @@
           true).
 -callback(add_write_verfier(WriteVerf::binary()) ->
           true).
--callback(get_write_verfier(WriteVerf::binary()) ->
+-callback(get_write_verfier() ->
           {ok, binary()}| not_found).

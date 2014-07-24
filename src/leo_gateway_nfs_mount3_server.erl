@@ -105,19 +105,14 @@ mountproc_mnt_3(MountDir0, Clnt, State) ->
     ?debug("mountproc_mnt_3", "mount:~p clnt:~p", [MountDir0, Clnt]),
     % validate path
     MountDir = formalize_path(MountDir0),
-    ?debug("mountproc_mnt_3", "formalized mount:~p", [MountDir]),
     case is_valid_mount_dir(MountDir) of
         true ->
             {ok, {Addr, _Port}}= rpc_proto:client_ip(Clnt),
-            ?debug("mountproc_mnt_3", "addr:~p port:~p", [Addr, _Port]),
             mount_add_entry(MountDir, Addr),
-            %% @todo gen nfs3_fh
             <<$/, MountDir4S3/binary>> = MountDir,
-            io:format(user, "[debug]mnt dir4s3:~p~n",[MountDir4S3]),
             {ok, UID} = leo_gateway_nfs_state_ets:add_path(MountDir4S3),
-            io:format(user, "[debug]mnt uid:~p~n",[UID]),
             {reply, {'MNT3_OK', {UID, []}}, State};
-        false ->
+        _ ->
             {reply, {'MNT3ERR_NOTDIR', []}, State}
     end.
  

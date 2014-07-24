@@ -139,16 +139,10 @@ rename_large_object_1(Key, Meta) ->
             Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
     end.
 rename_large_object_2(Meta) ->
-    case leo_gateway_large_object_handler:delete_chunked_objects(
-           Meta#?METADATA.key, Meta#?METADATA.cnumber) of
-        ok ->
-            catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
-            ok;
-        {error, not_found} ->
-            ok;
-        Error ->
-            Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
-    end.
+    leo_gateway_large_object_handler:delete_chunked_objects(
+           Meta#?METADATA.key, Meta#?METADATA.cnumber),
+    catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
+    ok.
 
 %% functions for write operation
 %%
@@ -648,8 +642,6 @@ get_disk_usage() ->
             Nodes = [_N || #member{node  = _N,
                                    state = ?STATE_RUNNING} <- Members],
             Nodes;
-        not_found ->
-            [];
         {error,_Cause} ->
             [] 
     end,
