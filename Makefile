@@ -46,5 +46,5 @@ qc:
 gen_rpc: deps
 	(cd deps/erpcgen/;make rpc)
 gen_nfs: gen_rpc
-	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_gateway_nfs_proto3.x
-	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_gateway_nfs_mount3.x
+	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_proto3.x
+	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_mount3.x

@@ -28,8 +28,8 @@
 -author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
--include("leo_gateway_nfs_mount3.hrl").
--include("leo_gateway_nfs_proto3.hrl").
+-include("leo_nfs_mount3.hrl").
+-include("leo_nfs_proto3.hrl").
 -include("leo_http.hrl").
 -include_lib("leo_cache/include/leo_cache.hrl").
 -undef(error).
@@ -219,7 +219,7 @@ after_process_0({ok, _Pid} = Res) ->
                           ?MOUNTVERS3,
                           ?MOUNTVERS3,
                           true,
-                          leo_gateway_nfs_mount3_svc,
+                          leo_nfs_mount3_svc,
                           [],
                           []},
             % argments for nfsd
@@ -233,7 +233,7 @@ after_process_0({ok, _Pid} = Res) ->
                           ?NFS_V3,
                           ?NFS_V3,
                           true,
-                          leo_gateway_nfs_proto3_svc,
+                          leo_nfs_proto3_svc,
                           [],
                           []},
             io:format(user, "[debug]nfs started~n", []),
