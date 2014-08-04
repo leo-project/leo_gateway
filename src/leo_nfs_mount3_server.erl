@@ -66,7 +66,7 @@ mountproc_mnt_3(MountDir0, Clnt, State) ->
     MountDir = formalize_path(MountDir0),
     case is_valid_mount_dir(MountDir) of
         true ->
-            {ok, {Addr, _Port}}= rpc_proto:client_ip(Clnt),
+            {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
             mount_add_entry(MountDir, Addr),
             <<$/, MountDir4S3/binary>> = MountDir,
             {ok, UID} = leo_nfs_state_ets:add_path(MountDir4S3),
@@ -86,7 +86,7 @@ mountproc_dump_3(Clnt, State) ->
 mountproc_umnt_3(MountDir0, Clnt, State) ->
     ?debug("mountproc_umnt_3", "mount:~p clnt:~p", [MountDir0, Clnt]),
     MountDir = formalize_path(MountDir0),
-    {ok, {Addr, _Port}}= rpc_proto:client_ip(Clnt),
+    {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
     catch mount_del_entry(MountDir, Addr),
     {reply, void, State}.
 

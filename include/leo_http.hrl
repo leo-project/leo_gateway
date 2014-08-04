@@ -97,23 +97,6 @@
 -define(CACHE_INNER, 'inner').
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
 
-
--define(HTTP_HANDLER_S3,    'leo_gateway_s3_api').
--define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
--define(HTTP_HANDLER_REST,  'leo_gateway_rest_api').
--define(HTTP_HANDLER_EMBED, 'leo_gateway_embed').
-
--type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST | ?HTTP_HANDLER_EMBED | nfs).
-
--define(convert_to_handler(_V), case _V of
-                                    'nfs'   -> 'nfs';
-                                    'rest'  -> ?HTTP_HANDLER_REST;
-                                    'swift' -> ?HTTP_HANDLER_SWIFT;
-                                    's3'    -> ?HTTP_HANDLER_S3;
-                                    'embed' -> ?HTTP_HANDLER_EMBED;
-                                    _       -> ?HTTP_HANDLER_S3
-                                end).
-
 %% Default values
 -define(DEF_HTTTP_HANDLER,            's3').
 -define(DEF_HTTP_PORT,                8080).
@@ -298,7 +281,7 @@
 %% Records
 -record(http_options, {
           %% for basic
-          handler                      :: http_handler(), %% http-handler
+          handler                      :: atom(),         %% http-handler
           port = 0                     :: pos_integer(),  %% http port number
           ssl_port = 0                 :: pos_integer(),  %% ssl port number
           ssl_certfile = []            :: string(),       %% ssl cert file name
@@ -327,7 +310,7 @@
 
 -record(req_params, {
           %% basic info
-          handler                    :: http_handler(),         %% http-handler
+          handler                    :: atom(),                 %% http-handler
           path = <<>>                :: binary(),               %% path (uri)
           bucket = <<>>              :: binary(),               %% bucket (for s3-api)
           access_key_id = <<>>       :: binary(),               %% s3's access-key-id
