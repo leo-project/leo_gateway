@@ -238,7 +238,7 @@ sync_tables_1([]) ->
 sync_tables_1([Node|Rest] = Managers) ->
     case leo_rpc:call(Node, svc_tbl_schema, get,
                       [?QOS_METRIC_BUCKET_SCHEMA]) of
-        {ok, #sv_schema{} = Schema} ->
+        {ok, #?SV_SCHEMA{} = Schema} ->
             Ret = svc_tbl_schema:insert(Schema),
             sync_tables_2(Ret, Managers);
         _ ->
