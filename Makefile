@@ -47,7 +47,7 @@ distclean:
 qc:
 	@$(REBAR) qc skip_deps=true
 gen_rpc: deps
-	(cd deps/erpcgen/;make rpc)
+	(cd deps/erpcgen/;make)
 gen_nfs: gen_rpc
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_proto3.x
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_mount3.x
