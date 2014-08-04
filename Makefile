@@ -2,14 +2,17 @@
 
 REBAR := ./rebar
 APPS = erts kernel stdlib sasl crypto compiler inets mnesia public_key runtime_tools snmp syntax_tools tools xmerl webtool
-LIBS = deps/leo_commons/ebin deps/leo_logger/ebin deps/leo_object_storage/ebin deps/leo_redundant_manager/ebin deps/leo_statistics/ebin deps/leo_s3_libs/ebin deps/leo_cache/ebin deps/savanna_agent/ebin deps/erpcgen/ebin
+LIBS = deps/leo_commons/ebin deps/leo_logger/ebin deps/leo_object_storage/ebin \
+       deps/leo_redundant_manager/ebin deps/leo_mq/ebin deps/leo_statistics/ebin deps/leo_rpc/ebin \
+       deps/leo_s3_libs/ebin deps/leo_cache/ebin deps/leo_dcerl/ebin deps/leo_mcerl/ebin \
+       deps/savanna_commons/ebin deps/savanna_agent/ebin deps/erpcgen/ebin
 PLT_FILE = .leo_gateway_dialyzer_plt
 DOT_FILE = leo_gateway.dot
 CALL_GRAPH_FILE = leo_gateway.png
 
-all: gen_nfs
+all: deps gen_nfs
 	@$(REBAR) compile
-	#@$(REBAR) xref skip_deps=true
+	## @$(REBAR) xref skip_deps=true
 	@$(REBAR) eunit skip_deps=true
 deps:
 	@$(REBAR) get-deps
