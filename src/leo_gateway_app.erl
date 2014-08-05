@@ -189,13 +189,13 @@ after_process_0({ok, _Pid} = Res) ->
 
     %% Retrieve http-options
     {ok, HttpOptions} = get_options(),
-    ?debugVal(HttpOptions),
 
     %% Launch bucket-sync, s3-related-procs
     %% [S3, NFS]
-    case HttpOptions#http_options.handler of
-        Handler_1 when Handler_1 == ?PROTO_HANDLER_S3;
-                       Handler_1 == nfs ->
+    Handler = HttpOptions#http_options.handler,
+    case Handler of
+        Handler when Handler == ?PROTO_HANDLER_S3;
+                     Handler == ?PROTO_HANDLER_NFS ->
             %% Retrieve bucket-prop-sync-interval for S3-API
             BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
 
@@ -210,11 +210,10 @@ after_process_0({ok, _Pid} = Res) ->
 
     %% Launch HTTP-handler
     %% [S3, REST]
-    case HttpOptions#http_options.handler of
-        Handler_2 when Handler_2 == ?PROTO_HANDLER_S3;
-                       Handler_2 == ?PROTO_HANDLER_REST ->
+    case Handler of
+        Handler when Handler == ?PROTO_HANDLER_S3;
+                     Handler == ?PROTO_HANDLER_REST ->
             %% Launch http-handler(s)
-            Handler = HttpOptions#http_options.handler,
             ok = Handler:start(leo_gateway_sup, HttpOptions);
         _ ->
             void
@@ -222,9 +221,8 @@ after_process_0({ok, _Pid} = Res) ->
 
     %% Launch nfs-related-procs
     %% [NFS]
-    case HttpOptions#http_options.handler of
-        nfs ->
-            ?debugVal(nfs),
+    case Handler of
+        ?PROTO_HANDLER_NFS ->
             %% NFS:Load nfs-rpc-server
             application:load(nfs_rpc_server),
             %% NFS:Argments for mountd
@@ -261,7 +259,13 @@ after_process_0({ok, _Pid} = Res) ->
         _ ->
             void
     end,
-    ?debugVal(ok),
+
+    %% Launch SNMPA
+    catch leo_statistics_api:start_link(leo_gateway),
+    ok = leo_statistics_api:create_tables(ram_copies, [node()]),
+    ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
 
     %% Launch LeoCache
     NumOfCacheWorkers     = HttpOptions#http_options.cache_workers,
