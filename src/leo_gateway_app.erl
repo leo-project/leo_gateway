@@ -47,22 +47,22 @@
 
 -define(CHECK_INTERVAL, 3000).
 
+
 -ifdef(TEST).
 -define(get_several_info_from_manager(_Args),
         fun() ->
                 _ = get_system_config_from_manager([]),
                 _ = get_members_from_manager([]),
 
-                [{ok, [#?SYSTEM_CONF{n = 1,
+                [
+                 {ok, [#?SYSTEM_CONF{n = 1,
                                      w = 1,
                                      r = 1,
-                                     d = 1}]
-                 },
+                                     d = 1}]},
                  {ok, {[#member{node  = 'node_0',
                                 state = 'running'}],
                        [#member{node  = 'node_0',
-                                state = 'running'}]}
-                 }
+                                state = 'running'}]}}
                 ]
         end).
 -else.
@@ -70,15 +70,15 @@
                                             get_members_from_manager(X)}).
 -endif.
 
-% for debug
+%% for debug
 start() ->
     application:ensure_started(crypto),
     application:ensure_started(snmp),
     application:ensure_started(ssl),
     application:ensure_started(ranch),
     application:ensure_started(asn1),
-    
     application:start(leo_gateway).
+
 
 %%--------------------------------------------------------------------
 %% API
@@ -155,19 +155,18 @@ inspect_cluster_status(Res, ManagerNodes) ->
         {{ok, SystemConf}, {ok, {MembersCur, MembersPrev}}} ->
             case get_cluster_state(MembersCur) of
                 ?STATE_STOP ->
-                    timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
-                                      [ok, ManagerNodes]);
+                    timer:apply_after(?CHECK_INTERVAL, ?MODULE,
+                                      inspect_cluster_status, [ok, ManagerNodes]);
                 ?STATE_RUNNING ->
                     ok = after_process_1(SystemConf, MembersCur, MembersPrev)
             end;
         {{ok,_SystemConf}, {error,_Cause}} ->
-            timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
-                              [ok, ManagerNodes]);
-        Error ->
+            timer:apply_after(?CHECK_INTERVAL, ?MODULE,
+                              inspect_cluster_status, [ok, ManagerNodes]);
+        _Error ->
             timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
                               [ok, ManagerNodes]),
-            io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
-            Error
+            io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE,_Error])
     end,
     Res.
 
@@ -188,28 +187,53 @@ after_process_0({ok, _Pid} = Res) ->
                                       X
                               end, ManagerNodes0),
 
+    %% Launch SNMPA
+    catch leo_statistics_api:start_link(leo_gateway),
+    ok = leo_statistics_api:create_tables(ram_copies, [node()]),
+    ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
+
     %% Retrieve http-options
     {ok, HttpOptions} = get_options(),
-    case HttpOptions#http_options.handler of
-        ?HTTP_HANDLER_EMBED ->
-            void;
-        nfs ->
+
+    %% Launch bucket-sync, s3-related-procs
+    %% [S3, NFS]
+    Handler = HttpOptions#http_options.handler,
+    case Handler of
+        Handler when Handler == ?PROTO_HANDLER_S3;
+                     Handler == ?PROTO_HANDLER_NFS ->
             %% Retrieve bucket-prop-sync-interval for S3-API
             BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
+
             %% Launch S3Libs:Auth/Bucket/EndPoint
             ok = leo_s3_libs:start(slave,
                                    [{'provider', ManagerNodes1},
                                     {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
-            leo_s3_endpoint:get_endpoints(),
-            %% Launch SNMPA
-            catch leo_statistics_api:start_link(leo_gateway),
-            ok = leo_statistics_api:create_tables(ram_copies, [node()]),
-            ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
-            ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
-            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
-            application:load(rpc_server),
-            % argments for mountd
-            MountdArgs = {rpc_app_arg,
+            leo_s3_endpoint:get_endpoints();
+        _ ->
+            void
+    end,
+
+    %% Launch HTTP-handler
+    %% [S3, REST]
+    case Handler of
+        Handler when Handler == ?PROTO_HANDLER_S3;
+                     Handler == ?PROTO_HANDLER_REST ->
+            %% Launch http-handler(s)
+            ok = Handler:start(leo_gateway_sup, HttpOptions);
+        _ ->
+            void
+    end,
+
+    %% Launch nfs-related-procs
+    %% [NFS]
+    case Handler of
+        ?PROTO_HANDLER_NFS ->
+            %% NFS:Load nfs-rpc-server
+            _ = application:load(nfs_rpc_server),
+            %% NFS:Argments for mountd
+            MountdArgs = {nfs_rpc_app_arg,
                           mountd3,
                           128,
                           [{port, 22050}],
@@ -222,48 +246,25 @@ after_process_0({ok, _Pid} = Res) ->
                           leo_nfs_mount3_svc,
                           [],
                           []},
-            % argments for nfsd
-            NfsdArgs = {rpc_app_arg,
-                          nfsd3,
-                          128,
-                          [{port, 2049}],
-                          ?NFS3_PROGRAM,
-                          nfs3_program,
-                          [],
-                          ?NFS_V3,
-                          ?NFS_V3,
-                          true,
-                          leo_nfs_proto3_svc,
-                          [],
-                          []},
+            %% NFS:Argments for nfsd
+            NfsdArgs = {nfs_rpc_app_arg,
+                        nfsd3,
+                        128,
+                        [{port, 2049}],
+                        ?NFS3_PROGRAM,
+                        nfs3_program,
+                        [],
+                        ?NFS_V3,
+                        ?NFS_V3,
+                        true,
+                        leo_nfs_proto3_svc,
+                        [],
+                        []},
             io:format(user, "[debug]nfs started~n", []),
-            application:set_env(rpc_server, args, [MountdArgs, NfsdArgs]),
-            application:ensure_started(rpc_server);
-        Handler ->
-            case Handler of
-                ?HTTP_HANDLER_S3 ->
-                    %% Retrieve bucket-prop-sync-interval for S3-API
-                    BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
-
-                    %% Launch S3Libs:Auth/Bucket/EndPoint
-                    ok = leo_s3_libs:start(slave,
-                                           [{'provider', ManagerNodes1},
-                                            {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
-                    leo_s3_endpoint:get_endpoints();
-                _ ->
-                    void
-            end,
-
-            %% Launch SNMPA
-            catch leo_statistics_api:start_link(leo_gateway),
-            ok = leo_statistics_api:create_tables(ram_copies, [node()]),
-            ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
-            ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
-            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
-
-            %% Launch http-handler(s)
-            Handler = HttpOptions#http_options.handler,
-            ok = Handler:start(leo_gateway_sup, HttpOptions)
+            ok = application:set_env(nfs_rpc_server, args, [MountdArgs, NfsdArgs]),
+            ok = application:ensure_started(nfs_rpc_server);
+        _ ->
+            void
     end,
 
     %% Launch LeoCache
@@ -412,7 +413,7 @@ get_members_from_manager([Manager|T]) ->
     end.
 
 
-%% @doc
+%% @doc Retrieve the cluster status
 %% @private
 -spec(get_cluster_state(list(#member{})) ->
              node_state()).

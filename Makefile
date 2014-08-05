@@ -12,7 +12,7 @@ CALL_GRAPH_FILE = leo_gateway.png
 
 all: deps gen_nfs
 	@$(REBAR) compile
-	## @$(REBAR) xref skip_deps=true
+	@$(REBAR) xref skip_deps=true
 	@$(REBAR) eunit skip_deps=true
 deps:
 	@$(REBAR) get-deps
@@ -48,6 +48,8 @@ qc:
 	@$(REBAR) qc skip_deps=true
 gen_rpc: deps
 	(cd deps/erpcgen/;make)
+	(cd deps/nfs_rpc_server/src && erl -noshell -pa ../../erpcgen/ebin -eval 'erpcgen:file(pmap,    [xdrlib,clnt])' -s init stop)
+	(cd deps/nfs_rpc_server/src && erl -noshell -pa ../../erpcgen/ebin -eval 'erpcgen:file(nfs_rpc, [xdrlib,clnt])' -s init stop)
 gen_nfs: gen_rpc
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_proto3.x
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_mount3.x

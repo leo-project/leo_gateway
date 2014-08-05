@@ -63,6 +63,25 @@
 -define(TIMEOUT_L5_SEC,   30000).
 
 
+%% Protocol
+-define(PROTO_HANDLER_S3,    'leo_gateway_s3_api').
+-define(PROTO_HANDLER_REST,  'leo_gateway_rest_api').
+-define(PROTO_HANDLER_EMBED, 'leo_gateway_embed').
+-define(PROTO_HANDLER_NFS,   'nfs').
+%% -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
+
+-type(protocol_handler() :: ?PROTO_HANDLER_S3 |
+                            ?PROTO_HANDLER_REST |
+                            ?PROTO_HANDLER_EMBED |
+                            ?PROTO_HANDLER_NFS).
+-define(convert_to_handler(_V), case _V of
+                                    'rest'  -> ?PROTO_HANDLER_REST;
+                                    's3'    -> ?PROTO_HANDLER_S3;
+                                    'embed' -> ?PROTO_HANDLER_EMBED;
+                                    'nfs'   -> ?PROTO_HANDLER_NFS;
+                                    _       -> ?PROTO_HANDLER_S3
+                                end).
+
 %%----------------------------------------------------------------------
 %% ERROR MESSAGES
 %%----------------------------------------------------------------------
