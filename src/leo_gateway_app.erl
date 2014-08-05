@@ -187,6 +187,13 @@ after_process_0({ok, _Pid} = Res) ->
                                       X
                               end, ManagerNodes0),
 
+    %% Launch SNMPA
+    catch leo_statistics_api:start_link(leo_gateway),
+    ok = leo_statistics_api:create_tables(ram_copies, [node()]),
+    ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
+
     %% Retrieve http-options
     {ok, HttpOptions} = get_options(),
 
@@ -224,7 +231,7 @@ after_process_0({ok, _Pid} = Res) ->
     case Handler of
         ?PROTO_HANDLER_NFS ->
             %% NFS:Load nfs-rpc-server
-            application:load(nfs_rpc_server),
+            _ = application:load(nfs_rpc_server),
             %% NFS:Argments for mountd
             MountdArgs = {nfs_rpc_app_arg,
                           mountd3,
@@ -254,18 +261,11 @@ after_process_0({ok, _Pid} = Res) ->
                         [],
                         []},
             io:format(user, "[debug]nfs started~n", []),
-            application:set_env(nfs_rpc_server, args, [MountdArgs, NfsdArgs]),
-            application:ensure_started(nfs_rpc_server);
+            ok = application:set_env(nfs_rpc_server, args, [MountdArgs, NfsdArgs]),
+            ok = application:ensure_started(nfs_rpc_server);
         _ ->
             void
     end,
-
-    %% Launch SNMPA
-    catch leo_statistics_api:start_link(leo_gateway),
-    ok = leo_statistics_api:create_tables(ram_copies, [node()]),
-    ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
-    ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
-    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
 
     %% Launch LeoCache
     NumOfCacheWorkers     = HttpOptions#http_options.cache_workers,
