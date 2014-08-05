@@ -39,6 +39,7 @@
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_statistics/include/leo_statistics.hrl").
+-include_lib("nfs_rpc_server/src/nfs_rpc_app.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
@@ -232,36 +233,39 @@ after_process_0({ok, _Pid} = Res) ->
         ?PROTO_HANDLER_NFS ->
             %% NFS:Load nfs-rpc-server
             _ = application:load(nfs_rpc_server),
+
             %% NFS:Argments for mountd
-            MountdArgs = {nfs_rpc_app_arg,
-                          mountd3,
-                          128,
-                          [{port, 22050}],
-                          ?MOUNTPROG,
-                          mountprog,
-                          [],
-                          ?MOUNTVERS3,
-                          ?MOUNTVERS3,
-                          true,
-                          leo_nfs_mount3_svc,
-                          [],
-                          []},
+            MountdArgs = #nfs_rpc_app_arg{
+                            ref          = mountd3,
+                            acceptor_num = 128,
+                            trans_opts   = [{port, 22050}],
+                            prg_num      = ?MOUNTPROG,
+                            prg_name     = mountprog,
+                            prg_vsns     = [],
+                            vsn_lo       = ?MOUNTVERS3,
+                            vsn_hi       = ?MOUNTVERS3,
+                            use_pmap     = true,
+                            mod          = leo_nfs_mount3_svc,
+                            init_args    = [],
+                            state        = []
+                           },
+
             %% NFS:Argments for nfsd
-            NfsdArgs = {nfs_rpc_app_arg,
-                        nfsd3,
-                        128,
-                        [{port, 2049}],
-                        ?NFS3_PROGRAM,
-                        nfs3_program,
-                        [],
-                        ?NFS_V3,
-                        ?NFS_V3,
-                        true,
-                        leo_nfs_proto3_svc,
-                        [],
-                        []},
-            io:format(user, "[debug]nfs started~n", []),
-            ok = application:set_env(nfs_rpc_server, args, [MountdArgs, NfsdArgs]),
+            NFS_D_Args = #nfs_rpc_app_arg{
+                            ref          = nfsd3,
+                            acceptor_num = 128,
+                            trans_opts   = [{port, 2049}],
+                            prg_num      = ?NFS3_PROGRAM,
+                            prg_name     = nfs3_program,
+                            prg_vsns     = [],
+                            vsn_lo       = ?NFS_V3,
+                            vsn_hi       = ?NFS_V3,
+                            use_pmap     = true,
+                            mod          = leo_nfs_proto3_svc,
+                            init_args    = [],
+                            state        = []
+                           },
+            ok = application:set_env(nfs_rpc_server, args, [MountdArgs, NFS_D_Args]),
             ok = application:ensure_started(nfs_rpc_server);
         _ ->
             void
