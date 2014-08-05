@@ -189,6 +189,7 @@ after_process_0({ok, _Pid} = Res) ->
 
     %% Retrieve http-options
     {ok, HttpOptions} = get_options(),
+    ?debugVal(HttpOptions),
 
     %% Launch bucket-sync, s3-related-procs
     %% [S3, NFS]
@@ -223,10 +224,11 @@ after_process_0({ok, _Pid} = Res) ->
     %% [NFS]
     case HttpOptions#http_options.handler of
         nfs ->
+            ?debugVal(nfs),
             %% NFS:Load nfs-rpc-server
             application:load(nfs_rpc_server),
             %% NFS:Argments for mountd
-            MountdArgs = {rpc_app_arg,
+            MountdArgs = {nfs_rpc_app_arg,
                           mountd3,
                           128,
                           [{port, 22050}],
@@ -240,7 +242,7 @@ after_process_0({ok, _Pid} = Res) ->
                           [],
                           []},
             %% NFS:Argments for nfsd
-            NfsdArgs = {rpc_app_arg,
+            NfsdArgs = {nfs_rpc_app_arg,
                         nfsd3,
                         128,
                         [{port, 2049}],
@@ -259,6 +261,7 @@ after_process_0({ok, _Pid} = Res) ->
         _ ->
             void
     end,
+    ?debugVal(ok),
 
     %% Launch LeoCache
     NumOfCacheWorkers     = HttpOptions#http_options.cache_workers,
