@@ -234,11 +234,17 @@ after_process_0({ok, _Pid} = Res) ->
             %% NFS:Load nfs-rpc-server
             _ = application:load(nfs_rpc_server),
 
+            NFS_Options = ?env_nfs_options(),
+            MntdPort = leo_misc:get_value('mountd_port', NFS_Options, ?DEF_MOUNTD_PORT),
+            MntdAcceptors = leo_misc:get_value('mountd_acceptors', NFS_Options, ?DEF_MOUNTD_ACCEPTORS),
+            NFSdPort = leo_misc:get_value('nfsd_port', NFS_Options, ?DEF_NFSD_PORT),
+            NFSdAcceptors = leo_misc:get_value('nfsd_acceptors', NFS_Options, ?DEF_NFSD_ACCEPTORS),
+
             %% NFS:Argments for mountd
             MountdArgs = #nfs_rpc_app_arg{
                             ref          = mountd3,
-                            acceptor_num = 128,
-                            trans_opts   = [{port, 22050}],
+                            acceptor_num = MntdAcceptors,
+                            trans_opts   = [{port, MntdPort}],
                             prg_num      = ?MOUNTPROG,
                             prg_name     = mountprog,
                             prg_vsns     = [],
@@ -253,8 +259,8 @@ after_process_0({ok, _Pid} = Res) ->
             %% NFS:Argments for nfsd
             NFS_D_Args = #nfs_rpc_app_arg{
                             ref          = nfsd3,
-                            acceptor_num = 128,
-                            trans_opts   = [{port, 2049}],
+                            acceptor_num = NFSdAcceptors,
+                            trans_opts   = [{port, NFSdPort}],
                             prg_num      = ?NFS3_PROGRAM,
                             prg_name     = nfs3_program,
                             prg_vsns     = [],
@@ -453,9 +459,18 @@ log_file_appender([{Type, _}|T], Acc) when Type == file ->
 -spec(get_options() ->
              {ok, #http_options{}}).
 get_options() ->
-    %% Retrieve http-related properties:
     HttpProp = ?env_http_properties(),
-    HttpHandler          = leo_misc:get_value('handler',             HttpProp, ?DEF_HTTTP_HANDLER),
+
+    %% Retrieve ptotocol:
+    Protocol = case ?env_protocol() of
+                   [] ->
+                       leo_misc:get_value('handler', HttpProp,
+                                          ?DEF_PROTOCOL_HANDLER);
+                   V ->
+                       V
+               end,
+
+    %% Retrieve http-related properties:
     Port                 = leo_misc:get_value('port',                HttpProp, ?DEF_HTTP_PORT),
     SSLPort              = leo_misc:get_value('ssl_port',            HttpProp, ?DEF_HTTP_SSL_PORT),
     SSLCertFile          = leo_misc:get_value('ssl_certfile',        HttpProp, ?DEF_HTTP_SSL_C_FILE),
@@ -511,7 +526,7 @@ get_options() ->
                           leo_misc:set_env(leo_gateway, K, T)
                   end, ?env_timeout()),
 
-    HttpOptions = #http_options{handler                  = ?convert_to_handler(HttpHandler),
+    HttpOptions = #http_options{handler                  = ?convert_to_handler(Protocol),
                                 port                     = Port,
                                 ssl_port                 = SSLPort,
                                 ssl_certfile             = SSLCertFile,
@@ -534,7 +549,7 @@ get_options() ->
                                 chunked_obj_len          = ChunkedObjLen,
                                 reading_chunked_obj_len  = ReadingChunkedLen,
                                 threshold_of_chunk_len   = ThresholdChunkLen},
-    ?info("start/3", "handler: ~p",                  [HttpHandler]),
+    ?info("start/3", "protocol: ~p",                 [Protocol]),
     ?info("start/3", "port: ~p",                     [Port]),
     ?info("start/3", "ssl port: ~p",                 [SSLPort]),
     ?info("start/3", "ssl certfile: ~p",             [SSLCertFile]),

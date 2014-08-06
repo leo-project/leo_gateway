@@ -98,7 +98,6 @@
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
 
 %% Default values
--define(DEF_HTTTP_HANDLER,            's3').
 -define(DEF_HTTP_PORT,                8080).
 -define(DEF_HTTP_SSL_PORT,            8443).
 -define(DEF_HTTP_SSL_C_FILE,          "./server_cert.pem").

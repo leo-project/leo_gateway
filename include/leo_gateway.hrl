@@ -69,16 +69,17 @@
 -define(PROTO_HANDLER_EMBED, 'leo_gateway_embed').
 -define(PROTO_HANDLER_NFS,   'nfs').
 %% -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
+-define(DEF_PROTOCOL_HANDLER, ?PROTO_HANDLER_S3).
 
 -type(protocol_handler() :: ?PROTO_HANDLER_S3 |
                             ?PROTO_HANDLER_REST |
                             ?PROTO_HANDLER_EMBED |
                             ?PROTO_HANDLER_NFS).
 -define(convert_to_handler(_V), case _V of
-                                    'rest'  -> ?PROTO_HANDLER_REST;
-                                    's3'    -> ?PROTO_HANDLER_S3;
-                                    'embed' -> ?PROTO_HANDLER_EMBED;
-                                    'nfs'   -> ?PROTO_HANDLER_NFS;
+                                    rest  -> ?PROTO_HANDLER_REST;
+                                    s3    -> ?PROTO_HANDLER_S3;
+                                    embed -> ?PROTO_HANDLER_EMBED;
+                                    nfs   -> ?PROTO_HANDLER_NFS;
                                     _       -> ?PROTO_HANDLER_S3
                                 end).
 
@@ -110,6 +111,12 @@
         case application:get_env(leo_gateway, bucket_prop_sync_interval) of
             {ok, EnvBucketPropSyncInterval} -> EnvBucketPropSyncInterval;
             _ -> 300 %% 300sec/5min
+        end).
+
+-define(env_protocol(),
+        case application:get_env(leo_gateway, protocol) of
+            {ok,_EnvProtocol} -> _EnvProtocol;
+            _ -> []
         end).
 
 -define(env_http_properties(),
@@ -200,6 +207,18 @@
 -define(env_qos_managers(),
         case leo_misc:get_env(savanna_agent, managers) of
             {ok, _SVManagers} -> _SVManagers;
+            _ -> []
+        end).
+
+%% NFS related
+-define(DEF_MOUNTD_PORT,      22050).
+-define(DEF_MOUNTD_ACCEPTORS, 128).
+-define(DEF_NFSD_PORT,        2049).
+-define(DEF_NFSD_ACCEPTORS,   128).
+
+-define(env_nfs_options(),
+        case application:get_env(leo_gateway, nfs) of
+            {ok, _NFS_Options} -> _NFS_Options;
             _ -> []
         end).
 
