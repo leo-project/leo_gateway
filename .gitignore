@@ -10,3 +10,15 @@ leofs_gateway.sh
 *.json
 *.bak
 erl_crash.dump
+src/*_xdr.erl
+src/*_svc.erl
+src/*.hrl
+.leo_gateway_dialyzer_plt
+leo_gateway.dot
+leo_nfs_mount3.hrl
+leo_nfs_proto3.hrl
+leo_nfs_mount3_svc.erl
+leo_nfs_mount3_xdr.erl
+leo_nfs_proto3_svc.erl
+leo_nfs_proto3_xdr.erl
+.rebar/

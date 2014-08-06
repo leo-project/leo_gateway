@@ -63,6 +63,26 @@
 -define(TIMEOUT_L5_SEC,   30000).
 
 
+%% Protocol
+-define(PROTO_HANDLER_S3,    'leo_gateway_s3_api').
+-define(PROTO_HANDLER_REST,  'leo_gateway_rest_api').
+-define(PROTO_HANDLER_EMBED, 'leo_gateway_embed').
+-define(PROTO_HANDLER_NFS,   'nfs').
+%% -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
+-define(DEF_PROTOCOL_HANDLER, ?PROTO_HANDLER_S3).
+
+-type(protocol_handler() :: ?PROTO_HANDLER_S3 |
+                            ?PROTO_HANDLER_REST |
+                            ?PROTO_HANDLER_EMBED |
+                            ?PROTO_HANDLER_NFS).
+-define(convert_to_handler(_V), case _V of
+                                    rest  -> ?PROTO_HANDLER_REST;
+                                    s3    -> ?PROTO_HANDLER_S3;
+                                    embed -> ?PROTO_HANDLER_EMBED;
+                                    nfs   -> ?PROTO_HANDLER_NFS;
+                                    _       -> ?PROTO_HANDLER_S3
+                                end).
+
 %%----------------------------------------------------------------------
 %% ERROR MESSAGES
 %%----------------------------------------------------------------------
@@ -77,8 +97,8 @@
 %%----------------------------------------------------------------------
 %% large-object
 -record(large_obj_info, {key = <<>>         :: binary(),
-                         length = 0         :: pos_integer(),
-                         num_of_chunks = 0  :: pos_integer(),
+                         length = 0         :: non_neg_integer(),
+                         num_of_chunks = 0  :: non_neg_integer(),
                          md5_context = <<>> :: binary()
                         }).
 
@@ -91,6 +111,12 @@
         case application:get_env(leo_gateway, bucket_prop_sync_interval) of
             {ok, EnvBucketPropSyncInterval} -> EnvBucketPropSyncInterval;
             _ -> 300 %% 300sec/5min
+        end).
+
+-define(env_protocol(),
+        case application:get_env(leo_gateway, protocol) of
+            {ok,_EnvProtocol} -> _EnvProtocol;
+            _ -> []
         end).
 
 -define(env_http_properties(),
@@ -184,6 +210,18 @@
             _ -> []
         end).
 
+%% NFS related
+-define(DEF_MOUNTD_PORT,      22050).
+-define(DEF_MOUNTD_ACCEPTORS, 128).
+-define(DEF_NFSD_PORT,        2049).
+-define(DEF_NFSD_ACCEPTORS,   128).
+
+-define(env_nfs_options(),
+        case application:get_env(leo_gateway, nfs) of
+            {ok, _NFS_Options} -> _NFS_Options;
+            _ -> []
+        end).
+
 
 %%----------------------------------------------------------------------
 %% FOR QoS
@@ -268,7 +306,7 @@
 -define(access_log_get(_Bucket, _Path, _Size, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
@@ -283,7 +321,7 @@
 -define(access_log_put(_Bucket, _Path, _Size, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
@@ -300,7 +338,7 @@
 -define(access_log_delete(_Bucket, _Path, _Size, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),
@@ -317,7 +355,7 @@
 -define(access_log_head(_Bucket, _Path, _Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
-            leo_logger_client_common:append(
+            leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
                #message_log{format  = "[HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
                             message = [binary_to_list(_Bucket),

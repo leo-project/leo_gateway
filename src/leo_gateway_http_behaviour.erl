@@ -29,26 +29,26 @@
 -include("leo_http.hrl").
 
 %% Bucket handlers
--callback(get_bucket(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(put_bucket(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(delete_bucket(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(head_bucket(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
+-callback(get_bucket(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(put_bucket(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(delete_bucket(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(head_bucket(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
 
 %% Object handlers
--callback(get_object(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(put_object(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(delete_object(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(head_object(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(range_object(Req::any(), Key::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
--callback(get_object_with_cache(Req::any(), Key::binary(),
-                                CacheObj::binary(), HttpParams::#req_params{}) ->
-                 {ok, Req::any()}).
+-callback(get_object(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(put_object(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(delete_object(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(head_object(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(range_object(Req::cowboy_req:req(), Key::binary(), HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).
+-callback(get_object_with_cache(Req::cowboy_req:req(), Key::binary(),
+                                CacheObj::#cache{}, HttpParams::#req_params{}) ->
+                 {ok, Req::cowboy_req:req()}).

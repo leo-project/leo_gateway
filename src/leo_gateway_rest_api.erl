@@ -113,43 +113,43 @@ head_bucket(Req,_Key,_Params) ->
 %% For OBJECT-OPERATION
 %% ---------------------------------------------------------------------
 %% @doc GET operation on Objects
--spec(get_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(get_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 get_object(Req, Key, Params) ->
     leo_gateway_http_commons:get_object(Req, Key, Params).
 
 
 %% @doc GET operation on Objects
--spec(get_object_with_cache(any(), binary(), #cache{}, #req_params{}) ->
-             {ok, any()}).
+-spec(get_object_with_cache(cowboy_req:req(), binary(), #cache{}, #req_params{}) ->
+             {ok, cowboy_req:req()}).
 get_object_with_cache(Req, Key, CacheObj, Params) ->
     leo_gateway_http_commons:get_object_with_cache(Req, Key, CacheObj, Params).
 
 
 %% @doc POST/PUT operation on Objects
--spec(put_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(put_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 put_object(Req, Key, Params) ->
     leo_gateway_http_commons:put_object(Req, Key, Params).
 
 
 %% @doc DELETE operation on Objects
--spec(delete_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(delete_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 delete_object(Req, Key, Params) ->
     leo_gateway_http_commons:delete_object(Req, Key, Params).
 
 
 %% @doc HEAD operation on Objects
--spec(head_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(head_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 head_object(Req, Key, Params) ->
     leo_gateway_http_commons:head_object(Req, Key, Params).
 
 
 %% @doc RANGE-Query operation on Objects
--spec(range_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(range_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 range_object(Req, Key,_Params) ->
     ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 

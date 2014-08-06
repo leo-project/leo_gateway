@@ -122,16 +122,16 @@
  "leo_gateway.system_version",
  [
   {datatype, string},
-  {default, "1.0.2"}
+  {default, "1.1.0"}
  ]}.
 
 
-%% @doc Gateway’s HTTP API to use: [s3 | rest | embed]
+%% @doc Gateway Protocol to use: [s3 | rest | embed]
 {mapping,
- "http.handler",
- "leo_gateway.http.handler",
+ "protocol",
+ "leo_gateway.protocol",
  [
-  {datatype, {enum, [s3, rest, embed]}},
+  {datatype, {enum, [s3, rest, embed, nfs]}},
   {default, s3}
  ]}.
 
@@ -366,6 +366,46 @@
          Patterns = cuttlefish_util:conf_get_value("cache.cachable_path_patterns", Conf),
          string:tokens(Patterns, "[ , ]")
  end}.
+
+
+%% --------------------------------------------------------------------
+%% GATEWAY - NFS-related configuration
+%% --------------------------------------------------------------------
+%% @doc Mountd's port number
+{mapping,
+ "nfs.mountd.port",
+ "leo_gateway.nfs.mountd_port",
+ [
+  {datatype, integer},
+  {default, 22050}
+ ]}.
+
+%% @doc Mountd's the number of acceptors
+{mapping,
+ "nfs.mountd.acceptors",
+ "leo_gateway.nfs.mountd_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
+
+%% @doc Mountd's port number
+{mapping,
+ "nfs.nfsd.port",
+ "leo_gateway.nfs.nfsd_port",
+ [
+  {datatype, integer},
+  {default, 2049}
+ ]}.
+
+%% @doc Mountd's the number of acceptors
+{mapping,
+ "nfs.nfsd.acceptors",
+ "leo_gateway.nfs.nfsd_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
 
 
 %% --------------------------------------------------------------------
@@ -638,6 +678,70 @@
   {default, false}
  ]}.
 
+%% @doc
+{mapping,
+ "mount.port",
+ "mount.port",
+ [
+  {datatype, integer},
+  {default, 22050}
+ ]}.
+{mapping,
+ "mount.num_of_acceptors",
+ "mount.num_of_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
+{mapping,
+ "nfs.port",
+ "nfs.port",
+ [
+  {datatype, integer},
+  {default, 2049}
+ ]}.
+{mapping,
+ "nfs.num_of_acceptors",
+ "nfs.num_of_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
+%% @doc Application parameters for Mount/NFS server
+{translation, "rpc_server.args",
+ fun(Conf) ->
+         MountPort = cuttlefish_util:conf_get_value("mount.port", Conf),
+         MountAcceptors = cuttlefish_util:conf_get_value("mount.num_of_acceptors", Conf),
+         NFSPort = cuttlefish_util:conf_get_value("nfs.port", Conf),
+         NFSAcceptors = cuttlefish_util:conf_get_value("nfs.num_of_acceptors", Conf),
+         [
+          {nfs_rpc_app_arg,
+           mountd3,
+           MountAcceptors,
+           [{port, MountPort}],
+           100005,
+           mountprog,
+           [],
+           3,
+           3,
+           true,
+           leo_nfs_mount3_svc,
+           [],
+           []},
+          {nfs_rpc_app_arg,
+           nfsd3,
+           NFSAcceptors,
+           [{port, NFSPort}],
+           100003,
+           nfs3_program,
+           [],
+           3,
+           3,
+           true,
+           leo_nfs_proto3_svc,
+           [],
+           []}]
+ end}.
 
 %% --------------------------------------------------------------------
 %% VM.ARGS

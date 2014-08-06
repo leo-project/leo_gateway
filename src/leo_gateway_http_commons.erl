@@ -125,12 +125,14 @@ onrequest(#cache_condition{expire = Expire}, FunGenKey) ->
 
 onrequest_1(?HTTP_GET, Req, Expire, FunGenKey) ->
     {_Bucket, Key} = FunGenKey(Req),
-    Ret = leo_cache_api:get(Key),
+    Ret = (catch leo_cache_api:get(Key)),
     onrequest_2(Req, Expire, Key, Ret);
 onrequest_1(_, Req,_,_) ->
     Req.
 
 onrequest_2(Req,_Expire,_Key, not_found) ->
+    Req;
+onrequest_2(Req,_Expire,_Key, {'EXIT', _Cause}) ->
     Req;
 onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
     #cache{mtime        = MTime,
@@ -143,7 +145,7 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
 
     case (Diff > Expire) of
         true ->
-            _ = leo_cache_api:delete(Key),
+            _ = (catch leo_cache_api:delete(Key)),
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
@@ -194,7 +196,7 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                                            size  = byte_size(Body),
                                            body  = Body,
                                            content_type = ?http_content_type(Header1)}),
-                            _ = leo_cache_api:put(Key, Bin),
+                            _ = (catch leo_cache_api:put(Key, Bin)),
 
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
                             Header3 = [{?HTTP_HEAD_RESP_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
@@ -215,8 +217,8 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
 %% Commons Request Handlers
 %%--------------------------------------------------------------------
 %% @doc GET an object
--spec(get_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(get_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 get_object(Req, Key, #req_params{bucket = Bucket,
                                  has_inner_cache = HasInnerCache}) ->
     case leo_gateway_rpc_handler:get(Key) of
@@ -231,7 +233,7 @@ get_object(Req, Key, #req_params{bucket = Bucket,
                                                 content_type = Mime,
                                                 body = RespObject,
                                                 size = byte_size(RespObject)}),
-                    leo_cache_api:put(Key, Val);
+                    catch leo_cache_api:put(Key, Val);
                 false ->
                     void
             end,
@@ -253,7 +255,8 @@ get_object(Req, Key, #req_params{bucket = Bucket,
             BodyFunc = fun(Socket, Transport) ->
                                {ok, Pid} = leo_gateway_large_object_handler:start_link({Key, Transport, Socket}),
                                try
-                                   leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
+                                   leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta),
+                                   ok
                                after
                                    ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
                                    catch leo_gateway_large_object_handler:stop(Pid)
@@ -273,8 +276,8 @@ get_object(Req, Key, #req_params{bucket = Bucket,
 
 
 %% @doc GET an object with Etag
--spec(get_object_with_cache(any(), binary(), #cache{}, #req_params{}) ->
-             {ok, any()}).
+-spec(get_object_with_cache(cowboy_req:req(), binary(), #cache{}, #req_params{}) ->
+             {ok, cowboy_req:req()}).
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
@@ -286,7 +289,8 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
                       {?HTTP_HEAD_RESP_LAST_MODIFIED,  leo_http:rfc1123_date(CacheObj#cache.mtime)},
                       {?HTTP_HEAD_X_FROM_CACHE,        <<"True/via disk">>}],
             BodyFunc = fun(Socket, _Transport) ->
-                               file:sendfile(CacheObj#cache.file_path, Socket)
+                               file:sendfile(CacheObj#cache.file_path, Socket),
+                               ok
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Header, {CacheObj#cache.size, BodyFunc}, Req);
 
@@ -309,7 +313,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket}) ->
                                         body = RespObject,
                                         size = byte_size(RespObject)
                                        }),
-            leo_cache_api:put(Key, Val),
+            catch leo_cache_api:put(Key, Val),
 
             ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Header = [?SERVER_HEADER,
@@ -367,11 +371,11 @@ move_large_object(#?METADATA{dsize = Size}, DstKey,
                                                 key           = DstKey,
                                                 length        = Size,
                                                 chunked_size  = ChunkedSize}, ReadHandler) of
+            ok ->
+                ok;
             {error, Cause} ->
                 ok = leo_gateway_large_object_handler:rollback(WriteHandler),
-                {error, Cause};
-            Other ->
-                Other
+                {error, Cause}
         end
     after
         catch leo_gateway_large_object_handler:stop(WriteHandler)
@@ -422,8 +426,8 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
     end.
 
 %% @doc PUT an object
--spec(put_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(put_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 put_object(Req, Key, #req_params{bucket = Bucket,
                                  is_upload = IsUpload,
                                  max_len_of_obj = MaxLenForObj,
@@ -477,19 +481,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
                                                           upload_part_num = UploadPartNum,
                                                           has_inner_cache = HasInnerCache
                                                          }) ->
-    CIndex = case UploadPartNum of
-                 <<>> ->
-                     0;
-                 PartNum ->
-                     case is_integer(PartNum) of
-                         true ->
-                             PartNum;
-                         false ->
-                             list_to_integer(binary_to_list(PartNum))
-                     end
-             end,
-
-    case leo_gateway_rpc_handler:put(Key, Bin, Size, CIndex) of
+    case leo_gateway_rpc_handler:put(Key, Bin, Size, UploadPartNum) of
         {ok, ETag} ->
             case (HasInnerCache
                   andalso binary_is_contained(Key, 10) == false) of
@@ -521,8 +513,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
 
 %% @doc Put a large-object
 %% @private
--spec(put_large_object(any(), binary(), pos_integer(), #req_params{}) ->
-             {ok, any()}).
+-spec(put_large_object(cowboy_req:req(), binary(), pos_integer(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                                              chunked_obj_len = ChunkedSize,
                                              reading_chunked_obj_len = ReadingChunkedSize})->
@@ -612,8 +604,8 @@ put_large_object_1({done, Req}, #req_large_obj{handler = Handler,
 
 
 %% @doc DELETE an object
--spec(delete_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(delete_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 delete_object(Req, Key, #req_params{bucket = Bucket}) ->
     Size1 = case leo_gateway_rpc_handler:head(Key) of
                 {ok, #?METADATA{del = 0, dsize = Size}} ->
@@ -639,8 +631,8 @@ delete_object(Req, Key, #req_params{bucket = Bucket}) ->
 
 
 %% @doc HEAD an object
--spec(head_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(head_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 head_object(Req, Key, #req_params{bucket = Bucket}) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{del = 0} = Meta} ->
@@ -670,8 +662,8 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
 -define(DEF_SEPARATOR, <<"\n">>).
 
 %% @doc Retrieve a part of an object
--spec(range_object(any(), binary(), #req_params{}) ->
-             {ok, any()}).
+-spec(range_object(cowboy_req:req(), binary(), #req_params{}) ->
+             {ok, cowboy_req:req()}).
 range_object(Req, Key, #req_params{bucket = Bucket,
                                    range_header = RangeHeader}) ->
     Range = cowboy_http:range(RangeHeader),

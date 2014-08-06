@@ -52,19 +52,19 @@
 -define(DEF_TIMEOUT, 30000).
 
 -record(iterator, {origin_key = <<>>     :: binary(),
-                   origin_total_len = 0  :: pos_integer(),
-                   origin_cur_idx   = 0  :: pos_integer(),
+                   origin_total_len = 0  :: non_neg_integer(),
+                   origin_cur_idx   = 0  :: non_neg_integer(),
                    chunked_key = <<>>    :: binary(),
-                   chunked_total_len = 0 :: pos_integer(),
-                   chunked_cur_idx   = 0 :: pos_integer()
+                   chunked_total_len = 0 :: non_neg_integer(),
+                   chunked_cur_idx   = 0 :: non_neg_integer()
                   }).
 
 -record(state, {key = <<>>            :: binary(),
-                max_obj_len = 0       :: pos_integer(),
+                max_obj_len = 0       :: non_neg_integer(),
                 stacked_bin = <<>>    :: binary(),
-                num_of_chunks = 0     :: pos_integer(),
-                total_len = 0         :: pos_integer(),
-                md5_context = <<>>    :: binary(),
+                num_of_chunks = 0     :: non_neg_integer(),
+                total_len = 0         :: non_neg_integer(),
+                md5_context = <<>>    :: any(),
                 errors = []           :: list(),
                 %% Transport
                 socket = undefined    :: any(),
@@ -83,12 +83,12 @@
 start_link({Key, Transport, Socket}) ->
     gen_server:start_link(?MODULE, [Key, 0, 0, Transport, Socket], []).
 
--spec(start_link(binary(), pos_integer()) ->
+-spec(start_link(binary(), non_neg_integer()) ->
              ok | {error, any()}).
 start_link(Key, Length) ->
     gen_server:start_link(?MODULE, [Key, Length, 0, undefined, undefined], []).
 
--spec(start_link(binary(), pos_integer(), pos_integer()) ->
+-spec(start_link(binary(), non_neg_integer(), non_neg_integer()) ->
              ok | {error, any()}).
 start_link(Key, Length, TotalChunk) ->
     gen_server:start_link(?MODULE, [Key, Length, TotalChunk, undefined, undefined], []).
@@ -157,15 +157,16 @@ state(Pid) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 init([Key, Length, TotalChunk, Transport, Socket]) ->
-    {ok, #state{key = Key,
-                max_obj_len = Length,
-                num_of_chunks = 1,
-                stacked_bin = <<>>,
-                md5_context = crypto:hash_init(md5),
-                transport = Transport,
-                socket = Socket,
-                errors = [],
-                iterator = iterator_init(Key, TotalChunk)}}.
+    State = #state{key = Key,
+                   max_obj_len = Length,
+                   num_of_chunks = 1,
+                   stacked_bin = <<>>,
+                   md5_context = crypto:hash_init(md5),
+                   transport = Transport,
+                   socket = Socket,
+                   errors = [],
+                   iterator = iterator_init(Key, TotalChunk)},
+    {ok, State}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
@@ -173,7 +174,7 @@ handle_call(stop, _From, State) ->
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
             #state{key = Key, transport = Transport, socket = Socket} = State) ->
-    Ref1 = case leo_cache_api:put_begin_tran(Key) of
+    Ref1 = case catch leo_cache_api:put_begin_tran(Key) of
                {ok, Ref} -> Ref;
                _ -> undefined
            end,
@@ -381,7 +382,7 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref, Transport, Sock
 
             case Transport:send(Socket, Bin) of
                 ok ->
-                    leo_cache_api:put(Ref, OriginKey, Bin),
+                    catch leo_cache_api:put(Ref, OriginKey, Bin),
                     handle_loop(OriginKey, ChunkedKey, Total, Index + 1, Req, Meta, Ref, Transport, Socket);
                 {error, Cause} ->
                     ?error("handle_loop/9", "key:~s, index:~p, cause:~p",
@@ -465,17 +466,17 @@ iterator_next(#iterator{chunked_key = Key,
      Iterator#iterator{chunked_cur_idx = Index + 1}}.
 
 
--spec(iterator_set_chunked(#iterator{}, binary(), pos_integer()) ->
+-spec(iterator_set_chunked(#iterator{}, binary(), non_neg_integer()) ->
              #iterator{}).
 iterator_set_chunked(Iterator, ChunkedKey, ChunkedTotal) ->
     Iterator#iterator{chunked_key = ChunkedKey, chunked_total_len = ChunkedTotal}.
 
 
--spec(iterator_init(binary(), pos_integer()) ->
+-spec(iterator_init(binary(), non_neg_integer()) ->
              #iterator{}).
 iterator_init(Key, Total) ->
-    #iterator{origin_key = Key, origin_total_len = Total}.
-
+    Iterator = #iterator{origin_key = Key, origin_total_len = Total},
+    Iterator.
 
 -ifdef(TEST).
 iterator_test() ->

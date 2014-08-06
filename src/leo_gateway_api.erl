@@ -50,7 +50,7 @@
 %%----------------------------------------------------------------------
 %% @doc Get node status (gateway).
 %%
--spec(get_node_status() -> {ok, #cluster_node_status{}}).
+-spec(get_node_status() -> {ok, list()}).
 get_node_status() ->
     {ok, Version} = application:get_key(leo_gateway, vsn),
     {RingHashCur, RingHashPrev} =
@@ -80,12 +80,14 @@ get_node_status() ->
                    {kernel_poll,      erlang:system_info(kernel_poll)},
                    {thread_pool_size, erlang:system_info(thread_pool_size)}
                   ],
+
+    Protocol   = ?env_protocol(),
     HttpProps  = ?env_http_properties(),
     CacheProps = ?env_cache_properties(),
     LObjProps  = ?env_large_object_properties(),
     HttpConf =
         [
-         {handler,                  leo_misc:get_value('handler',                  HttpProps,  ?DEF_HTTTP_HANDLER)},
+         {handler,                  leo_misc:get_value('protocol',                 HttpProps,  Protocol)},
          {port,                     leo_misc:get_value('port',                     HttpProps,  ?DEF_HTTP_PORT)},
          {ssl_port,                 leo_misc:get_value('ssl_port',                 HttpProps,  ?DEF_HTTP_SSL_PORT)},
          {num_of_acceptors,         leo_misc:get_value('num_of_acceptors',         HttpProps,  ?DEF_HTTP_NUM_OF_ACCEPTORS)},
@@ -166,7 +168,7 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
 -spec(purge(string()) -> ok).
 purge(Path) ->
     BinPath = list_to_binary(Path),
-    _ = leo_cache_api:delete(BinPath),
+    _ = (catch leo_cache_api:delete(BinPath)),
     ok.
 
 

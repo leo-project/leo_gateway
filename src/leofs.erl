@@ -45,7 +45,7 @@ stop() ->
 -spec(get(binary()) ->
              {ok, {pos_integer(), binary()}} | not_found | {error, any()}).
 get(Key) ->
-    case leo_cache_api:get(Key) of
+    case catch leo_cache_api:get(Key) of
         not_found ->
             case leo_gateway_rpc_handler:get(Key) of
                 {error,not_found} ->
@@ -59,6 +59,8 @@ get(Key) ->
             #cache{etag = Checksum,
                    body = Body} = binary_to_term(CachedObj),
             {ok, {Checksum, Body}};
+        {'EXIT', Cause} ->
+            {error, Cause};
         Error ->
             Error
     end.
@@ -78,7 +80,7 @@ put(Key, Body) ->
                                          body = Body,
                                          size = byte_size(Body)
                                         }),
-            _ = leo_cache_api:put(Key, Val),
+            _ = (catch leo_cache_api:put(Key, Val)),
             Ret;
         Error ->
             Error
@@ -103,5 +105,5 @@ head(Key) ->
 -spec(delete(binary()) ->
              ok | {error, any()}).
 delete(Key) ->
-    leo_cache_api:delete(Key),
+    catch leo_cache_api:delete(Key),
     leo_gateway_rpc_handler:delete(Key).

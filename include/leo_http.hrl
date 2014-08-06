@@ -97,24 +97,7 @@
 -define(CACHE_INNER, 'inner').
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).
 
-
--define(HTTP_HANDLER_S3,    'leo_gateway_s3_api').
--define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
--define(HTTP_HANDLER_REST,  'leo_gateway_rest_api').
--define(HTTP_HANDLER_EMBED, 'leo_gateway_embed').
-
--type(http_handler() :: ?HTTP_HANDLER_S3 | ?HTTP_HANDLER_SWIFT | ?HTTP_HANDLER_REST).
-
--define(convert_to_handler(_V), case _V of
-                                    'rest'  -> ?HTTP_HANDLER_REST;
-                                    'swift' -> ?HTTP_HANDLER_SWIFT;
-                                    's3'    -> ?HTTP_HANDLER_S3;
-                                    'embed' -> ?HTTP_HANDLER_EMBED;
-                                    _       -> ?HTTP_HANDLER_S3
-                                end).
-
 %% Default values
--define(DEF_HTTTP_HANDLER,            's3').
 -define(DEF_HTTP_PORT,                8080).
 -define(DEF_HTTP_SSL_PORT,            8443).
 -define(DEF_HTTP_SSL_C_FILE,          "./server_cert.pem").
@@ -297,7 +280,7 @@
 %% Records
 -record(http_options, {
           %% for basic
-          handler                      :: http_handler(), %% http-handler
+          handler                      :: atom(),         %% http-handler
           port = 0                     :: pos_integer(),  %% http port number
           ssl_port = 0                 :: pos_integer(),  %% ssl port number
           ssl_certfile = []            :: string(),       %% ssl cert file name
@@ -326,44 +309,44 @@
 
 -record(req_params, {
           %% basic info
-          handler                    :: http_handler(), %% http-handler
-          path = <<>>                :: binary(),       %% path (uri)
-          bucket = <<>>              :: binary(),       %% bucket (for s3-api)
-          access_key_id = []         :: string(),       %% s3's access-key-id
-          token_length = 0           :: pos_integer(),  %% length of tokened path
-          min_layers = 0             :: pos_integer(),  %% acceptable # of min layers
-          max_layers = 0             :: pos_integer(),  %% acceptable # of max layers
-          qs_prefix = []             :: string(),       %% query string
-          range_header               :: string(),       %% range header
-          has_inner_cache = false    :: boolean(),      %% has inner-cache?
-          is_cached = false          :: boolean(),      %% is cached?
-          is_dir = false             :: boolean(),      %% is directory?
+          handler                    :: atom(),                 %% http-handler
+          path = <<>>                :: binary(),               %% path (uri)
+          bucket = <<>>              :: binary(),               %% bucket (for s3-api)
+          access_key_id = <<>>       :: binary(),               %% s3's access-key-id
+          token_length = 0           :: non_neg_integer(),      %% length of tokened path
+          min_layers = 0             :: non_neg_integer(),      %% acceptable # of min layers
+          max_layers = 0             :: non_neg_integer(),      %% acceptable # of max layers
+          qs_prefix = <<>>           :: binary() | none,        %% query string
+          range_header               :: string(),               %% range header
+          has_inner_cache = false    :: boolean(),              %% has inner-cache?
+          is_cached = false          :: boolean(),              %% is cached?
+          is_dir = false             :: boolean(),              %% is directory?
           %% for large-object
-          is_upload = false            :: boolean(),      %% is upload operation? (for multipart upload)
-          is_acl = false               :: boolean(),      %% is acl operation?
-          upload_id = <<>>             :: binary(),       %% upload id for multipart upload
-          upload_part_num = 0          :: pos_integer(),  %% upload part number for multipart upload
-          max_chunked_objs = 0         :: pos_integer(),  %% max chunked objects
-          max_len_for_multipart = 0    :: pos_integer(),  %% max length a multipart object (byte)
-          max_len_of_obj = 0           :: pos_integer(),  %% max length a object (byte)
-          chunked_obj_len = 0          :: pos_integer(),  %% chunked object length for large-object (byte)
-          reading_chunked_obj_len = 0  :: pos_integer(),  %% creading hunked object length for large object (byte)
-          threshold_of_chunk_len = 0   :: pos_integer()   %% threshold of chunk length for large-object (byte)
+          is_upload = false            :: boolean(),            %% is upload operation? (for multipart upload)
+          is_acl = false               :: boolean(),            %% is acl operation?
+          upload_id = <<>>             :: binary(),             %% upload id for multipart upload
+          upload_part_num = 0          :: non_neg_integer(),    %% upload part number for multipart upload
+          max_chunked_objs = 0         :: non_neg_integer(),    %% max chunked objects
+          max_len_for_multipart = 0    :: non_neg_integer(),    %% max length a multipart object (byte)
+          max_len_of_obj = 0           :: non_neg_integer(),    %% max length a object (byte)
+          chunked_obj_len = 0          :: non_neg_integer(),    %% chunked object length for large-object (byte)
+          reading_chunked_obj_len = 0  :: non_neg_integer(),    %% creading hunked object length for large object (byte)
+          threshold_of_chunk_len = 0   :: non_neg_integer()     %% threshold of chunk length for large-object (byte)
          }).
 
 -record(cache, {
-          etag         = 0    :: pos_integer(), %% actual value is checksum
-          mtime        = 0    :: pos_integer(), %% gregorian_seconds
-          content_type = []   :: string(),      %% from a Content-Type header
-          body         = <<>> :: binary(),      %% body (value),
-          size         = 0    :: pos_integer(), %% body size
-          file_path    = ""   :: file:name_all()%% file path when this cache is stored on disk
+          etag         = 0    :: non_neg_integer(),   %% actual value is checksum
+          mtime        = 0    :: non_neg_integer(),   %% gregorian_seconds
+          content_type = <<>> :: binary() | string(), %% from a Content-Type header
+          body         = <<>> :: binary(),            %% body (value),
+          size         = 0    :: non_neg_integer(),       %% body size
+          file_path    = ""   :: file:name_all()      %% file path when this cache is stored on disk
          }).
 
 -record(cache_condition, {
-          expire          = 0  :: integer(), %% specified per sec
-          max_content_len = 0  :: integer(), %% No cache if Content-Length of a response header was &gt this
-          content_types   = [] :: list(),    %% like ["image/png", "image/gif", "image/jpeg"]
-          path_patterns   = [] :: list()     %% compiled regular expressions
+          expire          = 0  :: integer(),          %% specified per sec
+          max_content_len = 0  :: integer(),          %% No cache if Content-Length of a response header was &gt this
+          content_types   = [] :: list() | undefined, %% like ["image/png", "image/gif", "image/jpeg"]
+          path_patterns   = [] :: list() | undefined  %% compiled regular expressions
          }).
 

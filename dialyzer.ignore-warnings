@@ -1,0 +1,6 @@
+## Dialyzer - ignore warnings
+##
+##
+## leo_gateway_nfs_mount3_xdr.erl(auto generated file)
+##
+The pattern <Fun, Bin, Off, Max, N> can never match since previous clauses completely covered the type <fun((_,_) -> {integer(),pos_integer()}),<<_:40,_:_*8>>,pos_integer(),'infinity',non_neg_integer()>

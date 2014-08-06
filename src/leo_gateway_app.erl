@@ -28,6 +28,8 @@
 -author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
+-include("leo_nfs_mount3.hrl").
+-include("leo_nfs_proto3.hrl").
 -include("leo_http.hrl").
 -include_lib("leo_cache/include/leo_cache.hrl").
 -undef(error).
@@ -37,13 +39,15 @@
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_statistics/include/leo_statistics.hrl").
+-include_lib("nfs_rpc_server/src/nfs_rpc_app.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
--export([start/2, stop/1, prep_stop/1,
+-export([start/0, start/2, stop/1, prep_stop/1,
          inspect_cluster_status/2, profile_output/0, get_options/0]).
 
 -define(CHECK_INTERVAL, 3000).
+
 
 -ifdef(TEST).
 -define(get_several_info_from_manager(_Args),
@@ -51,22 +55,30 @@
                 _ = get_system_config_from_manager([]),
                 _ = get_members_from_manager([]),
 
-                [{ok, [#?SYSTEM_CONF{n = 1,
+                [
+                 {ok, [#?SYSTEM_CONF{n = 1,
                                      w = 1,
                                      r = 1,
-                                     d = 1}]
-                 },
+                                     d = 1}]},
                  {ok, {[#member{node  = 'node_0',
                                 state = 'running'}],
                        [#member{node  = 'node_0',
-                                state = 'running'}]}
-                 }
+                                state = 'running'}]}}
                 ]
         end).
 -else.
 -define(get_several_info_from_manager(X),  {get_system_config_from_manager(X),
                                             get_members_from_manager(X)}).
 -endif.
+
+%% for debug
+start() ->
+    application:ensure_started(crypto),
+    application:ensure_started(snmp),
+    application:ensure_started(ssl),
+    application:ensure_started(ranch),
+    application:ensure_started(asn1),
+    application:start(leo_gateway).
 
 
 %%--------------------------------------------------------------------
@@ -91,8 +103,8 @@ start(_Type, _StartArgs) ->
     %% access-logger (file-appender)
     case application:get_env(leo_gateway, is_enable_access_log) of
         {ok, true} ->
-            ok = leo_logger_client_common:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
-                                              LogDir, ?LOG_FILENAME_ACCESS);
+            ok = leo_logger_client_base:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
+                                            LogDir, ?LOG_FILENAME_ACCESS);
         _ ->
             void
     end,
@@ -144,19 +156,18 @@ inspect_cluster_status(Res, ManagerNodes) ->
         {{ok, SystemConf}, {ok, {MembersCur, MembersPrev}}} ->
             case get_cluster_state(MembersCur) of
                 ?STATE_STOP ->
-                    timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
-                                      [ok, ManagerNodes]);
+                    timer:apply_after(?CHECK_INTERVAL, ?MODULE,
+                                      inspect_cluster_status, [ok, ManagerNodes]);
                 ?STATE_RUNNING ->
                     ok = after_process_1(SystemConf, MembersCur, MembersPrev)
             end;
         {{ok,_SystemConf}, {error,_Cause}} ->
-            timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
-                              [ok, ManagerNodes]);
-        Error ->
+            timer:apply_after(?CHECK_INTERVAL, ?MODULE,
+                              inspect_cluster_status, [ok, ManagerNodes]);
+        _Error ->
             timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
                               [ok, ManagerNodes]),
-            io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
-            Error
+            io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE,_Error])
     end,
     Res.
 
@@ -177,36 +188,93 @@ after_process_0({ok, _Pid} = Res) ->
                                       X
                               end, ManagerNodes0),
 
+    %% Launch SNMPA
+    catch leo_statistics_api:start_link(leo_gateway),
+    ok = leo_statistics_api:create_tables(ram_copies, [node()]),
+    ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
+
     %% Retrieve http-options
     {ok, HttpOptions} = get_options(),
-    case HttpOptions#http_options.handler of
-        ?HTTP_HANDLER_EMBED ->
-            void;
-        Handler ->
-            case Handler of
-                ?HTTP_HANDLER_S3 ->
-                    %% Retrieve bucket-prop-sync-interval for S3-API
-                    BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
 
-                    %% Launch S3Libs:Auth/Bucket/EndPoint
-                    ok = leo_s3_libs:start(slave,
-                                           [{'provider', ManagerNodes1},
-                                            {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
-                    leo_s3_endpoint:get_endpoints();
-                _ ->
-                    void
-            end,
+    %% Launch bucket-sync, s3-related-procs
+    %% [S3, NFS]
+    Handler = HttpOptions#http_options.handler,
+    case Handler of
+        Handler when Handler == ?PROTO_HANDLER_S3;
+                     Handler == ?PROTO_HANDLER_NFS ->
+            %% Retrieve bucket-prop-sync-interval for S3-API
+            BucketPropSyncInterval = ?env_bucket_prop_sync_interval(),
 
-            %% Launch SNMPA
-            ok = leo_statistics_api:start_link(leo_gateway),
-            ok = leo_statistics_api:create_tables(ram_copies, [node()]),
-            ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
-            ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
-            ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
+            %% Launch S3Libs:Auth/Bucket/EndPoint
+            ok = leo_s3_libs:start(slave,
+                                   [{'provider', ManagerNodes1},
+                                    {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
+            leo_s3_endpoint:get_endpoints();
+        _ ->
+            void
+    end,
 
+    %% Launch HTTP-handler
+    %% [S3, REST]
+    case Handler of
+        Handler when Handler == ?PROTO_HANDLER_S3;
+                     Handler == ?PROTO_HANDLER_REST ->
             %% Launch http-handler(s)
-            Handler = HttpOptions#http_options.handler,
-            ok = Handler:start(leo_gateway_sup, HttpOptions)
+            ok = Handler:start(leo_gateway_sup, HttpOptions);
+        _ ->
+            void
+    end,
+
+    %% Launch nfs-related-procs
+    %% [NFS]
+    case Handler of
+        ?PROTO_HANDLER_NFS ->
+            %% NFS:Load nfs-rpc-server
+            _ = application:load(nfs_rpc_server),
+
+            NFS_Options = ?env_nfs_options(),
+            MntdPort = leo_misc:get_value('mountd_port', NFS_Options, ?DEF_MOUNTD_PORT),
+            MntdAcceptors = leo_misc:get_value('mountd_acceptors', NFS_Options, ?DEF_MOUNTD_ACCEPTORS),
+            NFSdPort = leo_misc:get_value('nfsd_port', NFS_Options, ?DEF_NFSD_PORT),
+            NFSdAcceptors = leo_misc:get_value('nfsd_acceptors', NFS_Options, ?DEF_NFSD_ACCEPTORS),
+
+            %% NFS:Argments for mountd
+            MountdArgs = #nfs_rpc_app_arg{
+                            ref          = mountd3,
+                            acceptor_num = MntdAcceptors,
+                            trans_opts   = [{port, MntdPort}],
+                            prg_num      = ?MOUNTPROG,
+                            prg_name     = mountprog,
+                            prg_vsns     = [],
+                            vsn_lo       = ?MOUNTVERS3,
+                            vsn_hi       = ?MOUNTVERS3,
+                            use_pmap     = true,
+                            mod          = leo_nfs_mount3_svc,
+                            init_args    = [],
+                            state        = []
+                           },
+
+            %% NFS:Argments for nfsd
+            NFS_D_Args = #nfs_rpc_app_arg{
+                            ref          = nfsd3,
+                            acceptor_num = NFSdAcceptors,
+                            trans_opts   = [{port, NFSdPort}],
+                            prg_num      = ?NFS3_PROGRAM,
+                            prg_name     = nfs3_program,
+                            prg_vsns     = [],
+                            vsn_lo       = ?NFS_V3,
+                            vsn_hi       = ?NFS_V3,
+                            use_pmap     = true,
+                            mod          = leo_nfs_proto3_svc,
+                            init_args    = [],
+                            state        = []
+                           },
+            ok = application:set_env(nfs_rpc_server, args, [MountdArgs, NFS_D_Args]),
+            ok = application:ensure_started(nfs_rpc_server);
+        _ ->
+            void
     end,
 
     %% Launch LeoCache
@@ -355,7 +423,7 @@ get_members_from_manager([Manager|T]) ->
     end.
 
 
-%% @doc
+%% @doc Retrieve the cluster status
 %% @private
 -spec(get_cluster_state(list(#member{})) ->
              node_state()).
@@ -391,9 +459,18 @@ log_file_appender([{Type, _}|T], Acc) when Type == file ->
 -spec(get_options() ->
              {ok, #http_options{}}).
 get_options() ->
-    %% Retrieve http-related properties:
     HttpProp = ?env_http_properties(),
-    HttpHandler          = leo_misc:get_value('handler',             HttpProp, ?DEF_HTTTP_HANDLER),
+
+    %% Retrieve ptotocol:
+    Protocol = case ?env_protocol() of
+                   [] ->
+                       leo_misc:get_value('handler', HttpProp,
+                                          ?DEF_PROTOCOL_HANDLER);
+                   V ->
+                       V
+               end,
+
+    %% Retrieve http-related properties:
     Port                 = leo_misc:get_value('port',                HttpProp, ?DEF_HTTP_PORT),
     SSLPort              = leo_misc:get_value('ssl_port',            HttpProp, ?DEF_HTTP_SSL_PORT),
     SSLCertFile          = leo_misc:get_value('ssl_certfile',        HttpProp, ?DEF_HTTP_SSL_C_FILE),
@@ -449,7 +526,7 @@ get_options() ->
                           leo_misc:set_env(leo_gateway, K, T)
                   end, ?env_timeout()),
 
-    HttpOptions = #http_options{handler                  = ?convert_to_handler(HttpHandler),
+    HttpOptions = #http_options{handler                  = ?convert_to_handler(Protocol),
                                 port                     = Port,
                                 ssl_port                 = SSLPort,
                                 ssl_certfile             = SSLCertFile,
@@ -472,7 +549,7 @@ get_options() ->
                                 chunked_obj_len          = ChunkedObjLen,
                                 reading_chunked_obj_len  = ReadingChunkedLen,
                                 threshold_of_chunk_len   = ThresholdChunkLen},
-    ?info("start/3", "handler: ~p",                  [HttpHandler]),
+    ?info("start/3", "protocol: ~p",                 [Protocol]),
     ?info("start/3", "port: ~p",                     [Port]),
     ?info("start/3", "ssl port: ~p",                 [SSLPort]),
     ?info("start/3", "ssl certfile: ~p",             [SSLCertFile]),

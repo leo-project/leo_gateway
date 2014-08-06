@@ -202,7 +202,7 @@ create_schema([Node|Rest]) ->
 
 %% @doc Notify a message to savanna_agent
 %%
--spec(notify_fun(atom(), atom(), atom(), any(), pos_integer())->
+-spec(notify_fun(atom(), atom(), atom(), any(), non_neg_integer())->
              ok).
 notify_fun(_,_,_,_,?DEF_MAX_TIMES_OF_NOTICE) ->
     {error, "could not retrieve the schema"};
@@ -238,7 +238,7 @@ sync_tables_1([]) ->
 sync_tables_1([Node|Rest] = Managers) ->
     case leo_rpc:call(Node, svc_tbl_schema, get,
                       [?QOS_METRIC_BUCKET_SCHEMA]) of
-        {ok, #sv_schema{} = Schema} ->
+        {ok, #?SV_SCHEMA{} = Schema} ->
             Ret = svc_tbl_schema:insert(Schema),
             sync_tables_2(Ret, Managers);
         _ ->
