@@ -56,8 +56,9 @@
          nfsproc3_commit_3/3,
          nfsproc3_fsinfo_3/3]).
 
--export([sattr_mode2file_info/1, sattr_uid2file_info/1, sattr_gid2file_info/1,
-         sattr_atime2file_info/1, sattr_mtime2file_info/1, sattr_size2file_info/1]).
+-export([sattr_mode_to_file_info/1, sattr_uid_to_file_info/1,
+         sattr_gid_to_file_info/1, sattr_atime_to_file_info/1,
+         sattr_mtime_to_file_info/1, sattr_size_to_file_info/1]).
 
 -record(ongoing_readdir, {
           filelist  :: list(#?METADATA{})
@@ -123,7 +124,7 @@ nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
                 {ok, Meta} ->
                     {reply, {?NFS3_OK, {meta2fattr3(Meta)}}, State};
                 {error, not_found} ->
-                    Path4S3Dir = leo_nfs_file_handler:path2dir(Path),
+                    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
                     case leo_nfs_file_handler:is_dir(Path4S3Dir) of
                         true ->
                             {reply, {?NFS3_OK, {s3dir2fattr3(Path)}}, State};
@@ -155,7 +156,7 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
                                 _ATime,
                                 _MTime}, _Guard} = _1, Clnt, State) ->
     ?debug("nfsproc3_setattr_3", "args:~p client:~p", [_1, Clnt]),
-    Size = sattr_size2file_info(SattrSize),
+    Size = sattr_size_to_file_info(SattrSize),
     case Size of
         undefined ->
             {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
@@ -176,7 +177,7 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
     Path4S3 = filename:join(Dir, Name),
     %% A path for directory must be trailing with '/'
-    Path4S3Dir = leo_nfs_file_handler:path2dir(Path4S3),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
     case leo_nfs_file_handler:is_file(Path4S3) orelse
         leo_nfs_file_handler:is_dir(Path4S3Dir) of
         true ->
@@ -313,7 +314,7 @@ nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
     ?debug("nfsproc3_rmdir_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
     Path4S3 = filename:join(Dir, Name),
-    Path4S3Dir = leo_nfs_file_handler:path2dir(Path4S3),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
     case is_empty_dir(Path4S3Dir) of
         true ->
             DummyFile4S3Dir = filename:join(Path4S3Dir, ?NFS_DUMMY_FILE4S3DIR),
@@ -369,7 +370,7 @@ nfsproc3_readdir_3(_1, Clnt, State) ->
 nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
-    Path4S3Dir = leo_nfs_file_handler:path2dir(Path),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
     {ok, NewCookieVerf, ReadDir} = case CookieVerf of
                                        <<0,0,0,0,0,0,0,0>> ->
                                            readdir_add_entry(Path4S3Dir);
@@ -458,30 +459,30 @@ nfsproc3_commit_3(_1, Clnt, State) ->
 
 
 %% @doc
-sattr_mode2file_info({0, _})   -> undefined;
-sattr_mode2file_info({true, Mode}) -> Mode.
+sattr_mode_to_file_info({0, _})   -> undefined;
+sattr_mode_to_file_info({true, Mode}) -> Mode.
 
 %% @doc
-sattr_uid2file_info({0, _})   -> undefined;
-sattr_uid2file_info({true, UID}) -> UID.
+sattr_uid_to_file_info({0, _})   -> undefined;
+sattr_uid_to_file_info({true, UID}) -> UID.
 
 %% @doc
-sattr_gid2file_info({0, _})   -> undefined;
-sattr_gid2file_info({true, GID}) -> GID.
+sattr_gid_to_file_info({0, _})   -> undefined;
+sattr_gid_to_file_info({true, GID}) -> GID.
 
 %% @doc
-sattr_size2file_info({true, Size}) -> Size;
-sattr_size2file_info({_, _})   -> undefined.
+sattr_size_to_file_info({true, Size}) -> Size;
+sattr_size_to_file_info({_, _})   -> undefined.
 
 %% @doc
-sattr_atime2file_info({'DONT_CHANGE', _}) -> undefined;
-sattr_atime2file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
-sattr_atime2file_info({_, {ATime, _}})         -> ATime.
+sattr_atime_to_file_info({'DONT_CHANGE', _}) -> undefined;
+sattr_atime_to_file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
+sattr_atime_to_file_info({_, {ATime, _}})         -> ATime.
 
 %% @doc
-sattr_mtime2file_info({'DONT_CHANGE', _}) -> undefined;
-sattr_mtime2file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
-sattr_mtime2file_info({_, {MTime, _}})         -> MTime.
+sattr_mtime_to_file_info({'DONT_CHANGE', _}) -> undefined;
+sattr_mtime_to_file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
+sattr_mtime_to_file_info({_, {MTime, _}})         -> MTime.
 
 
 %% ---------------------------------------------------------------------
@@ -575,7 +576,7 @@ readdir_create_resp(Path, CurCookie,
     NormalizedKey = case Size of
                         -1 ->
                             %% dir to be normalized(means expand .|.. chars)
-                            leo_nfs_file_handler:path_relative2abs(Key);
+                            leo_nfs_file_handler:path_relative_to_abs(Key);
                         _ ->
                             %% file
                             Key
