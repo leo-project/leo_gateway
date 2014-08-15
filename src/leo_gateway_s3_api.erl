@@ -356,7 +356,7 @@ put_large_object_2(Req, Key, Meta) ->
 
 put_large_object_3(Req, Meta) ->
     leo_gateway_large_object_handler:delete_chunked_objects(
-           Meta#?METADATA.key, Meta#?METADATA.cnumber),
+      Meta#?METADATA.key, Meta#?METADATA.cnumber),
     catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
     resp_copy_obj_xml(Req, Meta).
 
@@ -760,7 +760,7 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1
             auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end.
 
-auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
+auth(next, Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     %% bucket operations must be needed to auth
     %% AND alter object operations as well
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
@@ -768,7 +768,6 @@ auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs, #req_params{is_acl =
             {error, undefined};
         {AuthorizationBin, _} ->
             IsCreateBucketOp = (TokenLen == 1 andalso HTTPMethod == ?HTTP_PUT andalso not IsACL),
-            {RawUri,  _} = cowboy_req:path(Req),
             {QStr1,   _} = cowboy_req:qs(Req),
             {Headers, _} = cowboy_req:headers(Req),
 
@@ -796,7 +795,7 @@ auth(next, Req, HTTPMethod, _Path, TokenLen, Bucket, _ACLs, #req_params{is_acl =
                                       content_type = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
                                       date         = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket       = Bucket,
-                                      uri          = RawUri,
+                                      uri          = << "/", Path/binary >>,
                                       query_str    = QStr3,
                                       amz_headers  = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
