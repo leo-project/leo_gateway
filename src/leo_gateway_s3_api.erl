@@ -771,16 +771,23 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
             IsCreateBucketOp = (TokenLen   == 1 andalso
                                 HTTPMethod == ?HTTP_PUT andalso
                                 not IsACL),
-            {RawUri,  _} = cowboy_req:path(Req),
+            {RawURI,  _} = cowboy_req:path(Req),
             {QStr,    _} = cowboy_req:qs(Req),
             {Headers, _} = cowboy_req:headers(Req),
+
+            RawURILen = byte_size(RawURI),
             PathLen = byte_size(Path),
-            Path_1  = case binary:part(Path, {PathLen - 1, 1}) of
-                          ?BIN_SLASH ->
-                              binary:part(Path, {0, PathLen - 1});
-                          _ ->
-                              Path
-                      end,
+            Path_1 = case binary:part(RawURI, {RawURILen - 1, 1}) of
+                         ?BIN_SLASH ->
+                             Path;
+                         _ ->
+                             case binary:part(Path, {PathLen - 1, 1}) of
+                                 ?BIN_SLASH ->
+                                     binary:part(Path, {0, PathLen - 1});
+                                 _ ->
+                                     Path
+                             end
+                     end,
 
             Len = byte_size(QStr),
             QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
@@ -808,7 +815,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                       content_type  = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
                                       date          = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket        = Bucket,
-                                      raw_uri       = RawUri,
+                                      raw_uri       = RawURI,
                                       requested_uri = << ?STR_SLASH, Path_1/binary >>,
                                       query_str     = QStr_3,
                                       amz_headers   = leo_http:get_amz_headers4cow(Headers)},
