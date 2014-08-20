@@ -184,8 +184,7 @@ rename_large_object_1(Key, Meta) ->
 
 %% @private
 rename_large_object_2(Meta) ->
-    leo_gateway_large_object_handler:delete_chunked_objects(
-      Meta#?METADATA.key, Meta#?METADATA.cnumber),
+    leo_gateway_large_object_handler:delete_chunked_objects(Meta#?METADATA.key),
     catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
     ok.
 

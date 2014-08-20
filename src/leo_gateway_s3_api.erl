@@ -355,8 +355,7 @@ put_large_object_2(Req, Key, Meta) ->
     end.
 
 put_large_object_3(Req, Meta) ->
-    leo_gateway_large_object_handler:delete_chunked_objects(
-      Meta#?METADATA.key, Meta#?METADATA.cnumber),
+    leo_gateway_large_object_handler:delete_chunked_objects(Meta#?METADATA.key),
     catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
     resp_copy_obj_xml(Req, Meta).
 
@@ -523,6 +522,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_DELETE, _,
                      upload_id = UploadId}, State) when UploadId /= <<>> ->
     _ = leo_gateway_rpc_handler:put(Path, <<>>, 0),
     _ = leo_gateway_rpc_handler:delete(Path),
+    _ = leo_gateway_rpc_handler:delete(<< Path/binary, ?STR_NEWLINE >>),
     {ok, Req_2} = ?reply_no_content([?SERVER_HEADER], Req),
     {ok, Req_2, State};
 
@@ -624,6 +624,7 @@ handle_multi_upload_3(0, _, Acc) ->
 handle_multi_upload_3(PartNum, Path, Acc) ->
     PartNumBin = list_to_binary(integer_to_list(PartNum)),
     Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary  >>,
+    ?debugVal(Key),
 
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{dsize = Len,
