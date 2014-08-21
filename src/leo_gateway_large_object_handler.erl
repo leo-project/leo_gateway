@@ -36,7 +36,7 @@
 %% Application callbacks
 -export([start_link/1, start_link/2, start_link/3, stop/1]).
 -export([put/2, get/4, get_chunked/1, rollback/1, result/1, state/1]).
--export([delete_chunked_objects/2]).
+-export([delete_chunked_objects/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -264,9 +264,8 @@ handle_call({put, Bin}, _From, #state{key = Key,
     end;
 
 
-handle_call(rollback, _From, #state{key = Key,
-                                    num_of_chunks = NumOfChunks} = State) ->
-    ok = delete_chunked_objects(Key, NumOfChunks),
+handle_call(rollback, _From, #state{key = Key} = State) ->
+    ok = delete_chunked_objects(Key),
     {reply, ok, State#state{errors = []}};
 
 
@@ -411,22 +410,18 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref, Transport, Sock
 
 %% @doc Remove chunked objects
 %% @private
--spec(delete_chunked_objects(binary(), integer()) ->
+-spec(delete_chunked_objects(binary()) ->
              ok).
-delete_chunked_objects(_, 0) ->
-    ok;
-delete_chunked_objects(Key1, Index1) ->
-    Index2 = list_to_binary(integer_to_list(Index1)),
-    Key2   = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
-
-    case leo_gateway_rpc_handler:delete(Key2) of
+delete_chunked_objects(Key) ->
+    case leo_gateway_rpc_handler:delete(
+           << Key/binary, ?DEF_SEPARATOR/binary >>) of
         ok ->
             void;
         {error, Cause} ->
-            ?error("delete_chunked_objects/2", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key1), Index1, Cause])
+            ?error("delete_chunked_objects/1", "key:~s, cause:~p",
+                   [binary_to_list(Key), Cause])
     end,
-    delete_chunked_objects(Key1, Index1 - 1).
+    ok.
 
 
 -spec(iterator_next(#iterator{}) ->

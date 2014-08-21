@@ -33,7 +33,7 @@
 
 -export([is_file/1, is_dir/1, list_dir/1, list_dir/2, rename/2]).
 -export([write/4, read/3, trim/2]).
--export([path2dir/1, path_trim_trailing_sep/1, path_relative2abs/1,
+-export([path_to_dir/1, path_trim_trailing_sep/1, path_relative_to_abs/1,
          binary_is_contained/2, get_disk_usage/0]).
 
 -undef(DEF_SEPARATOR).
@@ -184,8 +184,7 @@ rename_large_object_1(Key, Meta) ->
 
 %% @private
 rename_large_object_2(Meta) ->
-    leo_gateway_large_object_handler:delete_chunked_objects(
-      Meta#?METADATA.key, Meta#?METADATA.cnumber),
+    leo_gateway_large_object_handler:delete_chunked_objects(Meta#?METADATA.key),
     catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
     ok.
 
@@ -631,9 +630,9 @@ large_obj_delete_chunks(Key1, [Index1|Rest]) ->
 
 %% @doc Convert from the file path to the path trailing '/'
 %%
--spec(path2dir(binary()) ->
+-spec(path_to_dir(binary()) ->
              binary()).
-path2dir(Path) ->
+path_to_dir(Path) ->
     case binary:last(Path) of
         $/ ->
             Path;
@@ -657,23 +656,23 @@ path_trim_trailing_sep(Src) ->
 
 %% @doc Convert from a relative file path to a absolute one
 %%
--spec(path_relative2abs(binary()) ->
+-spec(path_relative_to_abs(binary()) ->
              binary()).
-path_relative2abs(P) ->
-    path_relative2abs(binary:split(P, <<"/">>, [global, trim]), []).
+path_relative_to_abs(P) ->
+    path_relative_to_abs(binary:split(P, <<"/">>, [global, trim]), []).
 
-path_relative2abs([], []) ->
+path_relative_to_abs([], []) ->
     <<"/">>;
-path_relative2abs([], Acc) ->
+path_relative_to_abs([], Acc) ->
     filename:join(lists:reverse(Acc));
-path_relative2abs([<<>>|Rest], Acc) ->
-    path_relative2abs(Rest, Acc);
-path_relative2abs([<<".">>|Rest], Acc) ->
-    path_relative2abs(Rest, Acc);
-path_relative2abs([<<"..">>|Rest], Acc) ->
-    path_relative2abs(Rest, tl(Acc));
-path_relative2abs([Segment|Rest], Acc) ->
-    path_relative2abs(Rest, [Segment|Acc]).
+path_relative_to_abs([<<>>|Rest], Acc) ->
+    path_relative_to_abs(Rest, Acc);
+path_relative_to_abs([<<".">>|Rest], Acc) ->
+    path_relative_to_abs(Rest, Acc);
+path_relative_to_abs([<<"..">>|Rest], Acc) ->
+    path_relative_to_abs(Rest, tl(Acc));
+path_relative_to_abs([Segment|Rest], Acc) ->
+    path_relative_to_abs(Rest, [Segment|Acc]).
 
 
 %% @doc Return true if the specified binary contain _Char, and false otherwise

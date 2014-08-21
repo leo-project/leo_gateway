@@ -48,8 +48,6 @@ qc:
 	@$(REBAR) qc skip_deps=true
 gen_rpc: deps
 	(cd deps/erpcgen/;make)
-	(cd deps/nfs_rpc_server/src && erl -noshell -pa ../../erpcgen/ebin -eval 'erpcgen:file(pmap,    [xdrlib,clnt])' -s init stop)
-	(cd deps/nfs_rpc_server/src && erl -noshell -pa ../../erpcgen/ebin -eval 'erpcgen:file(nfs_rpc, [xdrlib,clnt])' -s init stop)
 gen_nfs: gen_rpc
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_proto3.x
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_mount3.x
