@@ -623,8 +623,7 @@ handle_multi_upload_3(0, _, Acc) ->
 
 handle_multi_upload_3(PartNum, Path, Acc) ->
     PartNumBin = list_to_binary(integer_to_list(PartNum)),
-    Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary  >>,
-    ?debugVal(Key),
+    Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary >>,
 
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{dsize = Len,
