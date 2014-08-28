@@ -788,6 +788,8 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                      Path
                              end
                      end,
+            %% Path must be urlencoded to calculate signature properly
+            Path_2 = leo_http:urlencode(<< ?STR_SLASH, Path_1/binary >>, [noplus, noslash]),
 
             Len = byte_size(QStr),
             QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
@@ -816,7 +818,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                       date          = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket        = Bucket,
                                       raw_uri       = RawURI,
-                                      requested_uri = << ?STR_SLASH, Path_1/binary >>,
+                                      requested_uri = Path_2,
                                       query_str     = QStr_3,
                                       amz_headers   = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
