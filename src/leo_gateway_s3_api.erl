@@ -273,7 +273,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
 put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Params) ->
-    CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+    CS = cowboy_http:urldecode(?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE)),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
     CS2 = case binary:part(CS, {0, 1}) of
