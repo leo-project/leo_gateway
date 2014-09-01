@@ -789,7 +789,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                              end
                      end,
             %% Path must be urlencoded to calculate signature properly
-            Path_2 = leo_http:urlencode(<< ?STR_SLASH, Path_1/binary >>, [noplus, noslash]),
+            Path_2 = leo_http:url_encode(<< ?STR_SLASH, Path_1/binary >>, [noplus, noslash]),
 
             Len = byte_size(QStr),
             QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
