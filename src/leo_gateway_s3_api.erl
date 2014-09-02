@@ -794,14 +794,14 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
             Token_2 = leo_misc:binary_tokens(RawURI, << ?STR_SLASH >>),
             Path_1 = case (length(Token_1) /= length(Token_2)) of
                          true ->
-                             << Bucket/binary, RawURI/binary >>;
+                             << ?STR_SLASH, Bucket/binary, RawURI/binary >>;
                          false ->
                              RawURILen = byte_size(RawURI),
                              case RawURI of
                                  << ?STR_SLASH, _/binary >> ->
-                                     binary:part(RawURI, {1, RawURILen - 1});
+                                     RawURI;
                                  _ ->
-                                     RawURI
+                                     << ?STR_SLASH, RawURI/binary >>
                              end
                      end,
 
@@ -832,7 +832,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                       date          = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket        = Bucket,
                                       raw_uri       = RawURI,
-                                      requested_uri = << ?STR_SLASH, Path_1/binary >>,
+                                      requested_uri = Path_1,
                                       query_str     = QStr_3,
                                       amz_headers   = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
