@@ -775,21 +775,35 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
             {QStr,    _} = cowboy_req:qs(Req),
             {Headers, _} = cowboy_req:headers(Req),
 
-            RawURILen = byte_size(RawURI),
-            PathLen = byte_size(Path),
-            Path_1 = case binary:part(RawURI, {RawURILen - 1, 1}) of
-                         ?BIN_SLASH ->
-                             Path;
-                         _ ->
-                             case binary:part(Path, {PathLen - 1, 1}) of
-                                 ?BIN_SLASH ->
-                                     binary:part(Path, {0, PathLen - 1});
+            %% NOTE:
+            %% - from s3cmd, dragondisk and others:
+            %%     -   Path: <<"photo/img">>
+            %%     - RawURI: <<"/img">>
+            %%
+            %% - from ruby-client, other AWS-clients:
+            %%     -   Path: <<"photo/img">>
+            %%     - RawURI: <<"/photo/img">>
+            %%
+            %% -> Adjust URI:
+            %%     #sign_params{ requested_uri = << "/photo/img" >>
+            %%                         raw_uri =  RawURI
+            %%                 }
+            %% * the hash-value is calculated by "raw_uri"
+            %%
+            Token_1 = leo_misc:binary_tokens(Path,   << ?STR_SLASH >>),
+            Token_2 = leo_misc:binary_tokens(RawURI, << ?STR_SLASH >>),
+            Path_1 = case (length(Token_1) /= length(Token_2)) of
+                         true ->
+                             << Bucket/binary, RawURI/binary >>;
+                         false ->
+                             RawURILen = byte_size(RawURI),
+                             case RawURI of
+                                 << ?STR_SLASH, _/binary >> ->
+                                     binary:part(RawURI, {1, RawURILen - 1});
                                  _ ->
-                                     Path
+                                     RawURI
                              end
                      end,
-            %% Path must be urlencoded to calculate signature properly
-            Path_2 = leo_http:url_encode(<< ?STR_SLASH, Path_1/binary >>, [noplus, noslash]),
 
             Len = byte_size(QStr),
             QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
@@ -818,7 +832,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                       date          = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket        = Bucket,
                                       raw_uri       = RawURI,
-                                      requested_uri = Path_2,
+                                      requested_uri = << ?STR_SLASH, Path_1/binary >>,
                                       query_str     = QStr_3,
                                       amz_headers   = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
