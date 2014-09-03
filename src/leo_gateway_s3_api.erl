@@ -446,11 +446,11 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
 %% @doc Handle a request (sub)
 %% @private
 handle_2({error, not_found}, Req,_,Key,_,State) ->
-    {ok, Req} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
-    {ok, Req, State};
+    {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
+    {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
-    {ok, Req} = ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req),
-    {ok, Req, State};
+    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req),
+    {ok, Req_2, State};
 
 %% For Multipart Upload - Initiation
 %%
