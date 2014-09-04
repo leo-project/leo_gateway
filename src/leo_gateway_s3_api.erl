@@ -273,7 +273,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
 put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Params) ->
-    CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
+    CS = cowboy_http:urldecode(?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE)),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
     CS2 = case binary:part(CS, {0, 1}) of
@@ -446,11 +446,11 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
 %% @doc Handle a request (sub)
 %% @private
 handle_2({error, not_found}, Req,_,Key,_,State) ->
-    {ok, Req} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
-    {ok, Req, State};
+    {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
+    {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
-    {ok, Req} = ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req),
-    {ok, Req, State};
+    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req),
+    {ok, Req_2, State};
 
 %% For Multipart Upload - Initiation
 %%
@@ -775,17 +775,33 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
             {QStr,    _} = cowboy_req:qs(Req),
             {Headers, _} = cowboy_req:headers(Req),
 
-            RawURILen = byte_size(RawURI),
-            PathLen = byte_size(Path),
-            Path_1 = case binary:part(RawURI, {RawURILen - 1, 1}) of
-                         ?BIN_SLASH ->
-                             Path;
-                         _ ->
-                             case binary:part(Path, {PathLen - 1, 1}) of
-                                 ?BIN_SLASH ->
-                                     binary:part(Path, {0, PathLen - 1});
+            %% NOTE:
+            %% - from s3cmd, dragondisk and others:
+            %%     -   Path: <<"photo/img">>
+            %%     - RawURI: <<"/img">>
+            %%
+            %% - from ruby-client, other AWS-clients:
+            %%     -   Path: <<"photo/img">>
+            %%     - RawURI: <<"/photo/img">>
+            %%
+            %% -> Adjust URI:
+            %%     #sign_params{ requested_uri = << "/photo/img" >>
+            %%                         raw_uri =  RawURI
+            %%                 }
+            %% * the hash-value is calculated by "raw_uri"
+            %%
+            Token_1 = leo_misc:binary_tokens(Path,   << ?STR_SLASH >>),
+            Token_2 = leo_misc:binary_tokens(RawURI, << ?STR_SLASH >>),
+            Path_1 = case (length(Token_1) /= length(Token_2)) of
+                         true ->
+                             << ?STR_SLASH, Bucket/binary, RawURI/binary >>;
+                         false ->
+                             RawURILen = byte_size(RawURI),
+                             case RawURI of
+                                 << ?STR_SLASH, _/binary >> ->
+                                     RawURI;
                                  _ ->
-                                     Path
+                                     << ?STR_SLASH, RawURI/binary >>
                              end
                      end,
 
@@ -816,7 +832,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                       date          = ?http_header(Req, ?HTTP_HEAD_DATE),
                                       bucket        = Bucket,
                                       raw_uri       = RawURI,
-                                      requested_uri = << ?STR_SLASH, Path_1/binary >>,
+                                      requested_uri = Path_1,
                                       query_str     = QStr_3,
                                       amz_headers   = leo_http:get_amz_headers4cow(Headers)},
             leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)

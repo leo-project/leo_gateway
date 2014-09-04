@@ -226,16 +226,16 @@
 %%----------------------------------------------------------------------
 %% FOR QoS
 %%----------------------------------------------------------------------
--define(QOS_METRIC_BUCKET_SCHEMA, 'leo_bucket').
--define(QOS_METRIC_BUCKET_COL_1,  'cnt_r'). %% num of reads
--define(QOS_METRIC_BUCKET_COL_2,  'cnt_w'). %% num of writes
--define(QOS_METRIC_BUCKET_COL_3,  'cnt_d'). %% num of deletes
--define(QOS_METRIC_BUCKET_COL_4,  'sum_len_r'). %% summary of length of an object at read
--define(QOS_METRIC_BUCKET_COL_5,  'sum_len_w'). %% summary of length of an object at write
--define(QOS_METRIC_BUCKET_COL_6,  'sum_len_d'). %% summary of length of an object at delete
--define(QOS_METRIC_BUCKET_COL_7,  'his_len_r'). %% histogram of length of an object at read
--define(QOS_METRIC_BUCKET_COL_8,  'his_len_w'). %% histogram of length of an object at write
--define(QOS_METRIC_BUCKET_COL_9,  'his_len_d'). %% histogram of length of an object at delete
+-define(QOS_METRIC_BUCKET_SCHEMA, << "leo_bucket" >>).
+-define(QOS_METRIC_BUCKET_COL_1,  << "cnt_r" >>). %% num of reads
+-define(QOS_METRIC_BUCKET_COL_2,  << "cnt_w" >>). %% num of writes
+-define(QOS_METRIC_BUCKET_COL_3,  << "cnt_d" >>). %% num of deletes
+-define(QOS_METRIC_BUCKET_COL_4,  << "sum_len_r" >>). %% summary of length of an object at read
+-define(QOS_METRIC_BUCKET_COL_5,  << "sum_len_w" >>). %% summary of length of an object at write
+-define(QOS_METRIC_BUCKET_COL_6,  << "sum_len_d" >>). %% summary of length of an object at delete
+-define(QOS_METRIC_BUCKET_COL_7,  << "his_len_r" >>). %% histogram of length of an object at read
+-define(QOS_METRIC_BUCKET_COL_8,  << "his_len_w" >>). %% histogram of length of an object at write
+-define(QOS_METRIC_BUCKET_COL_9,  << "his_len_d" >>). %% histogram of length of an object at delete
 
 
 %%----------------------------------------------------------------------
