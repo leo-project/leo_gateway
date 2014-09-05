@@ -796,7 +796,6 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                          true ->
                              << ?STR_SLASH, Bucket/binary, RawURI/binary >>;
                          false ->
-                             RawURILen = byte_size(RawURI),
                              case RawURI of
                                  << ?STR_SLASH, _/binary >> ->
                                      RawURI;
