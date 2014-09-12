@@ -776,73 +776,78 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
         {undefined, _} ->
             {error, undefined};
         {AuthorizationBin, _} ->
-            IsCreateBucketOp = (TokenLen   == 1 andalso
-                                HTTPMethod == ?HTTP_PUT andalso
-                                not IsACL),
-            {RawURI,  _} = cowboy_req:path(Req),
-            {QStr,    _} = cowboy_req:qs(Req),
-            {Headers, _} = cowboy_req:headers(Req),
-
-            %% NOTE:
-            %% - from s3cmd, dragondisk and others:
-            %%     -   Path: <<"photo/img">>
-            %%     - RawURI: <<"/img">>
-            %%
-            %% - from ruby-client, other AWS-clients:
-            %%     -   Path: <<"photo/img">>
-            %%     - RawURI: <<"/photo/img">>
-            %%
-            %% -> Adjust URI:
-            %%     #sign_params{ requested_uri = << "/photo/img" >>
-            %%                         raw_uri =  RawURI
-            %%                 }
-            %% * the hash-value is calculated by "raw_uri"
-            %%
-            Token_1 = leo_misc:binary_tokens(Path,   << ?STR_SLASH >>),
-            Token_2 = leo_misc:binary_tokens(RawURI, << ?STR_SLASH >>),
-            Path_1 = case (length(Token_1) /= length(Token_2)) of
-                         true ->
-                             << ?STR_SLASH, Bucket/binary, RawURI/binary >>;
-                         false ->
-                             case RawURI of
-                                 << ?STR_SLASH, _/binary >> ->
-                                     RawURI;
+            case binary:match(AuthorizationBin, <<":">>) of
+                nomatch ->
+                    {error, nomatch};
+                _Found ->
+                    IsCreateBucketOp = (TokenLen   == 1 andalso
+                                        HTTPMethod == ?HTTP_PUT andalso
+                                        not IsACL),
+                    {RawURI,  _} = cowboy_req:path(Req),
+                    {QStr,    _} = cowboy_req:qs(Req),
+                    {Headers, _} = cowboy_req:headers(Req),
+        
+                    %% NOTE:
+                    %% - from s3cmd, dragondisk and others:
+                    %%     -   Path: <<"photo/img">>
+                    %%     - RawURI: <<"/img">>
+                    %%
+                    %% - from ruby-client, other AWS-clients:
+                    %%     -   Path: <<"photo/img">>
+                    %%     - RawURI: <<"/photo/img">>
+                    %%
+                    %% -> Adjust URI:
+                    %%     #sign_params{ requested_uri = << "/photo/img" >>
+                    %%                         raw_uri =  RawURI
+                    %%                 }
+                    %% * the hash-value is calculated by "raw_uri"
+                    %%
+                    Token_1 = leo_misc:binary_tokens(Path,   << ?STR_SLASH >>),
+                    Token_2 = leo_misc:binary_tokens(RawURI, << ?STR_SLASH >>),
+                    Path_1 = case (length(Token_1) /= length(Token_2)) of
+                                 true ->
+                                     << ?STR_SLASH, Bucket/binary, RawURI/binary >>;
+                                 false ->
+                                     case RawURI of
+                                         << ?STR_SLASH, _/binary >> ->
+                                             RawURI;
+                                         _ ->
+                                             << ?STR_SLASH, RawURI/binary >>
+                                     end
+                             end,
+        
+                    Len = byte_size(QStr),
+                    QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
+                                 true ->
+                                     binary:part(QStr, 0, (Len - 1));
+                                 false ->
+                                     QStr
+                             end,
+                    QStr_3 = case binary:match(QStr_2, <<"&">>) of
+                                 nomatch ->
+                                     QStr_2;
                                  _ ->
-                                     << ?STR_SLASH, RawURI/binary >>
-                             end
-                     end,
-
-            Len = byte_size(QStr),
-            QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
-                         true ->
-                             binary:part(QStr, 0, (Len - 1));
-                         false ->
-                             QStr
-                     end,
-            QStr_3 = case binary:match(QStr_2, <<"&">>) of
-                         nomatch ->
-                             QStr_2;
-                         _ ->
-                             Ret = lists:foldl(
-                                     fun(Q, []) ->
-                                             Q;
-                                        (Q, Acc) ->
-                                             lists:append([Acc, "&", Q])
-                                     end, [],
-                                     lists:sort(string:tokens(binary_to_list(QStr_2), "&"))),
-                             list_to_binary(Ret)
-                     end,
-
-            SignParams = #sign_params{http_verb     = HTTPMethod,
-                                      content_md5   = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
-                                      content_type  = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
-                                      date          = ?http_header(Req, ?HTTP_HEAD_DATE),
-                                      bucket        = Bucket,
-                                      raw_uri       = RawURI,
-                                      requested_uri = Path_1,
-                                      query_str     = QStr_3,
-                                      amz_headers   = leo_http:get_amz_headers4cow(Headers)},
-            leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
+                                     Ret = lists:foldl(
+                                             fun(Q, []) ->
+                                                     Q;
+                                                (Q, Acc) ->
+                                                     lists:append([Acc, "&", Q])
+                                             end, [],
+                                             lists:sort(string:tokens(binary_to_list(QStr_2), "&"))),
+                                     list_to_binary(Ret)
+                             end,
+        
+                    SignParams = #sign_params{http_verb     = HTTPMethod,
+                                              content_md5   = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
+                                              content_type  = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
+                                              date          = ?http_header(Req, ?HTTP_HEAD_DATE),
+                                              bucket        = Bucket,
+                                              raw_uri       = RawURI,
+                                              requested_uri = Path_1,
+                                              query_str     = QStr_3,
+                                              amz_headers   = leo_http:get_amz_headers4cow(Headers)},
+                    leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
+            end
     end.
 
 
