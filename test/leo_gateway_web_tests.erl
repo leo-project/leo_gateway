@@ -63,6 +63,7 @@ gen_tests_1(Arg) ->
                fun head_object_notfound_/1,
                fun head_object_normal1_/1,
                fun get_object_error_/1,
+               fun get_object_invalid_/1,
                fun get_object_notfound_/1,
                fun get_object_normal1_/1,
                fun range_object_normal1_/1,
@@ -480,6 +481,28 @@ get_object_error_([_TermFun, _Node0, Node1]) ->
                                      "a/b.png", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
                 ?assertEqual(500, SC)
+            catch
+                throw:Reason ->
+                    throw(Reason)
+            after
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
+get_object_invalid_([_TermFun, _Node0, Node1]) ->
+    fun() ->
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link, non_strict]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, get, 3, {error, foobar}]),
+            try
+                {ok, {SC, _Body}} =
+                    httpc:request(head, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/"]), [{"Host", ""}]}, [{version, "HTTP/1.0"}], [{full_result, false}]),
+
+                ?assertEqual(400, SC)
             catch
                 throw:Reason ->
                     throw(Reason)

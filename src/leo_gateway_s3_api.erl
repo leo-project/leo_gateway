@@ -77,8 +77,16 @@ init({_Any, http}, Req, Opts) ->
 %% @doc Handle a request
 %% @callback
 handle(Req, State) ->
-    {Bucket, Path} = get_bucket_and_path(Req),
-    handle_1(Req, State, Bucket, Path).
+    {Host,    _} = cowboy_req:host(Req),
+    %% Host header must be included even if a request with HTTP/1.0
+    case Host of
+        <<>> ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                               ?XML_ERROR_MSG_InvalidArgument, <<>>, <<>>, Req);
+        _ ->
+            {Bucket, Path} = get_bucket_and_path(Req),
+            handle_1(Req, State, Bucket, Path)
+    end.
 
 %% @doc Terminater
 terminate(_Reason, _Req, _State) ->
