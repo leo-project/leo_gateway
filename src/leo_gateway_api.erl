@@ -118,7 +118,8 @@ get_node_status() ->
 
 %% @doc Register into the manager-monitor.
 %%
--spec(register_in_monitor(first|again) -> ok).
+-spec(register_in_monitor(first|again) ->
+             ok).
 register_in_monitor(RequestedTimes) ->
     case whereis(leo_gateway_sup) of
         undefined ->
@@ -142,7 +143,12 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
               true ->
                   case rpc:call(Node2, leo_manager_api, register,
                                 [RequestedTimes, Pid, erlang:node(), gateway], ?DEF_TIMEOUT) of
-                      ok ->
+                      {ok, SystemConf} ->
+                          Options = lists:zip(
+                                      record_info(
+                                        fields, ?SYSTEM_CONF),
+                                      tl(tuple_to_list(SystemConf))),
+                          ok = leo_redundant_manager_api:set_options(Options),
                           true;
                       {error, Cause} ->
                           ?warn("register_in_monitor/3",
