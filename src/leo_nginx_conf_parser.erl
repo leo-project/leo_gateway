@@ -21,10 +21,10 @@
 %% ---------------------------------------------------------------------
 %% Leo Gateway Parser for Nginx Configuration File
 %%
-%% @doc
+%% @doc Parser of Nginx configuration file
 %% @end
 %%======================================================================
--module(leo_gateway_nginx_conf_parser).
+-module(leo_nginx_conf_parser).
 
 %% External exports
 -export([parse/1]).
@@ -34,15 +34,20 @@
 -define(REGEX_LOCATION_BLOCK, "location\s+([-_/a-zA-Z0-9]+)\s+{([^}]+)}").
 -define(REGEX_KEY_VALUE_PAIR, "\s+([-_/a-zA-Z0-9]+)\s+([^;]+);").
 
+
 %% @doc Parse a nginx configuration file to get custom header settings.
 -spec(parse(FileName) ->
-         {ok, list()}|not_found|{error, any()} when FileName::file:name_all()).
+             {ok, list()} |
+             not_found |
+             {error, any()} when FileName::file:name_all()).
 parse(FileName) ->
     parse_1(file:read_file(FileName)).
+
 
 %%--------------------------------------------------------------------
 %% Internal Functions.
 %%--------------------------------------------------------------------
+%% @private
 parse_1({error, Reason}) ->
     {error, Reason};
 parse_1({ok, Binary}) ->
@@ -56,6 +61,8 @@ parse_1({ok, Binary}) ->
         {match, Captured} ->
             parse_2(Captured, Binary, MP2, [])
     end.
+
+%% @private
 parse_2([], _Bin, _MP2, Acc) ->
     Acc;
 parse_2([H|T], Bin, MP2, Acc) ->
@@ -67,6 +74,8 @@ parse_2([H|T], Bin, MP2, Acc) ->
         Ret ->
             parse_2(T, Bin, MP2, [Ret|Acc])
     end.
+
+%% @private
 parse_3([_, {KeyPos, KeyLen}, {LocPos, LocLen}|_T], Bin, MP2) ->
     Key = binary:part(Bin, KeyPos, KeyLen),
     Loc = binary:part(Bin, LocPos, LocLen),
@@ -80,6 +89,8 @@ parse_3([_, {KeyPos, KeyLen}, {LocPos, LocLen}|_T], Bin, MP2) ->
     end;
 parse_3(_, _Bin, _MP2) ->
     {error, invalid_file_format}.
+
+%% @private
 parse_location_body(Binary, MP2) ->
     case re:run(Binary, MP2, [global]) of
         {error, ErrType} ->
@@ -89,6 +100,8 @@ parse_location_body(Binary, MP2) ->
         {match, Captured} ->
             parse_location_body_1(Captured, Binary, [])
     end.
+
+%% @private
 parse_location_body_1([], _Bin, Acc) ->
     Acc;
 parse_location_body_1([H|T], Bin, Acc) ->
@@ -100,6 +113,8 @@ parse_location_body_1([H|T], Bin, Acc) ->
         Ret ->
             parse_location_body_1(T, Bin, [Ret|Acc])
     end.
+
+%% @private
 parse_location_body_2([_, {KeyPos, KeyLen}, {ValPos, ValLen}|_T], Bin) ->
     Key = binary:part(Bin, KeyPos, KeyLen),
     Val = binary:part(Bin, ValPos, ValLen),
