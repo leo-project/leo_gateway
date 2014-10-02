@@ -31,8 +31,8 @@
 
 
 %% regular expressions to retrieve custom header information
--define(REGEX_LOCATION_BLOCK, "location\s+([-_/a-zA-Z0-9]+)\s+{([^}]+)}").
--define(REGEX_KEY_VALUE_PAIR, "\s+([-_/a-zA-Z0-9]+)\s+([^;]+);").
+-define(REGEX_LOCATION_BLOCK, "location\s+([-%\._/0-9a-zA-Z]+)\s+{([^}]+)}").
+-define(REGEX_KEY_VALUE_PAIR, "\s+([-%\._/0-9a-zA-Z]+)\s+([^;]+);").
 
 
 %% @doc Parse a nginx configuration file to get custom header settings.
@@ -64,7 +64,7 @@ parse_1({ok, Binary}) ->
 
 %% @private
 parse_2([], _Bin, _MP2, Acc) ->
-    Acc;
+    {ok, Acc};
 parse_2([H|T], Bin, MP2, Acc) ->
     case parse_3(H, Bin, MP2) of
         {error, Cause} ->
