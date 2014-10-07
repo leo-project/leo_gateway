@@ -27,7 +27,7 @@
 -module(leo_nginx_conf_parser).
 
 %% External exports
--export([parse/1]).
+-export([parse/1, get_custom_headers/2]).
 
 
 %% regular expressions to retrieve custom header information
@@ -42,6 +42,37 @@
              {error, any()} when FileName::file:name_all()).
 parse(FileName) ->
     parse_1(file:read_file(FileName)).
+
+%% @doc Get custom HTTP headers based on the return value of parse function
+-spec(get_custom_headers(Path, ParseResult) ->
+             {ok, list()} |
+             {error, any()} when Path::binary(), ParseResult::list()).
+get_custom_headers(Path, ParseResult) ->
+    Ret = match_path_pattern(Path, ParseResult),
+    case Ret of
+        undefined ->
+            {ok, []};
+        Value ->
+            make_result_headers(Value, [])
+    end.
+
+% @private
+match_path_pattern(_Path, []) ->
+    undefined;
+match_path_pattern(<<PathPrefix, _Rest/binary>>, [{PathPrefix, Value}|_T]) ->
+    Value;
+match_path_pattern(Path, [{_DiffrentPath, _Value}|T]) ->
+    io:format(user, "[debug]different src:~p dst:~p~n", [Path, _DiffrentPath]),
+    match_path_pattern(Path, T).
+
+% @private
+make_result_headers([], Acc) ->
+    Acc;
+make_result_headers([<<"add_header">>, KeyValuePair|T], Acc) ->
+    [Key, Val, _] = binary:split(KeyValuePair, <<" ">>),
+    make_result_headers(T, [{Key, Val}|Acc]);
+make_result_headers([_, _KeyValuePair|T], Acc) ->
+    make_result_headers(T, Acc).
 
 
 %%--------------------------------------------------------------------
