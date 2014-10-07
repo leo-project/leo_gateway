@@ -59,6 +59,20 @@ parse_test() ->
                    {<<"add_header">>, <<"Cache-Control no-cache">>}]
                  }
                 ]
+            },
+            {"nginx03.conf", 
+                [{<<"/bucket_a/test.png">>, 
+                  [{<<"expires">>, <<"0">>},
+                   {<<"add_header">>, <<"X-Original-Header1 OriginalValue1">>},
+                   {<<"add_header">>, <<"X-Original-Header2 OriginalValue2">>},
+                   {<<"add_header">>, <<"X-Original-Header3 OriginalValue3">>}
+                  ]
+                 },
+                 {<<"/bucket_b/~reserved/">>, 
+                  [{<<"expires">>, <<"epoch">>},
+                   {<<"add_header">>, <<"Cache-Control no-cache">>}]
+                 }
+                ]
             }
     ],
     validate(TestCases).
@@ -81,8 +95,15 @@ compare([{Location, ExpectedPairList}|T], Result) ->
 compare_pairlist([], _) ->
     ok;
 compare_pairlist([{ExpKey, ExpVal}|ET], ResultPairList) ->
-    RetVal = proplists:get_value(ExpKey, ResultPairList),
-    ?assertEqual(ExpVal, RetVal),
+    RetList = proplists:lookup_all(ExpKey, ResultPairList),
+    ?assertEqual(true, is_exist(ExpVal, RetList)),
     compare_pairlist(ET, ResultPairList).
+
+is_exist(_Val, []) ->
+    false;
+is_exist(Val, [{_, Val}|_T]) ->
+    true;
+is_exist(Val, [{_, _Val}|T]) ->
+    is_exist(Val, T).
 
 -endif.
