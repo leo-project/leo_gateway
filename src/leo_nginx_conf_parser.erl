@@ -29,7 +29,6 @@
 %% External exports
 -export([parse/1, get_custom_headers/2]).
 
-
 %% regular expressions to retrieve custom header information
 -define(REGEX_LOCATION_BLOCK, "location\s+([-~%\._/0-9a-zA-Z]+)\s+{([^}]+)}").
 -define(REGEX_KEY_VALUE_PAIR, "\s+([-~%\._/0-9a-zA-Z]+)\s+([^;]+);").
@@ -59,19 +58,23 @@ get_custom_headers(Path, ParseResult) ->
 % @private
 match_path_pattern(_Path, []) ->
     undefined;
-match_path_pattern(<<PathPrefix, _Rest/binary>>, [{PathPrefix, Value}|_T]) ->
-    Value;
-match_path_pattern(Path, [{_DiffrentPath, _Value}|T]) ->
-    io:format(user, "[debug]different src:~p dst:~p~n", [Path, _DiffrentPath]),
-    match_path_pattern(Path, T).
+match_path_pattern(Path, [{Prefix, Value}|T]) ->
+    case binary:match(Path, Prefix) of
+        nomatch ->
+            match_path_pattern(Path, T);
+        {0, _} ->
+            Value;
+        {_, _} ->
+            match_path_pattern(Path, T)
+    end.
 
 % @private
 make_result_headers([], Acc) ->
     Acc;
-make_result_headers([<<"add_header">>, KeyValuePair|T], Acc) ->
-    [Key, Val, _] = binary:split(KeyValuePair, <<" ">>),
+make_result_headers([{<<"add_header">>, KeyValuePair}|T], Acc) ->
+    [Key, Val|_] = binary:split(KeyValuePair, <<" ">>),
     make_result_headers(T, [{Key, Val}|Acc]);
-make_result_headers([_, _KeyValuePair|T], Acc) ->
+make_result_headers([{_, _KeyValuePair}|T], Acc) ->
     make_result_headers(T, Acc).
 
 
