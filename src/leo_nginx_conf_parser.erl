@@ -55,6 +55,9 @@ get_custom_headers(Path, ParseResult) ->
             make_result_headers(Value, [])
     end.
 
+%%--------------------------------------------------------------------
+%% Internal Functions.
+%%--------------------------------------------------------------------
 % @private
 match_path_pattern(_Path, []) ->
     undefined;
@@ -73,14 +76,36 @@ make_result_headers([], Acc) ->
     Acc;
 make_result_headers([{<<"add_header">>, KeyValuePair}|T], Acc) ->
     [Key, Val|_] = binary:split(KeyValuePair, <<" ">>),
-    make_result_headers(T, [{Key, Val}|Acc]);
+    NewAcc = case Key of
+        <<"Cache-Control">> ->
+            merge_cache_control_values(Val, Acc);
+        _ ->
+            [{Key, Val}|Acc]
+    end,
+    make_result_headers(T, NewAcc);
+make_result_headers([{<<"expires">>, ExpireVal}|T], Acc) ->
+    {_, CCVal}= make_cache_control_header(ExpireVal),
+    NewAcc = merge_cache_control_values(CCVal, Acc),
+    make_result_headers(T, NewAcc);
 make_result_headers([{_, _KeyValuePair}|T], Acc) ->
     make_result_headers(T, Acc).
 
+% @private
+make_cache_control_header(ExpireVal) when is_integer(ExpireVal), ExpireVal >= 0 ->
+    BinExpireVal = erlang:integer_to_binary(ExpireVal),
+    {<<"Cache-Control">>, <<"max-age=", BinExpireVal/binary>>};
+make_cache_control_header(ExpireVal) when is_integer(ExpireVal) ->
+    {<<"Cache-Control">>, <<"no-cache">>}.
 
-%%--------------------------------------------------------------------
-%% Internal Functions.
-%%--------------------------------------------------------------------
+merge_cache_control_values(NewVal, List) ->
+    case lists:keyfind(<<"Cache-Control">>, 1, List) of
+        false ->
+            [{<<"Cache-Control">>, NewVal}|List];
+        {_, OldVal} ->
+            List2 = lists:keydelete(<<"Cache-Control">>, 1, List),
+            [{<<"Cache-Control">>, <<OldVal/binary, <<", ">>/binary, NewVal/binary>>}|List2]
+    end.
+
 %% @private
 parse_1({error, Reason}) ->
     {error, Reason};
