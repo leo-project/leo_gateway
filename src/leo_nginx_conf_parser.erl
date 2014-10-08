@@ -44,8 +44,9 @@ parse(FileName) ->
 
 %% @doc Get custom HTTP headers based on the return value of parse function
 -spec(get_custom_headers(Path, ParseResult) ->
-             {ok, list()} |
-             {error, any()} when Path::binary(), ParseResult::list()).
+             {ok, list()} when Path::binary(), ParseResult::list()).
+get_custom_headers(_Path, undefined) ->
+    {ok, []};
 get_custom_headers(Path, ParseResult) ->
     Ret = match_path_pattern(Path, ParseResult),
     case Ret of
@@ -73,7 +74,7 @@ match_path_pattern(Path, [{Prefix, Value}|T]) ->
 
 % @private
 make_result_headers([], Acc) ->
-    Acc;
+    {ok, Acc};
 make_result_headers([{<<"add_header">>, KeyValuePair}|T], Acc) ->
     [Key, Val|_] = binary:split(KeyValuePair, <<" ">>),
     NewAcc = case Key of
@@ -84,11 +85,20 @@ make_result_headers([{<<"add_header">>, KeyValuePair}|T], Acc) ->
     end,
     make_result_headers(T, NewAcc);
 make_result_headers([{<<"expires">>, ExpireVal}|T], Acc) ->
-    {_, CCVal}= make_cache_control_header(ExpireVal),
+    ExpireInSec = normalize_expires(ExpireVal),
+    {_, CCVal}= make_cache_control_header(ExpireInSec),
     NewAcc = merge_cache_control_values(CCVal, Acc),
     make_result_headers(T, NewAcc);
 make_result_headers([{_, _KeyValuePair}|T], Acc) ->
     make_result_headers(T, Acc).
+
+% @private
+normalize_expires(ExpireVal) ->
+    % @todo
+    % handle thsese formats
+    % 1h30m15s stand for 1 hour 30 minites 15 secs
+    % so which should be converted to `5415` in seconnds
+    erlang:binary_to_integer(ExpireVal).
 
 % @private
 make_cache_control_header(ExpireVal) when is_integer(ExpireVal), ExpireVal >= 0 ->

@@ -202,6 +202,14 @@
   {default, "./etc/server_key.pem"}
  ]}.
 
+%% @doc HTTP custom header configuration file path
+{mapping,
+ "http.headers_config_file",
+ "leo_gateway.http.headers_config_file",
+ [
+  {default, "./etc/http_custom_header.conf"}
+ ]}.
+
 %% @doc Synchronized time of a bucket property (second)
 {mapping,
  "bucket_prop_sync_interval",
