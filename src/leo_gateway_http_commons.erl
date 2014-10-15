@@ -551,7 +551,8 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
 
     %% retrieve an object from the stream,
     %% then put it to the storage-cluster
-    Reply = case put_large_object_1(cowboy_req:stream_body(ReadingChunkedSize, Req),
+    BodyOpts = [{length, ReadingChunkedSize}, {read_length, ReadingChunkedSize}],
+    Reply = case put_large_object_1(cowboy_req:body(Req, BodyOpts),
                                     #req_large_obj{handler = Handler,
                                                    key     = Key,
                                                    length  = Size,
@@ -577,13 +578,14 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
     Reply.
 
 %% @private
-put_large_object_1({ok, Data, Req},
+put_large_object_1({more, Data, Req},
                    #req_large_obj{key = Key,
                                   handler = Handler,
                                   reading_chunked_size = ReadingChunkedSize} = ReqLargeObj) ->
     case catch leo_gateway_large_object_handler:put(Handler, Data) of
         ok ->
-            put_large_object_1(cowboy_req:stream_body(ReadingChunkedSize, Req), ReqLargeObj);
+            BodyOpts = [{length, ReadingChunkedSize}, {read_length, ReadingChunkedSize}],
+            put_large_object_1(cowboy_req:body(Req, BodyOpts), ReqLargeObj);
         {'EXIT', Cause} ->
             ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}};
@@ -599,33 +601,41 @@ put_large_object_1({error, Cause}, #req_large_obj{key = Key}) ->
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 
 %% @private
-put_large_object_1({done, Req}, #req_large_obj{handler = Handler,
+put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                                                key = Key,
                                                length = Size,
                                                chunked_size = ChunkedSize}) ->
-    case catch leo_gateway_large_object_handler:result(Handler) of
-        {ok, #large_obj_info{length = TotalSize,
-                             num_of_chunks = TotalChunks,
-                             md5_context   = Digest}} when Size == TotalSize ->
-            Digest_1 = leo_hex:raw_binary_to_integer(Digest),
-
-            case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
-                                             ChunkedSize, TotalChunks, Digest_1) of
-                {ok, _ETag} ->
-                    Header = [?SERVER_HEADER,
-                              {?HTTP_HEAD_RESP_ETAG, ?http_etag(Digest_1)}],
-                    ?reply_ok(Header, Req);
-                {error, timeout = Cause} ->
-                    {error, {Req, Cause}};
-                {error,_Cause} ->
+    case catch leo_gateway_large_object_handler:put(Handler, Data) of
+        ok ->
+            case catch leo_gateway_large_object_handler:result(Handler) of
+                {ok, #large_obj_info{length = TotalSize,
+                                     num_of_chunks = TotalChunks,
+                                     md5_context   = Digest}} when Size == TotalSize ->
+                    Digest_1 = leo_hex:raw_binary_to_integer(Digest),
+        
+                    case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
+                                                     ChunkedSize, TotalChunks, Digest_1) of
+                        {ok, _ETag} ->
+                            Header = [?SERVER_HEADER,
+                                      {?HTTP_HEAD_RESP_ETAG, ?http_etag(Digest_1)}],
+                            ?reply_ok(Header, Req);
+                        {error, timeout = Cause} ->
+                            {error, {Req, Cause}};
+                        {error,_Cause} ->
+                            {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
+                    end;
+                {ok, _} ->
+                    {error, {Req, ?ERROR_NOT_MATCH_LENGTH}};
+                {_,_Cause} ->
                     {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
             end;
-        {ok, _} ->
-            {error, {Req, ?ERROR_NOT_MATCH_LENGTH}};
-        {_,_Cause} ->
+        {'EXIT', Cause} ->
+            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {error, {Req, ?ERROR_FAIL_PUT_OBJ}};
+        {error, Cause} ->
+            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
     end.
-
 
 %% @doc DELETE an object
 -spec(delete_object(cowboy_req:req(), binary(), #req_params{}) ->

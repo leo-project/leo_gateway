@@ -167,7 +167,7 @@ gen_key(Req) ->
                 _ ->
                     Path1
             end,
-    cowboy_http:urldecode(Path3).
+    cow_qs:urldecode(Path3).
 
 
 %% @doc Hande an http-request
