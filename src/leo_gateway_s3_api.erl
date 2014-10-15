@@ -408,7 +408,7 @@ get_bucket_and_path(Req) ->
 
 %% @doc Handle an http-request
 %% @private
-handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Bucket, Path) ->
+handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSettings, Props] = State, Bucket, Path) ->
     BinPart    = binary:part(Path, {byte_size(Path)-1, 1}),
     TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod = cowboy_req:get(method, Req),
@@ -446,6 +446,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                              max_chunked_objs  = Props#http_options.max_chunked_objs,
                              max_len_of_obj    = Props#http_options.max_len_of_obj,
                              chunked_obj_len   = Props#http_options.chunked_obj_len,
+                             custom_header_settings = CustomHeaderSettings,
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                              threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),

@@ -103,6 +103,7 @@
 -define(DEF_HTTP_SSL_C_FILE,          "./server_cert.pem").
 -define(DEF_HTTP_SSL_K_FILE,          "./server_key.pem").
 -define(DEF_HTTP_NUM_OF_ACCEPTORS,    32).
+-define(DEF_HTTP_CUSTOM_HEADER_CONF,  "./http_custom_header.conf").
 -define(DEF_HTTP_CACHE,               false).
 -define(DEF_HTTP_MAX_KEEPALIVE,       1024).
 -define(DEF_CACHE_WORKERS,            64).
@@ -287,6 +288,7 @@
           ssl_keyfile = []             :: string(),       %% ssk key file name
           num_of_acceptors = 0         :: pos_integer(),  %% # of acceptors (http server's workers)
           max_keepalive = 0            :: pos_integer(),  %% # of request per processes
+          headers_config_file = []     :: string(),       %% HTTP custom header configuration file path
           %% for cache
           cache_method                 :: cache_method(), %% cahce method: [http | inner]
           cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers
@@ -316,6 +318,7 @@
           token_length = 0           :: non_neg_integer(),      %% length of tokened path
           min_layers = 0             :: non_neg_integer(),      %% acceptable # of min layers
           max_layers = 0             :: non_neg_integer(),      %% acceptable # of max layers
+          custom_header_settings     :: list() | undefined,     %% http custom header settings
           qs_prefix = <<>>           :: binary() | none,        %% query string
           range_header               :: string(),               %% range header
           has_inner_cache = false    :: boolean(),              %% has inner-cache?
