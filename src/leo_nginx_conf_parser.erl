@@ -108,8 +108,6 @@ parse_location_body_1([H|T], Bin, Acc) ->
     case parse_location_body_2(H, Bin) of
         {error, Cause} ->
             {error, Cause};
-        not_found ->
-            parse_location_body_1(T, Bin, Acc);
         Ret ->
             parse_location_body_1(T, Bin, [Ret|Acc])
     end.

@@ -202,7 +202,7 @@ create_schema([Node|Rest]) ->
 
 %% @doc Notify a message to savanna_agent
 %%
--spec(notify_fun(atom(), atom(), atom(), any(), non_neg_integer())->
+-spec(notify_fun(binary(), binary(), binary(), any(), non_neg_integer())->
              ok).
 notify_fun(_,_,_,_,?DEF_MAX_TIMES_OF_NOTICE) ->
     {error, "could not retrieve the schema"};
