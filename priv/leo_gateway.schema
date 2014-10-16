@@ -210,6 +210,24 @@
   {default, "./etc/http_custom_header.conf"}
  ]}.
 
+%% @doc Timeout for reading header
+{mapping,
+ "http.timeout_for_header",
+ "leo_gateway.http.timeout_for_header",
+ [
+  {datatype, integer},
+  {default, 5000}
+ ]}.
+
+%% @doc Timeout for reading body
+{mapping,
+ "http.timeout_for_body",
+ "leo_gateway.http.timeout_for_body",
+ [
+  {datatype, integer},
+  {default, 15000}
+ ]}.
+
 %% @doc Synchronized time of a bucket property (second)
 {mapping,
  "bucket_prop_sync_interval",

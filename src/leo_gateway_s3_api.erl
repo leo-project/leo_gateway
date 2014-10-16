@@ -266,7 +266,8 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
         false ->
             Ret = case cowboy_req:has_body(Req) of
                       true ->
-                          case cowboy_req:body(Req) of
+                          BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
+                          case cowboy_req:body(Req, BodyOpts) of
                               {ok, Bin, Req1} ->
                                   {ok, {Size, Bin, Req1}};
                               {error, Cause} ->
@@ -446,7 +447,9 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                              max_chunked_objs  = Props#http_options.max_chunked_objs,
                              max_len_of_obj    = Props#http_options.max_len_of_obj,
                              chunked_obj_len   = Props#http_options.chunked_obj_len,
-                             custom_header_settings = CustomHeaderSettings,
+                             custom_header_settings  = CustomHeaderSettings,
+                             timeout_for_header      = Props#http_options.timeout_for_header,
+                             timeout_for_body        = Props#http_options.timeout_for_body,
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                              threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),

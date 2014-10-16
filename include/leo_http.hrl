@@ -104,6 +104,8 @@
 -define(DEF_HTTP_SSL_K_FILE,          "./server_key.pem").
 -define(DEF_HTTP_NUM_OF_ACCEPTORS,    32).
 -define(DEF_HTTP_CUSTOM_HEADER_CONF,  "./http_custom_header.conf").
+-define(DEF_HTTP_TIMEOUT_FOR_HEADER,  5000).
+-define(DEF_HTTP_TIMEOUT_FOR_BODY,    15000).
 -define(DEF_HTTP_CACHE,               false).
 -define(DEF_HTTP_MAX_KEEPALIVE,       1024).
 -define(DEF_CACHE_WORKERS,            64).
@@ -289,6 +291,8 @@
           num_of_acceptors = 0         :: pos_integer(),  %% # of acceptors (http server's workers)
           max_keepalive = 0            :: pos_integer(),  %% # of request per processes
           headers_config_file = []     :: string(),       %% HTTP custom header configuration file path
+          timeout_for_header           :: pos_integer(),  %% Timeout for reading header
+          timeout_for_body             :: pos_integer(),  %% Timeout for reading body
           %% for cache
           cache_method                 :: cache_method(), %% cahce method: [http | inner]
           cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers
@@ -319,6 +323,8 @@
           min_layers = 0             :: non_neg_integer(),      %% acceptable # of min layers
           max_layers = 0             :: non_neg_integer(),      %% acceptable # of max layers
           custom_header_settings     :: list() | undefined,     %% http custom header settings
+          timeout_for_header         :: pos_integer(),          %% Timeout for reading header
+          timeout_for_body           :: pos_integer(),          %% Timeout for reading body
           qs_prefix = <<>>           :: binary() | none,        %% query string
           range_header               :: string(),               %% range header
           has_inner_cache = false    :: boolean(),              %% has inner-cache?

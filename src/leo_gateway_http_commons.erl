@@ -44,6 +44,7 @@
           handler :: pid(),
           key     :: binary(),
           length  :: pos_integer(),
+          timeout_for_body     :: pos_integer(),
           chunked_size         :: pos_integer(),
           reading_chunked_size :: pos_integer()
          }).
@@ -62,6 +63,7 @@ start(#http_options{handler                = Handler,
                     num_of_acceptors       = NumOfAcceptors,
                     max_keepalive          = MaxKeepAlive,
                     headers_config_file    = CustomHeaderConf,
+                    timeout_for_header     = Timeout4Header,
                     cache_method           = CacheMethod,
                     cache_expire           = CacheExpire,
                     cache_max_content_len  = CacheMaxContentLen,
@@ -85,7 +87,8 @@ start(#http_options{handler                = Handler,
                  %% Using inner-cache
                  true ->
                      [{env, [{dispatch, Dispatch}]},
-                      {max_keepalive, MaxKeepAlive}];
+                      {max_keepalive, MaxKeepAlive},
+                      {timeout, Timeout4Header}];
                  %% Using http-cache (like a varnish/squid)
                  false ->
                      CacheCondition = #cache_condition{expire          = CacheExpire,
@@ -95,7 +98,8 @@ start(#http_options{handler                = Handler,
                      [{env,        [{dispatch, Dispatch}]},
                       {max_keepalive, MaxKeepAlive},
                       {onrequest,     Handler:onrequest(CacheCondition)},
-                      {onresponse,    Handler:onresponse(CacheCondition)}]
+                      {onresponse,    Handler:onresponse(CacheCondition)},
+                      {timeout, Timeout4Header}]
              end,
 
     {ok, _Pid1}= cowboy:start_http(Handler, NumOfAcceptors,
@@ -454,6 +458,7 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
              {ok, cowboy_req:req()}).
 put_object(Req, Key, #req_params{bucket = Bucket,
                                  is_upload = IsUpload,
+                                 timeout_for_body = Timeout4Body,
                                  max_len_of_obj = MaxLenForObj,
                                  threshold_of_chunk_len = ThresholdObjLen} = Params) ->
     {Size, _} = cowboy_req:body_length(Req),
@@ -471,7 +476,8 @@ put_object(Req, Key, #req_params{bucket = Bucket,
         false ->
             Ret = case cowboy_req:has_body(Req) of
                       true ->
-                          case cowboy_req:body(Req) of
+                          BodyOpts = [{read_timeout, Timeout4Body}],
+                          case cowboy_req:body(Req, BodyOpts) of
                               {ok, Bin0, Req0} ->
                                   {ok, {Size, Bin0, Req0}};
                               {error, Cause} ->
@@ -540,6 +546,7 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
 -spec(put_large_object(cowboy_req:req(), binary(), pos_integer(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
+                                             timeout_for_body = Timeout4Body,
                                              chunked_obj_len = ChunkedSize,
                                              reading_chunked_obj_len = ReadingChunkedSize})->
     %% launch 'large_object_handler'
@@ -551,11 +558,14 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
 
     %% retrieve an object from the stream,
     %% then put it to the storage-cluster
-    BodyOpts = [{length, ReadingChunkedSize}, {read_length, ReadingChunkedSize}],
+    BodyOpts = [{length, ReadingChunkedSize}, 
+                {read_timeout, Timeout4Body},
+                {read_length, ReadingChunkedSize}],
     Reply = case put_large_object_1(cowboy_req:body(Req, BodyOpts),
                                     #req_large_obj{handler = Handler,
                                                    key     = Key,
                                                    length  = Size,
+                                                   timeout_for_body = Timeout4Body,
                                                    chunked_size = ChunkedSize,
                                                    reading_chunked_size = ReadingChunkedSize}) of
                 {error, ErrorRet} ->
@@ -581,10 +591,13 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
 put_large_object_1({more, Data, Req},
                    #req_large_obj{key = Key,
                                   handler = Handler,
+                                  timeout_for_body = Timeout4Body,
                                   reading_chunked_size = ReadingChunkedSize} = ReqLargeObj) ->
     case catch leo_gateway_large_object_handler:put(Handler, Data) of
         ok ->
-            BodyOpts = [{length, ReadingChunkedSize}, {read_length, ReadingChunkedSize}],
+            BodyOpts = [{length, ReadingChunkedSize}, 
+                        {read_timeout, Timeout4Body},
+                        {read_length, ReadingChunkedSize}],
             put_large_object_1(cowboy_req:body(Req, BodyOpts), ReqLargeObj);
         {'EXIT', Cause} ->
             ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),

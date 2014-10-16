@@ -478,6 +478,8 @@ get_options() ->
     NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',    HttpProp, ?DEF_HTTP_NUM_OF_ACCEPTORS),
     MaxKeepAlive         = leo_misc:get_value('max_keepalive',       HttpProp, ?DEF_HTTP_MAX_KEEPALIVE),
     CustomHeaderConf     = leo_misc:get_value('headers_config_file', HttpProp, ?DEF_HTTP_CUSTOM_HEADER_CONF),
+    Timeout4Header       = leo_misc:get_value('timeout_for_header',  HttpProp, ?DEF_HTTP_TIMEOUT_FOR_HEADER),
+    Timeout4Body         = leo_misc:get_value('timeout_for_body',    HttpProp, ?DEF_HTTP_TIMEOUT_FOR_BODY),
 
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
@@ -535,6 +537,8 @@ get_options() ->
                                 num_of_acceptors         = NumOfAcceptors,
                                 max_keepalive            = MaxKeepAlive,
                                 headers_config_file      = CustomHeaderConf,
+                                timeout_for_header       = Timeout4Header,
+                                timeout_for_body         = Timeout4Body,
                                 cache_method             = CacheMethod,
                                 cache_workers            = CacheWorkers,
                                 cache_ram_capacity       = CacheRAMCapacity,
@@ -559,6 +563,8 @@ get_options() ->
     ?info("start/3", "num of acceptors: ~p",         [NumOfAcceptors]),
     ?info("start/3", "max keepalive: ~p",            [MaxKeepAlive]),
     ?info("start/3", "http custom header config: ~p",[CustomHeaderConf]),
+    ?info("start/3", "timeout for header : ~p",      [Timeout4Header]),
+    ?info("start/3", "timeout for body: ~p",         [Timeout4Body]),
     ?info("start/3", "cache_method: ~p",             [CacheMethod]),
     ?info("start/3", "cache workers: ~p",            [CacheWorkers]),
     ?info("start/3", "cache ram capacity: ~p",       [CacheRAMCapacity]),
