@@ -364,7 +364,7 @@ put_large_object_2(Req, Key, Meta) ->
     end.
 
 put_large_object_3(Req, Meta) ->
-    leo_gateway_large_object_handler:delete_chunked_objects(Meta#?METADATA.key),
+    leo_large_object_commons:delete_chunked_objects(Meta#?METADATA.key),
     catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
     resp_copy_obj_xml(Req, Meta).
 

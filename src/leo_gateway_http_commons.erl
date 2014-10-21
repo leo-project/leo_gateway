@@ -272,13 +272,13 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_gateway_large_object_handler:start_link({Key, Transport, Socket}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket}),
                                try
-                                   leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta),
+                                   leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta),
                                    ok
                                after
                                    ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
-                                   catch leo_gateway_large_object_handler:stop(Pid)
+                                   catch leo_large_object_get_handler:stop(Pid)
                                end
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
@@ -358,12 +358,12 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_gateway_large_object_handler:start_link({Key, Transport, Socket}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket}),
                                try
-                                   leo_gateway_large_object_handler:get(Pid, TotalChunkedObjs, Req, Meta)
+                                   leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta)
                                after
                                    ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
-                                   catch leo_gateway_large_object_handler:stop(Pid)
+                                   catch leo_large_object_get_handler:stop(Pid)
                                end
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
@@ -382,19 +382,19 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
 -spec(move_large_object(#?METADATA{}, binary(), #req_params{}) ->
              ok | {error, any()}).
 move_large_object(#?METADATA{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DstKey, Params) ->
-    {ok, ReadHandler} = leo_gateway_large_object_handler:start_link(Key, 0, TotalChunkedObjs),
+    {ok, ReadHandler} = leo_large_object_move_handler:start_link(Key, 0, TotalChunkedObjs),
     try
         move_large_object(SrcMeta, DstKey, Params, ReadHandler)
     after
-        catch leo_gateway_large_object_handler:stop(ReadHandler)
+        catch leo_large_object_move_handler:stop(ReadHandler)
     end.
 
 move_large_object(#?METADATA{dsize = Size}, DstKey,
                   #req_params{chunked_obj_len = ChunkedSize},
                   ReadHandler) ->
-    {ok, WriteHandler}  = leo_gateway_large_object_handler:start_link(DstKey, ChunkedSize),
+    {ok, WriteHandler}  = leo_large_object_put_handler:start_link(DstKey, ChunkedSize),
     try
-        case move_large_object_1(leo_gateway_large_object_handler:get_chunked(ReadHandler),
+        case move_large_object_1(leo_large_object_move_handler:get_chunked(ReadHandler),
                                  #req_large_obj{handler       = WriteHandler,
                                                 key           = DstKey,
                                                 length        = Size,
@@ -402,20 +402,20 @@ move_large_object(#?METADATA{dsize = Size}, DstKey,
             ok ->
                 ok;
             {error, Cause} ->
-                ok = leo_gateway_large_object_handler:rollback(WriteHandler),
+                ok = leo_large_object_put_handler:rollback(WriteHandler),
                 {error, Cause}
         end
     after
-        catch leo_gateway_large_object_handler:stop(WriteHandler)
+        catch leo_large_object_put_handler:stop(WriteHandler)
     end.
 
 move_large_object_1({ok, Data},
                     #req_large_obj{key = Key,
                                    handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
-    case catch leo_gateway_large_object_handler:put(WriteHandler, Data) of
+    case catch leo_large_object_put_handler:put(WriteHandler, Data) of
         ok ->
             move_large_object_1(
-              leo_gateway_large_object_handler:get_chunked(ReadHandler),
+              leo_large_object_move_handler:get_chunked(ReadHandler),
               ReqLargeObj, ReadHandler);
         {'EXIT', Cause} ->
             ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
@@ -432,7 +432,7 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                                          key = Key,
                                          length = Size,
                                          chunked_size = ChunkedSize}, _) ->
-    case catch leo_gateway_large_object_handler:result(WriteHandler) of
+    case catch leo_large_object_put_handler:result(WriteHandler) of
         {ok, #large_obj_info{length = TotalSize,
                              num_of_chunks = TotalChunks,
                              md5_context   = Digest}} when Size == TotalSize ->
@@ -550,7 +550,7 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                                              chunked_obj_len = ChunkedSize,
                                              reading_chunked_obj_len = ReadingChunkedSize})->
     %% launch 'large_object_handler'
-    {ok, Handler}  = leo_gateway_large_object_handler:start_link(Key, ChunkedSize),
+    {ok, Handler}  = leo_large_object_put_handler:start_link(Key, ChunkedSize),
 
     %% remove a registered object with 'touch-command'
     %% from the cache
@@ -569,7 +569,7 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                                                    chunked_size = ChunkedSize,
                                                    reading_chunked_size = ReadingChunkedSize}) of
                 {error, ErrorRet} ->
-                    ok = leo_gateway_large_object_handler:rollback(Handler),
+                    ok = leo_large_object_put_handler:rollback(Handler),
                     {Req_1, Cause} = case (erlang:size(ErrorRet) == 2) of
                                          true  -> ErrorRet;
                                          false -> {Req, ErrorRet}
@@ -584,7 +584,7 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                     ?access_log_put(Bucket, Key, Size, 0),
                     Ret
             end,
-    catch leo_gateway_large_object_handler:stop(Handler),
+    catch leo_large_object_put_handler:stop(Handler),
     Reply.
 
 %% @private
@@ -593,7 +593,7 @@ put_large_object_1({more, Data, Req},
                                   handler = Handler,
                                   timeout_for_body = Timeout4Body,
                                   reading_chunked_size = ReadingChunkedSize} = ReqLargeObj) ->
-    case catch leo_gateway_large_object_handler:put(Handler, Data) of
+    case catch leo_large_object_put_handler:put(Handler, Data) of
         ok ->
             BodyOpts = [{length, ReadingChunkedSize}, 
                         {read_timeout, Timeout4Body},
@@ -618,9 +618,9 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                                                key = Key,
                                                length = Size,
                                                chunked_size = ChunkedSize}) ->
-    case catch leo_gateway_large_object_handler:put(Handler, Data) of
+    case catch leo_large_object_put_handler:put(Handler, Data) of
         ok ->
-            case catch leo_gateway_large_object_handler:result(Handler) of
+            case catch leo_large_object_put_handler:result(Handler) of
                 {ok, #large_obj_info{length = TotalSize,
                                      num_of_chunks = TotalChunks,
                                      md5_context   = Digest}} when Size == TotalSize ->
