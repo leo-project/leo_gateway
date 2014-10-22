@@ -54,7 +54,8 @@
                 num_of_chunks = 0     :: non_neg_integer(),
                 total_len = 0         :: non_neg_integer(),
                 md5_context = <<>>    :: any(),
-                errors = []           :: list()
+                errors = []           :: list(),
+                monitor_set           :: set()
                }).
 
 -spec(start_link(binary(), non_neg_integer()) ->
@@ -87,7 +88,7 @@ rollback(Pid) ->
 -spec(result(pid()) ->
              ok | {error, any()}).
 result(Pid) ->
-    gen_server:call(Pid, result, ?DEF_TIMEOUT).
+    gen_server:call(Pid, result, infinity).
 
 init([Key, Length]) ->
     State = #state{key = Key,
@@ -95,7 +96,8 @@ init([Key, Length]) ->
                    num_of_chunks = 1,
                    stacked_bin = <<>>,
                    md5_context = crypto:hash_init(md5),
-                   errors = []},
+                   errors = [],
+                   monitor_set = sets:new()},
     {ok, State}.
 
 handle_call(stop, _From, State) ->
@@ -106,6 +108,8 @@ handle_call({put, Bin}, _From, #state{key = Key,
                                       stacked_bin   = StackedBin,
                                       num_of_chunks = NumOfChunks,
                                       total_len     = TotalLen,
+                                      errors        = [],
+                                      monitor_set   = MonitorSet,
                                       md5_context   = Context} = State) ->
     Size  = erlang:byte_size(Bin),
     TotalLen_1 = TotalLen + Size,
@@ -115,25 +119,30 @@ handle_call({put, Bin}, _From, #state{key = Key,
         true ->
             NumOfChunksBin = list_to_binary(integer_to_list(NumOfChunks)),
             << Bin_2:MaxObjLen/binary, StackedBin_1/binary >> = Bin_1,
-
-            case leo_gateway_rpc_handler:put(
-                   << Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
-                   Bin_2, MaxObjLen, NumOfChunks) of
-                {ok, _ETag} ->
-                    Context_1 = crypto:hash_update(Context, Bin_2),
-                    {reply, ok, State#state{stacked_bin   = StackedBin_1,
-                                            num_of_chunks = NumOfChunks + 1,
-                                            total_len     = TotalLen_1,
-                                            md5_context   = Context_1}};
-                {error, Cause} ->
-                    ?error("handle_call/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
-                    {reply, {error, Cause}, State}
-            end;
+            Parent = self(),
+            Fun = fun() ->
+                ChunkedKey = << Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
+                Ret = leo_gateway_rpc_handler:put(
+                   ChunkedKey,
+                   Bin_2, MaxObjLen, NumOfChunks),
+                AsyncNotify = {async_notify, ChunkedKey, Ret},
+                erlang:send(Parent, AsyncNotify)
+            end,
+            SpawnRet = erlang:spawn_monitor(Fun),
+            Context_1 = crypto:hash_update(Context, Bin_2),
+            {reply, ok, State#state{stacked_bin   = StackedBin_1,
+                                    num_of_chunks = NumOfChunks + 1,
+                                    total_len     = TotalLen_1,
+                                    monitor_set   = sets:add_element(SpawnRet, MonitorSet),
+                                    md5_context   = Context_1}};
         false ->
             {reply, ok, State#state{stacked_bin = Bin_1,
                                     total_len   = TotalLen_1}}
     end;
 
+handle_call({put, _Bin}, _From, #state{key = _Key,
+                                      errors = Errors} = State) ->
+    {reply, {error, Errors}, State};
 
 handle_call(rollback, _From, #state{key = Key} = State) ->
     ok = leo_large_object_commons:delete_chunked_objects(Key),
@@ -145,6 +154,7 @@ handle_call(result, _From, #state{key = Key,
                                   stacked_bin   = StackedBin,
                                   num_of_chunks = NumOfChunks,
                                   total_len     = TotalLen,
+                                  monitor_set   = MonitorSet,
                                   errors = []} = State) ->
     Ret = case StackedBin of
               <<>> ->
@@ -166,19 +176,26 @@ handle_call(result, _From, #state{key = Key,
 
     State_1 = State#state{stacked_bin = <<>>,
                           errors = []},
-    case Ret of
-        {ok, {NumOfChunks_1, Context_1}} ->
-            Digest = crypto:hash_final(Context_1),
-            Reply  = {ok, #large_obj_info{key = Key,
-                                          num_of_chunks = NumOfChunks_1,
-                                          length = TotalLen,
-                                          md5_context = Digest}},
-            {reply, Reply, State_1#state{md5_context = Digest}};
-        {error, Reason} ->
-            Reply = {error, {#large_obj_info{key = Key,
-                                             num_of_chunks = NumOfChunks}, Reason}},
-            {reply, Reply, State_1}
+    Errors = wait_sub_process(MonitorSet, []),
+    case Errors of
+        [] ->
+            case Ret of
+                {ok, {NumOfChunks_1, Context_1}} ->
+                    Digest = crypto:hash_final(Context_1),
+                    Reply  = {ok, #large_obj_info{key = Key,
+                                                  num_of_chunks = NumOfChunks_1,
+                                                  length = TotalLen,
+                                                  md5_context = Digest}},
+                    {reply, Reply, State_1#state{md5_context = Digest}};
+                {error, Reason} ->
+                    Reply = {error, {#large_obj_info{key = Key,
+                                                     num_of_chunks = NumOfChunks}, Reason}},
+                    {reply, Reply, State_1}
+            end;
+        _Errors ->
+            {reply, {error, Errors}, State}
     end;
+
 handle_call(result, _From, #state{key = Key,
                                   num_of_chunks = NumOfChunks,
                                   errors = Errors} = State) ->
@@ -191,12 +208,45 @@ handle_call(result, _From, #state{key = Key,
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info(_Info, State) ->
-    {noreply, State}.
+handle_info({'DOWN', MonitorRef, _Type, Pid, _Info}, #state{monitor_set = MonitorSet} = State) ->
+    NewMonitorSet = sets:del_element({Pid, MonitorRef}, MonitorSet),
+    {noreply, State#state{monitor_set = NewMonitorSet}};
+handle_info({async_notify, Key, Ret} = _Info, #state{errors = Errors} = State) ->
+    case Ret of
+        {ok, _CheckSum} ->
+            {noreply, State};
+        {error, Cause} ->
+            ?error("handle_info/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            {noreply, State#state{errors = [{error, Cause}|Errors]}}
+    end.
 
 terminate(_Reason, _State) ->
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% @private
+%%
+wait_sub_process(MonitorSet, Errors) ->
+    Size = sets:size(MonitorSet),
+    case Size of
+        0 ->
+            Errors;
+        _ ->
+            receive
+                {async_notify, _Key, {ok, _CheckSum}} ->
+                    wait_sub_process(MonitorSet, Errors);
+                {async_notify, Key, {error, Cause}} ->
+                    ?error("wait_sub_process/2", "key:~s, cause:~p", 
+                           [binary_to_list(Key), Cause]),
+                    wait_sub_process(MonitorSet, [{error, Cause}|Errors]);
+                {'DOWN', MonitorRef, _Type, Pid, _Info} ->
+                    NewMonitorSet = sets:del_element({Pid, MonitorRef}, MonitorSet),
+                    wait_sub_process(NewMonitorSet, Errors);
+                Other ->
+                    ?error("wait_sub_process/2", "Unknown message msg:~p", [Other]),
+                    wait_sub_process(MonitorSet, Errors)
+            end
+    end.
 
