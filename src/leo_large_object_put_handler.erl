@@ -121,13 +121,13 @@ handle_call({put, Bin}, _From, #state{key = Key,
             << Bin_2:MaxObjLen/binary, StackedBin_1/binary >> = Bin_1,
             Parent = self(),
             Fun = fun() ->
-                ChunkedKey = << Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
-                Ret = leo_gateway_rpc_handler:put(
-                   ChunkedKey,
-                   Bin_2, MaxObjLen, NumOfChunks),
-                AsyncNotify = {async_notify, ChunkedKey, Ret},
-                erlang:send(Parent, AsyncNotify)
-            end,
+                          ChunkedKey = << Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
+                          Ret = leo_gateway_rpc_handler:put(
+                                  ChunkedKey,
+                                  Bin_2, MaxObjLen, NumOfChunks),
+                          AsyncNotify = {async_notify, ChunkedKey, Ret},
+                          erlang:send(Parent, AsyncNotify)
+                  end,
             SpawnRet = erlang:spawn_monitor(Fun),
             Context_1 = crypto:hash_update(Context, Bin_2),
             {reply, ok, State#state{stacked_bin   = StackedBin_1,
@@ -141,7 +141,7 @@ handle_call({put, Bin}, _From, #state{key = Key,
     end;
 
 handle_call({put, _Bin}, _From, #state{key = _Key,
-                                      errors = Errors} = State) ->
+                                       errors = Errors} = State) ->
     {reply, {error, Errors}, State};
 
 handle_call(rollback, _From, #state{key = Key} = State) ->
@@ -238,7 +238,7 @@ wait_sub_process(MonitorSet, Errors) ->
                 {async_notify, _Key, {ok, _CheckSum}} ->
                     wait_sub_process(MonitorSet, Errors);
                 {async_notify, Key, {error, Cause}} ->
-                    ?error("wait_sub_process/2", "key:~s, cause:~p", 
+                    ?error("wait_sub_process/2", "key:~s, cause:~p",
                            [binary_to_list(Key), Cause]),
                     wait_sub_process(MonitorSet, [{error, Cause}|Errors]);
                 {'DOWN', MonitorRef, _Type, Pid, _Info} ->
@@ -249,4 +249,3 @@ wait_sub_process(MonitorSet, Errors) ->
                     wait_sub_process(MonitorSet, Errors)
             end
     end.
-

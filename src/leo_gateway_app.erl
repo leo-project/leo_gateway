@@ -339,20 +339,22 @@ after_process_1(SystemConf, MembersCur, MembersPrev) ->
         undefined ->
             ChildSpec = {leo_redundant_manager_sup,
                          {leo_redundant_manager_sup, start_link,
-                          [gateway, NewManagerNodes, ?env_queue_dir(leo_gateway)]},
+                          [?WORKER_NODE, NewManagerNodes,
+                           ?env_queue_dir(leo_gateway)]},
                          permanent, 2000, supervisor, [leo_redundant_manager_sup]},
             {ok, _} = supervisor:start_child(RefSup, ChildSpec);
         _ ->
             {ok, _} = leo_redundant_manager_sup:start_link(
                         gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
     end,
-    ok = leo_redundant_manager_api:set_options([{n, SystemConf#?SYSTEM_CONF.n},
-                                                {r, SystemConf#?SYSTEM_CONF.r},
-                                                {w, SystemConf#?SYSTEM_CONF.w},
-                                                {d, SystemConf#?SYSTEM_CONF.d},
-                                                {bit_of_ring, SystemConf#?SYSTEM_CONF.bit_of_ring},
-                                                {num_of_dc_replicas,   SystemConf#?SYSTEM_CONF.num_of_dc_replicas},
-                                                {num_of_rack_replicas, SystemConf#?SYSTEM_CONF.num_of_rack_replicas}]),
+    ok = leo_redundant_manager_api:set_options(
+           [{n, SystemConf#?SYSTEM_CONF.n},
+            {r, SystemConf#?SYSTEM_CONF.r},
+            {w, SystemConf#?SYSTEM_CONF.w},
+            {d, SystemConf#?SYSTEM_CONF.d},
+            {bit_of_ring, SystemConf#?SYSTEM_CONF.bit_of_ring},
+            {num_of_dc_replicas,   SystemConf#?SYSTEM_CONF.num_of_dc_replicas},
+            {num_of_rack_replicas, SystemConf#?SYSTEM_CONF.num_of_rack_replicas}]),
 
     {ok,_MembersChecksum} = leo_redundant_manager_api:synchronize(
                               ?SYNC_TARGET_MEMBER, [{?VER_CUR,  MembersCur },
@@ -451,7 +453,8 @@ log_file_appender([], []) ->
 log_file_appender([], Acc) ->
     lists:reverse(Acc);
 log_file_appender([{Type, _}|T], Acc) when Type == file ->
-    log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|[{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]).
+    log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|
+                          [{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]).
 
 
 %% @doc Retrieve properties

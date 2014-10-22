@@ -142,7 +142,8 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
     Ret = case leo_misc:node_existence(Node2) of
               true ->
                   case rpc:call(Node2, leo_manager_api, register,
-                                [RequestedTimes, Pid, erlang:node(), gateway], ?DEF_TIMEOUT) of
+                                [RequestedTimes, Pid,
+                                 erlang:node(), ?WORKER_NODE], ?DEF_TIMEOUT) of
                       {ok, SystemConf} ->
                           Options = lists:zip(
                                       record_info(

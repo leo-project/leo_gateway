@@ -30,7 +30,7 @@
 -include_lib("leo_dcerl/include/leo_dcerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% Application APIs 
+%% Application APIs
 -export([start_link/1, stop/1, get/4]).
 
 %% get_server callbacks
@@ -174,4 +174,3 @@ handle_loop(OriginKey, ChunkedKey, Total, Index, Req, Meta, Ref, Transport, Sock
                    [binary_to_list(Key2), Index, Cause]),
             {error, Cause}
     end.
-
