@@ -395,6 +395,28 @@
 
 
 %% --------------------------------------------------------------------
+%% GATEWAY - Watchdog
+%% --------------------------------------------------------------------
+%% @doc Check inteval (ms) - defalut:5sec
+{mapping,
+ "watchdog.check_interval",
+ "leo_gateway.watchdog_check_interval",
+ [
+  {datatype, integer},
+  {default, 5000}
+ ]}.
+
+%% @doc Check inteval (ms) - defalut:5sec
+{mapping,
+ "watchdog.max_mem_capacity",
+ "leo_gateway.watchdog_max_mem_capacity",
+ [
+  {datatype, integer},
+  {default, 33554432}
+ ]}.
+
+
+%% --------------------------------------------------------------------
 %% GATEWAY - NFS-related configuration
 %% --------------------------------------------------------------------
 %% @doc Mountd's port number

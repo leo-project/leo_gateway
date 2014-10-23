@@ -30,6 +30,7 @@
 
 -behaviour(supervisor).
 
+-include("leo_gateway.hrl").
 
 %% External exports
 -export([start_link/0]).
@@ -45,10 +46,14 @@ start_link() ->
 %% @spec init([]) -> SupervisorTree
 %% @doc supervisor callback.
 init([]) ->
-    {ok, {{one_for_one, 10, 10}, []}}.
+    WD_MaxMemCapacity = ?env_watchdog_max_mem_capacity(),
+    WD_CheckInterval  = ?env_watchdog_check_interval(),
 
-
-%%--------------------------------------------------------------------
-%% Internal Functions.
-%%--------------------------------------------------------------------
-
+    WatchDog = {leo_gateway_watchdog,
+                {leo_gateway_watchdog, start_link,
+                 [ WD_MaxMemCapacity, WD_CheckInterval ]},
+                permanent,
+                ?SHUTDOWN_WAITING_TIME,
+                worker,
+                [leo_gateway_watchdog]},
+    {ok, {_SupFlags = {one_for_one, 5, 60}, [WatchDog]}}.
