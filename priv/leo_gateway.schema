@@ -848,7 +848,7 @@
 %% @doc Erlang scheduler's compaction of load
 {mapping,
  "erlang.schedulers.compaction_of_load",
- "vm_args.-scl",
+ "vm_args.+scl",
  [
   {datatype, atom},
   {default, 'true'}
