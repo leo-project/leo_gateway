@@ -837,6 +837,41 @@
   {default, "256000"}
  ]}.
 
+%% @doc Enable or disable SMP
+{mapping,
+ "erlang.smp",
+ "vm_args.-smp",
+ [
+  {default, "enable"}
+ ]}.
+
+%% @doc Erlang scheduler's compaction of load
+{mapping,
+ "erlang.schedulers.compaction_of_load",
+ "vm_args.-scl",
+ [
+  {datatype, atom},
+  {default, 'true'}
+ ]}.
+
+%% Erlang scheduler's balancing of load
+%% {mapping,
+%%  "erlang.schedulers.utilization_balancing",
+%%  "vm_args.+sub",
+%%  [
+%%   {datatype, atom},
+%%   {default, 'false'}
+%%  ]}.
+
+%% Sender-side network distribution buffer size
+{mapping,
+ "erlang.distribution_buffer_size",
+ "vm_args.-zdbbl",
+ [
+  {datatype, bytesize},
+  {default, "32MB"}
+ ]}.
+
 %% %% @doc Raise the ETS table limit
 %% {mapping,
 %%  "erlang.hidden_flag",
