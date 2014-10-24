@@ -30,7 +30,6 @@
 -export([delete_chunked_objects/1]).
 
 -undef(DEF_SEPARATOR).
--undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
 -record(iterator, {origin_key = <<>>     :: binary(),
@@ -44,6 +43,10 @@
 -opaque iterator() :: #iterator{}.
 -export_type([iterator/0]).
 
+
+%%====================================================================
+%% API
+%%====================================================================
 %% @doc Remove chunked objects
 -spec(delete_chunked_objects(Key) ->
              ok when Key:: binary()).
@@ -109,6 +112,10 @@ iterator_next(#iterator{chunked_key = Key,
 iterator_set_chunked(Iterator, ChunkedKey, ChunkedTotal) ->
     Iterator#iterator{chunked_key = ChunkedKey, chunked_total_len = ChunkedTotal}.
 
+
+%%====================================================================
+%% TEST
+%%====================================================================
 -ifdef(TEST).
 iterator_test() ->
     I = iterator_init(<<"hoge">>, 5),

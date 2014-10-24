@@ -32,7 +32,7 @@
 
 %% Application callbacks
 -export([start_link/3, stop/1]).
--export([get_chunked/1]).
+-export([get_chunk_obj/1]).
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -40,7 +40,6 @@
          terminate/2,
          code_change/3]).
 
--undef(DEF_SEPARATOR).
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
@@ -52,67 +51,54 @@
                 iterator              :: leo_large_object_commons:iterator()
                }).
 
--spec(start_link(binary(), non_neg_integer(), non_neg_integer()) ->
-             ok | {error, any()}).
+
+%%====================================================================
+%% API
+%%====================================================================
+-spec(start_link(Key, Length, TotalChunk) ->
+             ok | {error, any()} when Key::binary(),
+                                      Length::non_neg_integer(),
+                                      TotalChunk::non_neg_integer()).
 start_link(Key, Length, TotalChunk) ->
     gen_server:start_link(?MODULE, [Key, Length, TotalChunk], []).
 
 %% @doc Stop this server
 %%
--spec(stop(pid()) -> ok).
+-spec(stop(Pid) ->
+             ok when Pid::pid()).
 stop(Pid) ->
     gen_server:call(Pid, stop, ?DEF_TIMEOUT).
 
+
 %% @doc Retrieve a part of chunked object from the storage cluster
 %%
--spec(get_chunked(pid()) ->
-             {ok, binary()} | {error, any()} | done ).
-get_chunked(Pid) ->
-    gen_server:call(Pid, get_chunked, ?DEF_TIMEOUT).
+-spec(get_chunk_obj(Pid) ->
+             {ok, binary()} | {error, any()} | done when Pid::pid()).
+get_chunk_obj(Pid) ->
+    gen_server:call(Pid, get_chunk_obj, ?DEF_TIMEOUT).
 
+
+%%====================================================================
+%% GEN_SERVER CALLBACKS
+%%====================================================================
 init([Key, Length, TotalChunk]) ->
-    State = #state{key = Key,
-                   max_obj_len = Length,
-                   iterator = leo_large_object_commons:iterator_init(Key, TotalChunk)},
+    State = #state{
+               key = Key,
+               max_obj_len = Length,
+               iterator = leo_large_object_commons:iterator_init(Key, TotalChunk)},
     {ok, State}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
-handle_call(get_chunked, _From, #state{iterator = I} = State) ->
-    {Key, I2} = leo_large_object_commons:iterator_next(I),
+handle_call(get_chunk_obj, _From, #state{iterator = Iter} = State) ->
+    {Key, Iter_2} = leo_large_object_commons:iterator_next(Iter),
     case Key of
         <<"">> ->
-            {reply, done, State#state{iterator = I2}};
+            {reply, done, State#state{iterator = Iter_2}};
         _ ->
-            {Reply, NewIterator} =
-                case leo_gateway_rpc_handler:get(Key) of
-                    %% only children
-                    {ok, #?METADATA{cnumber = 0}, Bin} ->
-                        {{ok, Bin}, I2};
-                    %% both children and grand-children
-                    {ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin} ->
-                        %% grand-children
-                        I3 = leo_large_object_commons:iterator_set_chunked(I2, Key, TotalChunkedObjs),
-                        {Key2, I4} = leo_large_object_commons:iterator_next(I3),
-                        case Key2 of
-                            <<"">> ->
-                                {done, I4};
-                            _ ->
-                                case leo_gateway_rpc_handler:get(Key2) of
-                                    {ok, _, Bin2} ->
-                                        {{ok, Bin2}, I4};
-                                    {error, Cause} = Error ->
-                                        ?error("handle_call/3", "key:~s, cause:~p",
-                                               [binary_to_list(Key2), Cause]),
-                                        {Error, I4}
-                                end
-                        end;
-                    {error, Cause} = Error ->
-                        ?error("handle_call/3", "key:~s, cause:~p",
-                               [binary_to_list(Key), Cause]),
-                        {Error, I2}
-                end,
+            Ret = leo_gateway_rpc_handler:get(Key),
+            {Reply, NewIterator} = get_chunk_obj(Ret, Key, Iter_2),
             {reply, Reply, State#state{iterator = NewIterator}}
     end.
 
@@ -127,3 +113,33 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+
+%%====================================================================
+%% Private Functions
+%%====================================================================
+%% @doc Retrieve chunk object
+%% @private
+get_chunk_obj({ok, #?METADATA{cnumber = 0}, Bin}, _Key, Iter) ->
+    {{ok, Bin}, Iter};
+get_chunk_obj({ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin}, Key, Iter) ->
+    Iter_1 = leo_large_object_commons:iterator_set_chunked(
+               Iter, Key, TotalChunkedObjs),
+    {Key_1, Iter_2} = leo_large_object_commons:iterator_next(Iter_1),
+
+    case Key of
+        <<"">> ->
+            {done, Iter_2};
+        _ ->
+            case leo_gateway_rpc_handler:get(Key_1) of
+                {ok, _, Bin2} ->
+                    {{ok, Bin2}, Iter_2};
+                {error, Cause} = Error ->
+                    ?error("handle_call/3", "key:~s, cause:~p",
+                           [binary_to_list(Key_1), Cause]),
+                    {Error, Iter_2}
+            end
+    end;
+get_chunk_obj({error, Cause} = Ret, Key, Iter) ->
+    ?error("get_chunk_obj/3", "key:~s, cause:~p", [Key, Cause]),
+    {Ret, Iter}.

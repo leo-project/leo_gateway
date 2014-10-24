@@ -394,11 +394,12 @@ move_large_object(#?METADATA{dsize = Size}, DstKey,
                   ReadHandler) ->
     {ok, WriteHandler}  = leo_large_object_put_handler:start_link(DstKey, ChunkedSize),
     try
-        case move_large_object_1(leo_large_object_move_handler:get_chunked(ReadHandler),
-                                 #req_large_obj{handler       = WriteHandler,
-                                                key           = DstKey,
-                                                length        = Size,
-                                                chunked_size  = ChunkedSize}, ReadHandler) of
+        case move_large_object_1(
+               leo_large_object_move_handler:get_chunk_obj(ReadHandler),
+               #req_large_obj{handler       = WriteHandler,
+                              key           = DstKey,
+                              length        = Size,
+                              chunked_size  = ChunkedSize}, ReadHandler) of
             ok ->
                 ok;
             {error, Cause} ->
@@ -415,7 +416,7 @@ move_large_object_1({ok, Data},
     case catch leo_large_object_put_handler:put(WriteHandler, Data) of
         ok ->
             move_large_object_1(
-              leo_large_object_move_handler:get_chunked(ReadHandler),
+              leo_large_object_move_handler:get_chunk_obj(ReadHandler),
               ReqLargeObj, ReadHandler);
         {'EXIT', Cause} ->
             ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
@@ -558,7 +559,7 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
 
     %% retrieve an object from the stream,
     %% then put it to the storage-cluster
-    BodyOpts = [{length, ReadingChunkedSize}, 
+    BodyOpts = [{length, ReadingChunkedSize},
                 {read_timeout, Timeout4Body},
                 {read_length, ReadingChunkedSize}],
     Reply = case put_large_object_1(cowboy_req:body(Req, BodyOpts),
@@ -595,7 +596,7 @@ put_large_object_1({more, Data, Req},
                                   reading_chunked_size = ReadingChunkedSize} = ReqLargeObj) ->
     case catch leo_large_object_put_handler:put(Handler, Data) of
         ok ->
-            BodyOpts = [{length, ReadingChunkedSize}, 
+            BodyOpts = [{length, ReadingChunkedSize},
                         {read_timeout, Timeout4Body},
                         {read_length, ReadingChunkedSize}],
             put_large_object_1(cowboy_req:body(Req, BodyOpts), ReqLargeObj);
@@ -625,7 +626,7 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                                      num_of_chunks = TotalChunks,
                                      md5_context   = Digest}} when Size == TotalSize ->
                     Digest_1 = leo_hex:raw_binary_to_integer(Digest),
-        
+
                     case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
                                                      ChunkedSize, TotalChunks, Digest_1) of
                         {ok, _ETag} ->

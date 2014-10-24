@@ -42,7 +42,6 @@
          code_change/3]).
 
 -undef(DEF_SEPARATOR).
--undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
 -undef(DEF_TIMEOUT).
@@ -58,38 +57,53 @@
                 monitor_set           :: set()
                }).
 
--spec(start_link(binary(), non_neg_integer()) ->
-             ok | {error, any()}).
+
+%%====================================================================
+%% API
+%%====================================================================
+-spec(start_link(Key, Length) ->
+             ok | {error, any()} when Key::binary(),
+                                      Length::non_neg_integer()).
 start_link(Key, Length) ->
     gen_server:start_link(?MODULE, [Key, Length], []).
 
+
 %% @doc Stop this server
 %%
--spec(stop(pid()) -> ok).
+-spec(stop(Pid) ->
+             ok when Pid::pid()).
 stop(Pid) ->
     gen_server:call(Pid, stop, ?DEF_TIMEOUT).
 
+
 %% @doc Insert a chunked object into the storage cluster
 %%
--spec(put(pid(), binary()) ->
-             ok | {error, any()}).
+-spec(put(Pid, Bin) ->
+             ok | {error, any()} when Pid::pid(),
+                                      Bin::binary()).
 put(Pid, Bin) ->
     gen_server:call(Pid, {put, Bin}, ?DEF_TIMEOUT).
 
+
 %% @doc Make a rollback before all operations
 %%
--spec(rollback(pid()) ->
-             ok | {error, any()}).
+-spec(rollback(Pid) ->
+             ok | {error, any()} when Pid::pid()).
 rollback(Pid) ->
     gen_server:call(Pid, rollback, ?DEF_TIMEOUT).
 
+
 %% @doc Retrieve a result
 %%
--spec(result(pid()) ->
-             ok | {error, any()}).
+-spec(result(Pid) ->
+             ok | {error, any()} when Pid::pid()).
 result(Pid) ->
     gen_server:call(Pid, result, infinity).
 
+
+%%====================================================================
+%% GEN_SERVER CALLBACKS
+%%====================================================================
 init([Key, Length]) ->
     State = #state{key = Key,
                    max_obj_len = Length,
@@ -99,6 +113,7 @@ init([Key, Length]) ->
                    errors = [],
                    monitor_set = sets:new()},
     {ok, State}.
+
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
@@ -119,14 +134,15 @@ handle_call({put, Bin}, _From, #state{key = Key,
         true ->
             NumOfChunksBin = list_to_binary(integer_to_list(NumOfChunks)),
             << Bin_2:MaxObjLen/binary, StackedBin_1/binary >> = Bin_1,
-            Parent = self(),
             Fun = fun() ->
-                          ChunkedKey = << Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
+                          ChunkedKey = << Key/binary,
+                                          ?DEF_SEPARATOR/binary,
+                                          NumOfChunksBin/binary >>,
                           Ret = leo_gateway_rpc_handler:put(
                                   ChunkedKey,
                                   Bin_2, MaxObjLen, NumOfChunks),
                           AsyncNotify = {async_notify, ChunkedKey, Ret},
-                          erlang:send(Parent, AsyncNotify)
+                          erlang:send(self(), AsyncNotify)
                   end,
             SpawnRet = erlang:spawn_monitor(Fun),
             Context_1 = crypto:hash_update(Context, Bin_2),
@@ -162,10 +178,12 @@ handle_call(result, _From, #state{key = Key,
               _ ->
                   NumOfChunksBin = list_to_binary(integer_to_list(NumOfChunks)),
                   Size = erlang:byte_size(StackedBin),
+                  Bin  = << Key/binary,
+                            ?DEF_SEPARATOR/binary,
+                            NumOfChunksBin/binary >>,
 
                   case leo_gateway_rpc_handler:put(
-                         << Key/binary, ?DEF_SEPARATOR/binary, NumOfChunksBin/binary >>,
-                         StackedBin, Size, NumOfChunks) of
+                         Bin, StackedBin, Size, NumOfChunks) of
                       {ok, _ETag} ->
                           {ok, {NumOfChunks,
                                 crypto:hash_update(Context, StackedBin)}};
@@ -176,23 +194,24 @@ handle_call(result, _From, #state{key = Key,
 
     State_1 = State#state{stacked_bin = <<>>,
                           errors = []},
-    Errors = wait_sub_process(MonitorSet, []),
-    case Errors of
+    case wait_sub_process(MonitorSet, []) of
         [] ->
             case Ret of
                 {ok, {NumOfChunks_1, Context_1}} ->
                     Digest = crypto:hash_final(Context_1),
-                    Reply  = {ok, #large_obj_info{key = Key,
-                                                  num_of_chunks = NumOfChunks_1,
-                                                  length = TotalLen,
-                                                  md5_context = Digest}},
+                    Reply  = {ok, #large_obj_info{
+                                     key = Key,
+                                     num_of_chunks = NumOfChunks_1,
+                                     length = TotalLen,
+                                     md5_context = Digest}},
                     {reply, Reply, State_1#state{md5_context = Digest}};
                 {error, Reason} ->
-                    Reply = {error, {#large_obj_info{key = Key,
-                                                     num_of_chunks = NumOfChunks}, Reason}},
+                    Reply = {error, {#large_obj_info{
+                                        key = Key,
+                                        num_of_chunks = NumOfChunks}, Reason}},
                     {reply, Reply, State_1}
             end;
-        _Errors ->
+        Errors ->
             {reply, {error, Errors}, State}
     end;
 
@@ -208,6 +227,7 @@ handle_call(result, _From, #state{key = Key,
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+
 handle_info({'DOWN', MonitorRef, _Type, Pid, _Info}, #state{monitor_set = MonitorSet} = State) ->
     NewMonitorSet = sets:del_element({Pid, MonitorRef}, MonitorSet),
     {noreply, State#state{monitor_set = NewMonitorSet}};
@@ -220,14 +240,20 @@ handle_info({async_notify, Key, Ret} = _Info, #state{errors = Errors} = State) -
             {noreply, State#state{errors = [{error, Cause}|Errors]}}
     end.
 
+
 terminate(_Reason, _State) ->
     ok.
+
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+%%====================================================================
+%% Private Functions
+%%====================================================================
+%% @doc Waits sub processes
 %% @private
-%%
 wait_sub_process(MonitorSet, Errors) ->
     Size = sets:size(MonitorSet),
     case Size of
