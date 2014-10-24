@@ -49,11 +49,11 @@ init([]) ->
     WD_MaxMemCapacity = ?env_watchdog_max_mem_capacity(),
     WD_CheckInterval  = ?env_watchdog_check_interval(),
 
-    WatchDog = {leo_gateway_watchdog,
-                {leo_gateway_watchdog, start_link,
-                 [ WD_MaxMemCapacity, WD_CheckInterval ]},
-                permanent,
-                ?SHUTDOWN_WAITING_TIME,
-                worker,
-                [leo_gateway_watchdog]},
-    {ok, {_SupFlags = {one_for_one, 5, 60}, [WatchDog]}}.
+    WatchDogs = [{leo_watchdog_rex,
+                  {leo_watchdog_rex, start_link,
+                   [WD_MaxMemCapacity, WD_CheckInterval]},
+                  permanent,
+                  ?SHUTDOWN_WAITING_TIME,
+                  worker,
+                  [leo_watchdog_rex]}],
+    {ok, {_SupFlags = {one_for_one, 5, 60}, WatchDogs}}.
