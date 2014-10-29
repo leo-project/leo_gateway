@@ -88,6 +88,7 @@
 -define(HTTP_ST_BAD_REQ,             400).
 -define(HTTP_ST_FORBIDDEN,           403).
 -define(HTTP_ST_NOT_FOUND,           404).
+-define(HTTP_ST_CONFLICT,            409).
 -define(HTTP_ST_BAD_RANGE,           416).
 -define(HTTP_ST_INTERNAL_ERROR,      500).
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
@@ -130,6 +131,8 @@
 -define(XML_ERROR_CODE_InvalidRange,    "InvalidRange").
 -define(XML_ERROR_CODE_InternalError,   "InternalError").
 -define(XML_ERROR_CODE_ServiceUnavailable, "ServiceUnavailable").
+-define(XML_ERROR_CODE_BucketAlreadyExists, "BucketAlreadyExists").
+-define(XML_ERROR_CODE_BucketAlreadyOwnedByYou, "BucketAlreadyOwnedByYou").
 
 %% error messages used in a error response
 -define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
@@ -139,6 +142,8 @@
 -define(XML_ERROR_MSG_InvalidRange,    "The requested range cannot be satisfied.").
 -define(XML_ERROR_MSG_InternalError,   "We encountered an internal error. Please try again.").
 -define(XML_ERROR_MSG_ServiceUnavailable,   "Please reduce your request rate.").
+-define(XML_ERROR_MSG_BucketAlreadyExists,     "Please select a different name and try again.").
+-define(XML_ERROR_MSG_BucketAlreadyOwnedByYou, "Your previous request to create the named bucket succeeded and you already own it.").
 
 %% Macros
 -define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
@@ -168,6 +173,10 @@
         cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_NoSuchKey,
                                                     ?XML_ERROR_MSG_NoSuchKey,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_conflict(_H, _Code, _Msg, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_CONFLICT, _H,
+                         io_lib:format(?XML_ERROR, [_Code, _Msg,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 -define(reply_bad_range(_H, _Key, _ReqId, _R),
         cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H,

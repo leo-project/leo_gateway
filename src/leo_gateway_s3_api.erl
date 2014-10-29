@@ -167,6 +167,14 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
+        {error, invalid_access} ->
+            ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req);
+        {error, already_exists} ->
+            ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyExists,
+                               ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req);
+        {error, already_yours} ->
+            ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou,
+                               ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end;
