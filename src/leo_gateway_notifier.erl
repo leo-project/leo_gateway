@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo Gateway
+%% LeoFS Gateway
 %%
 %% Copyright (c) 2012-2014 Rakuten, Inc.
 %%
@@ -19,31 +19,33 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-%% Leo Gateway - Supervisor
-%%
 %% @doc
 %% @end
 %%======================================================================
--module(leo_gateway_sup).
+-module(leo_gateway_notifier).
 
 -author('Yosuke Hara').
 
--behaviour(supervisor).
-
 -include("leo_gateway.hrl").
+-include_lib("leo_logger/include/leo_logger.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
-%% External exports
--export([start_link/0]).
+-behaviour(leo_notify_behaviour).
 
-%% supervisor callbacks
--export([init/1]).
+-export([notify/2]).
 
-%% @spec start_link() -> ServerRet
-%% @doc API for starting the supervisor.
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% @spec init([]) -> SupervisorTree
-%% @doc supervisor callback.
-init([]) ->
-    {ok, {_SupFlags = {one_for_one, 5, 60}, []}}.
+%%-----------------------------------------------------------------------
+%% API
+%%-----------------------------------------------------------------------
+-spec(notify(Id, State) ->
+             ok | {error, any()} when Id::atom(),
+                                      State::[{atom(), any()}]).
+notify('leo_watchdog_cpu', State) ->
+    ?warn("notify/2", "state:~p", [State]),
+    ok;
+notify('leo_watchdog_io', State) ->
+    ?warn("notify/2", "state:~p", [State]),
+    ok;
+notify(_,_) ->
+    ok.

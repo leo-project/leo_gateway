@@ -40,6 +40,7 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_statistics/include/leo_statistics.hrl").
 -include_lib("nfs_rpc_server/src/nfs_rpc_app.hrl").
+-include_lib("leo_watchdog/include/leo_watchdog.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
@@ -88,6 +89,7 @@ start() ->
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
     consider_profiling(),
+    application:start(leo_watchdog),
     App = leo_gateway,
 
     %% Launch Logger(s)
@@ -312,6 +314,43 @@ after_process_0({ok, _Pid} = Res) ->
                   [SVManagers, QoS_StatEnabled]},
                  permanent, 2000, worker, [leo_gateway_qos_stat]},
     {ok, _} = supervisor:start_child(RefSup, ChildSpec),
+
+    %% Launch leo-watchdog
+    %% Watchdog for rex's binary usage
+    WatchInterval = ?env_watchdog_check_interval(leo_gateway),
+    io:format(user, "[debug]interval:~p~n",[WatchInterval]),
+    case ?env_watchdog_rex_enabled(leo_gateway) of
+        true ->
+            MaxMemCapacity = ?env_watchdog_max_mem_capacity(leo_gateway),
+            leo_watchdog_sup:start_child(
+              rex, [MaxMemCapacity], WatchInterval);
+        false ->
+            void
+    end,
+
+    %% Wachdog for CPU
+    case ?env_watchdog_cpu_enabled(leo_gateway) of
+        true ->
+            MaxCPULoadAvg = ?env_watchdog_max_cpu_load_avg(leo_gateway),
+            MaxCPUUtil    = ?env_watchdog_max_cpu_util(leo_gateway),
+    io:format(user, "[debug]cpu enabled load:~p util:~p~n",[MaxCPULoadAvg, MaxCPUUtil]),
+            leo_watchdog_sup:start_child(
+              cpu, [MaxCPULoadAvg, MaxCPUUtil, leo_gateway_notifier], WatchInterval);
+        false ->
+    io:format(user, "[debug]cpu disabled~n",[]),
+            void
+    end,
+
+    %% Wachdog for IO
+    case ?env_watchdog_io_enabled(leo_gateway) of
+        true ->
+            MaxInput  = ?env_watchdog_max_input_for_interval(leo_gateway),
+            MaxOutput = ?env_watchdog_max_output_for_interval(leo_gateway),
+            leo_watchdog_sup:start_child(
+              io, [MaxInput, MaxOutput, leo_gateway_notifier], WatchInterval);
+        false ->
+            void
+    end,
 
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);

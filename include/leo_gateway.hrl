@@ -370,22 +370,3 @@
               })
         end).
 
--define(DEF_WATCH_INTERVAL,   5000).
--define(DEF_MEM_CAPACITY, 33554432).
-%% -define(DEF_MEM_CAPACITY, 500000000).
-
--define(env_watchdog_check_interval(),
-        case application:get_env(leo_gateway, watchdog_check_interval) of
-            {ok, EnvWDCheckInterval} ->
-                EnvWDCheckInterval;
-            _ ->
-                ?DEF_WATCH_INTERVAL
-        end).
-
--define(env_watchdog_max_mem_capacity(),
-        case application:get_env(leo_gateway, watchdog_max_mem_capacity) of
-            {ok, EnvWDMaxMemCapacity} ->
-                EnvWDMaxMemCapacity;
-            _ ->
-                ?DEF_MEM_CAPACITY
-        end).
