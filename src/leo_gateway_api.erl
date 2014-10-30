@@ -32,6 +32,7 @@
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
+-include_lib("leo_watchdog/include/leo_watchdog.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([get_node_status/0,
@@ -111,6 +112,17 @@ get_node_status() ->
           {version,       Version},
           {dirs,          Directories},
           {ring_checksum, RingHashes},
+          {watchdog,
+           [{cpu_enabled,    ?env_watchdog_cpu_enabled(leo_gateway)},
+            {io_enabled,     ?env_watchdog_io_enabled(leo_gateway)},
+            {watch_interval, ?env_watchdog_check_interval(leo_gateway)},
+            {rex_max_mem_capacity, ?env_watchdog_max_mem_capacity(leo_gateway)},
+            {cpu_max_cpu_load_avg, ?env_watchdog_max_cpu_load_avg(leo_gateway)},
+            {cpu_max_cpu_util,     ?env_watchdog_max_cpu_util(leo_gateway)},
+            {io_max_input_for_interval,  ?env_watchdog_max_input_for_interval(leo_gateway)},
+            {io_max_output_for_interval, ?env_watchdog_max_output_for_interval(leo_gateway)}
+           ]
+          },
           {statistics,    Statistics},
           {http_conf,     HttpConf}
          ]}.
