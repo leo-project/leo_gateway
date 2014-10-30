@@ -318,7 +318,6 @@ after_process_0({ok, _Pid} = Res) ->
     %% Launch leo-watchdog
     %% Watchdog for rex's binary usage
     WatchInterval = ?env_watchdog_check_interval(leo_gateway),
-    io:format(user, "[debug]interval:~p~n",[WatchInterval]),
     case ?env_watchdog_rex_enabled(leo_gateway) of
         true ->
             MaxMemCapacity = ?env_watchdog_max_mem_capacity(leo_gateway),
@@ -333,11 +332,9 @@ after_process_0({ok, _Pid} = Res) ->
         true ->
             MaxCPULoadAvg = ?env_watchdog_max_cpu_load_avg(leo_gateway),
             MaxCPUUtil    = ?env_watchdog_max_cpu_util(leo_gateway),
-    io:format(user, "[debug]cpu enabled load:~p util:~p~n",[MaxCPULoadAvg, MaxCPUUtil]),
             leo_watchdog_sup:start_child(
               cpu, [MaxCPULoadAvg, MaxCPUUtil, leo_gateway_notifier], WatchInterval);
         false ->
-    io:format(user, "[debug]cpu disabled~n",[]),
             void
     end,
 
