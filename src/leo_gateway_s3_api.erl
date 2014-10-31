@@ -91,7 +91,7 @@ handle(Req, State) ->
                     handle_1(Req, State, Bucket, Path)
             end;
         _ ->
-            {ok, Req2} = ?reply_service_unavailable_error([?SERVER_HEADER], <<>>, Req),
+            {ok, Req2} = ?reply_service_unavailable_error([?SERVER_HEADER], <<>>, <<>>, Req),
             {ok, Req2, State}
     end.
 
@@ -142,6 +142,8 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok(Header, XML, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
@@ -314,6 +316,8 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
             put_large_object_1(Directive, Req, Key, Meta, Params);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
@@ -330,6 +334,8 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
             resp_copy_obj_xml(Req, Meta);
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
             put_object_2(Req, Key, Meta);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
@@ -350,6 +356,8 @@ put_object_3(Req, Meta) ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, timeout} ->
@@ -500,6 +508,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
                 XML = gen_upload_initiate_xml(Bucket, Path_1, UploadId),
 
                 ?reply_ok([?SERVER_HEADER], XML, Req);
+            {error, unavailable} ->
+                ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req);
             {error, Cause} ->
@@ -537,6 +547,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, _,
                 put_object(?BIN_EMPTY, Req, Key2, Params);
             {error, not_found} ->
                 ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);
+            {error, unavailable} ->
+                ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req);
             {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -595,6 +607,8 @@ handle_multi_upload_1(true, Req, Path, UploadId, CL) ->
 
             Ret = cowboy_req:body(Req),
             handle_multi_upload_2(Ret, Req, Path, CL);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         _ ->
             ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
     end;
@@ -621,11 +635,15 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path, CL) ->
                     ETag2 = leo_hex:integer_to_hex(ETag1, 32),
                     XML   = gen_upload_completion_xml(Bucket, Path_1, ETag2, TotalUploadedObjs),
                     ?reply_ok([?SERVER_HEADER], XML, Req);
+                {error, unavailable} ->
+                    ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
                 {error, Cause} ->
                     ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
                            [binary_to_list(Path), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
             end;
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         {error, Cause} ->
             ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)

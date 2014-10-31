@@ -183,11 +183,11 @@
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InvalidRange,
                                                     ?XML_ERROR_MSG_InvalidRange,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
--define(reply_service_unavailable_error(_H, _ReqId, _R),
+-define(reply_service_unavailable_error(_H, _Key, _ReqId, _R),
         cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_ServiceUnavailable,
                                                     ?XML_ERROR_MSG_ServiceUnavailable,
-                                                    <<>>, _ReqId]), _R)).
+                                                    _Key, _ReqId]), _R)).
 -define(reply_internal_error(_H, _Key, _ReqId, _R),
         cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError,

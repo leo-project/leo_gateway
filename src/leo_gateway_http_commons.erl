@@ -282,6 +282,8 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
                                end
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
@@ -370,6 +372,8 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
         {error, not_found} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
@@ -445,6 +449,8 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                     ok;
                 {error, timeout = Cause} ->
                     {error, Cause};
+                {error, unavailable} ->
+                    {error, unavailable};
                 {error, _Cause} ->
                     {error, ?ERROR_FAIL_PUT_OBJ}
             end;
@@ -533,6 +539,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(ETag)}],
             ?reply_ok(Header, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
@@ -635,6 +643,8 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                             ?reply_ok(Header, Req);
                         {error, timeout = Cause} ->
                             {error, {Req, Cause}};
+                        {error, unavailable} ->
+                            {error, unavailable};
                         {error,_Cause} ->
                             {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
                     end;
@@ -669,6 +679,8 @@ delete_object(Req, Key, #req_params{bucket = Bucket}) ->
         {error, not_found} ->
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_no_content([?SERVER_HEADER], Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
@@ -698,6 +710,8 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
         {error, not_found} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_head(Bucket, Key, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error_without_body([?SERVER_HEADER], Req);
@@ -749,6 +763,8 @@ get_range_object_2(Req, Bucket, Key, Start, End) ->
             {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
             {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
             get_range_object_large(Req, Bucket, Key, NewStartPos, NewEndPos, N, Index, CurPos);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         _ ->
             {error, not_found}
     end.
@@ -761,6 +777,8 @@ get_range_object_small(Req, Bucket, Key, Start, End) ->
         {ok, _Meta, Bin} ->
             ?access_log_get(Bucket, Key, byte_size(Bin), ?HTTP_ST_OK),
             cowboy_req:chunk(Bin, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, Cause} ->
             {error, Cause}
     end.
@@ -801,6 +819,8 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos) ->
                 {error, Cause} ->
                     {error, Cause}
             end;
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, Cause} ->
             {error, Cause}
     end.
