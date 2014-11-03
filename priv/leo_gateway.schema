@@ -459,19 +459,19 @@
   {default, false}
  ]}.
 
-%% Maximum input size for interval - default:128MB
+%% Maximum input size/sec - default:128MB
 {mapping,
- "watchdog.io.max_input_for_interval",
- "leo_gateway.watchdog_max_input_for_interval",
+ "watchdog.io.max_input_per_sec",
+ "leo_gateway.watchdog_max_input_per_sec",
  [
   {datatype, integer},
   {default, 134217728}
  ]}.
 
-%% Maximum output size for interval - default:128MB
+%% Maximum output size/sec - default:128MB
 {mapping,
- "watchdog.io.max_output_for_interval",
- "leo_gateway.watchdog_max_output_for_interval",
+ "watchdog.io.max_output_per_sec",
+ "leo_gateway.watchdog_max_output_per_sec",
  [
   {datatype, integer},
   {default, 134217728}
