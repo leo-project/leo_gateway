@@ -341,8 +341,8 @@ after_process_0({ok, _Pid} = Res) ->
     %% Wachdog for IO
     case ?env_watchdog_io_enabled(leo_gateway) of
         true ->
-            MaxInput  = ?env_watchdog_max_input_for_interval(leo_gateway),
-            MaxOutput = ?env_watchdog_max_output_for_interval(leo_gateway),
+            MaxInput  = ?env_watchdog_max_input_per_sec(leo_gateway),
+            MaxOutput = ?env_watchdog_max_output_per_sec(leo_gateway),
             leo_watchdog_sup:start_child(
               io, [MaxInput, MaxOutput, leo_gateway_notifier], WatchInterval);
         false ->
