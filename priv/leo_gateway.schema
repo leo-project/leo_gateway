@@ -408,7 +408,7 @@
 %% @doc REX - Maximum memory capacity for binary - defalut:32MB
 {mapping,
  "watchdog.rex.max_mem_capacity",
- "leo_gateway.watchdog_max_mem_capacity",
+ "leo_gateway.wd_threshold_mem_capacity",
  [
   {datatype, integer},
   {default, 33554432}
@@ -417,7 +417,7 @@
 %% @doc CPU - Is enabled
 {mapping,
  "watchdog.cpu.is_enabled",
- "leo_gateway.watchdog_cpu_enabled",
+ "leo_gateway.wd_cpu_enabled",
  [
   {datatype, atom},
   {default, false}
@@ -426,7 +426,7 @@
 %% @doc Check inteval (ms) - defalut:5sec
 {mapping,
  "watchdog.cpu.interval",
- "leo_gateway.watchdog_cpu_interval",
+ "leo_gateway.wd_cpu_interval",
  [
   {datatype, integer},
   {default, 5000}
@@ -435,7 +435,7 @@
 %% @doc Maximum CPU load avg for 1min/5min - default:2
 {mapping,
  "watchdog.cpu.max_cpu_load_avg",
- "leo_gateway.watchdog_max_cpu_load_avg",
+ "leo_gateway.wd_threshold_cpu_load_avg",
  [
   {datatype, integer},
   {default, 2}
@@ -444,7 +444,7 @@
 %% @doc Maximum CPU load util - default:100 = "100%"
 {mapping,
  "watchdog.cpu.max_cpu_util",
- "leo_gateway.watchdog_max_cpu_util",
+ "leo_gateway.wd_threshold_cpu_util",
  [
   {datatype, integer},
   {default, 100}
@@ -453,7 +453,7 @@
 %% @doc IO - Is enabled
 {mapping,
  "watchdog.io.is_enabled",
- "leo_gateway.watchdog_io_enabled",
+ "leo_gateway.wd_io_enabled",
  [
   {datatype, atom},
   {default, false}
@@ -462,7 +462,7 @@
 %% @doc Check inteval (ms) - defalut:5sec
 {mapping,
  "watchdog.io.interval",
- "leo_gateway.watchdog_io_interval",
+ "leo_gateway.wd_io_interval",
  [
   {datatype, integer},
   {default, 5000}
@@ -471,7 +471,7 @@
 %% Maximum input size/sec - default:128MB
 {mapping,
  "watchdog.io.max_input_per_sec",
- "leo_gateway.watchdog_max_input_per_sec",
+ "leo_gateway.wd_threshold_input_per_sec",
  [
   {datatype, integer},
   {default, 134217728}
@@ -480,7 +480,7 @@
 %% Maximum output size/sec - default:128MB
 {mapping,
  "watchdog.io.max_output_per_sec",
- "leo_gateway.watchdog_max_output_per_sec",
+ "leo_gateway.wd_threshold_output_per_sec",
  [
   {datatype, integer},
   {default, 134217728}
