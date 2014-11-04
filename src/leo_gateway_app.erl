@@ -319,8 +319,7 @@ after_process_0({ok, _Pid} = Res) ->
     %% Watchdog for rex's binary usage
     MaxMemCapacity = ?env_wd_threshold_mem_capacity(leo_gateway),
     IntervalRex = ?env_wd_rex_interval(leo_gateway),
-    leo_watchdog_sup:start_child(
-      rex, [MaxMemCapacity], IntervalRex),
+    leo_watchdog_sup:start_child(rex, [MaxMemCapacity], IntervalRex),
 
     %% Wachdog for CPU
     case ?env_wd_cpu_enabled(leo_gateway) of
@@ -328,8 +327,7 @@ after_process_0({ok, _Pid} = Res) ->
             MaxCPULoadAvg = ?env_wd_threshold_cpu_load_avg(leo_gateway),
             MaxCPUUtil    = ?env_wd_threshold_cpu_util(leo_gateway),
             IntervalCpu   = ?env_wd_cpu_interval(leo_gateway),
-            leo_watchdog_sup:start_child(
-              cpu, [MaxCPULoadAvg, MaxCPUUtil, leo_gateway_notifier], IntervalCpu);
+            leo_watchdog_sup:start_child(cpu, [MaxCPULoadAvg, MaxCPUUtil], IntervalCpu);
         false ->
             void
     end,
@@ -340,8 +338,7 @@ after_process_0({ok, _Pid} = Res) ->
             MaxInput   = ?env_wd_threshold_input_per_sec(leo_gateway),
             MaxOutput  = ?env_wd_threshold_output_per_sec(leo_gateway),
             IntervalIo = ?env_wd_io_interval(leo_gateway),
-            leo_watchdog_sup:start_child(
-              io, [MaxInput, MaxOutput, leo_gateway_notifier], IntervalIo);
+            leo_watchdog_sup:start_child(io, [MaxInput, MaxOutput], IntervalIo);
         false ->
             void
     end,
