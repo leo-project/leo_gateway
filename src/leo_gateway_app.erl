@@ -317,22 +317,17 @@ after_process_0({ok, _Pid} = Res) ->
 
     %% Launch leo-watchdog
     %% Watchdog for rex's binary usage
-    case ?env_watchdog_rex_enabled(leo_gateway) of
-        true ->
-            MaxMemCapacity = ?env_watchdog_max_mem_capacity(leo_gateway),
-            IntervalRex = ?env_watchdog_rex_interval(leo_gateway),
-            leo_watchdog_sup:start_child(
-              rex, [MaxMemCapacity], IntervalRex);
-        false ->
-            void
-    end,
+    MaxMemCapacity = ?env_wd_threshold_mem_capacity(leo_gateway),
+    IntervalRex = ?env_wd_rex_interval(leo_gateway),
+    leo_watchdog_sup:start_child(
+      rex, [MaxMemCapacity], IntervalRex),
 
     %% Wachdog for CPU
-    case ?env_watchdog_cpu_enabled(leo_gateway) of
+    case ?env_wd_cpu_enabled(leo_gateway) of
         true ->
-            MaxCPULoadAvg = ?env_watchdog_max_cpu_load_avg(leo_gateway),
-            MaxCPUUtil    = ?env_watchdog_max_cpu_util(leo_gateway),
-            IntervalCpu   = ?env_watchdog_cpu_interval(leo_gateway),
+            MaxCPULoadAvg = ?env_wd_threshold_cpu_load_avg(leo_gateway),
+            MaxCPUUtil    = ?env_wd_threshold_cpu_util(leo_gateway),
+            IntervalCpu   = ?env_wd_cpu_interval(leo_gateway),
             leo_watchdog_sup:start_child(
               cpu, [MaxCPULoadAvg, MaxCPUUtil, leo_gateway_notifier], IntervalCpu);
         false ->
@@ -340,11 +335,11 @@ after_process_0({ok, _Pid} = Res) ->
     end,
 
     %% Wachdog for IO
-    case ?env_watchdog_io_enabled(leo_gateway) of
+    case ?env_wd_io_enabled(leo_gateway) of
         true ->
-            MaxInput   = ?env_watchdog_max_input_per_sec(leo_gateway),
-            MaxOutput  = ?env_watchdog_max_output_per_sec(leo_gateway),
-            IntervalIo = ?env_watchdog_io_interval(leo_gateway),
+            MaxInput   = ?env_wd_threshold_input_per_sec(leo_gateway),
+            MaxOutput  = ?env_wd_threshold_output_per_sec(leo_gateway),
+            IntervalIo = ?env_wd_io_interval(leo_gateway),
             leo_watchdog_sup:start_child(
               io, [MaxInput, MaxOutput, leo_gateway_notifier], IntervalIo);
         false ->
