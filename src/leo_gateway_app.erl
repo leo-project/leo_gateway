@@ -317,12 +317,12 @@ after_process_0({ok, _Pid} = Res) ->
 
     %% Launch leo-watchdog
     %% Watchdog for rex's binary usage
-    WatchInterval = ?env_watchdog_check_interval(leo_gateway),
     case ?env_watchdog_rex_enabled(leo_gateway) of
         true ->
             MaxMemCapacity = ?env_watchdog_max_mem_capacity(leo_gateway),
+            IntervalRex = ?env_watchdog_rex_interval(leo_gateway),
             leo_watchdog_sup:start_child(
-              rex, [MaxMemCapacity], WatchInterval);
+              rex, [MaxMemCapacity], IntervalRex);
         false ->
             void
     end,
@@ -332,8 +332,9 @@ after_process_0({ok, _Pid} = Res) ->
         true ->
             MaxCPULoadAvg = ?env_watchdog_max_cpu_load_avg(leo_gateway),
             MaxCPUUtil    = ?env_watchdog_max_cpu_util(leo_gateway),
+            IntervalCpu   = ?env_watchdog_cpu_interval(leo_gateway),
             leo_watchdog_sup:start_child(
-              cpu, [MaxCPULoadAvg, MaxCPUUtil, leo_gateway_notifier], WatchInterval);
+              cpu, [MaxCPULoadAvg, MaxCPUUtil, leo_gateway_notifier], IntervalCpu);
         false ->
             void
     end,
@@ -341,10 +342,11 @@ after_process_0({ok, _Pid} = Res) ->
     %% Wachdog for IO
     case ?env_watchdog_io_enabled(leo_gateway) of
         true ->
-            MaxInput  = ?env_watchdog_max_input_per_sec(leo_gateway),
-            MaxOutput = ?env_watchdog_max_output_per_sec(leo_gateway),
+            MaxInput   = ?env_watchdog_max_input_per_sec(leo_gateway),
+            MaxOutput  = ?env_watchdog_max_output_per_sec(leo_gateway),
+            IntervalIo = ?env_watchdog_io_interval(leo_gateway),
             leo_watchdog_sup:start_child(
-              io, [MaxInput, MaxOutput, leo_gateway_notifier], WatchInterval);
+              io, [MaxInput, MaxOutput, leo_gateway_notifier], IntervalIo);
         false ->
             void
     end,
