@@ -408,7 +408,7 @@
 %% @doc Check inteval (ms) - defalut:5sec
 {mapping,
  "watchdog.rex.interval",
- "leo_storage.watchdog_rex_interval",
+ "leo_gateway.watchdog_rex_interval",
  [
   {datatype, integer},
   {default, 5000}
@@ -435,7 +435,7 @@
 %% @doc Check inteval (ms) - defalut:5sec
 {mapping,
  "watchdog.cpu.interval",
- "leo_storage.watchdog_cpu_interval",
+ "leo_gateway.watchdog_cpu_interval",
  [
   {datatype, integer},
   {default, 5000}
@@ -471,7 +471,7 @@
 %% @doc Check inteval (ms) - defalut:5sec
 {mapping,
  "watchdog.io.interval",
- "leo_storage.watchdog_io_interval",
+ "leo_gateway.watchdog_io_interval",
  [
   {datatype, integer},
   {default, 5000}
