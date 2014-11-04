@@ -90,7 +90,8 @@ handle(Req, State) ->
                     {Bucket, Path} = get_bucket_and_path(Req),
                     handle_1(Req, State, Bucket, Path)
             end;
-        _ ->
+        {ok, ErrorItems} ->
+            ?debug("handle/2", "error-items:~p", [ErrorItems]),
             {ok, Req2} = ?reply_service_unavailable_error([?SERVER_HEADER], <<>>, <<>>, Req),
             {ok, Req2, State}
     end.
@@ -823,7 +824,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                     {RawURI,  _} = cowboy_req:path(Req),
                     {QStr,    _} = cowboy_req:qs(Req),
                     {Headers, _} = cowboy_req:headers(Req),
-        
+
                     %% NOTE:
                     %% - from s3cmd, dragondisk and others:
                     %%     -   Path: <<"photo/img">>
@@ -852,7 +853,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                              << ?STR_SLASH, RawURI/binary >>
                                      end
                              end,
-        
+
                     Len = byte_size(QStr),
                     QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
                                  true ->
@@ -873,7 +874,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                              lists:sort(string:tokens(binary_to_list(QStr_2), "&"))),
                                      list_to_binary(Ret)
                              end,
-        
+
                     SignParams = #sign_params{http_verb     = HTTPMethod,
                                               content_md5   = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
                                               content_type  = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
