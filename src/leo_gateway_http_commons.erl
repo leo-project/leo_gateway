@@ -644,7 +644,7 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                         {error, timeout = Cause} ->
                             {error, {Req, Cause}};
                         {error, unavailable} ->
-                            {error, unavailable};
+                            {error, {Req, unavailable}};
                         {error,_Cause} ->
                             {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
                     end;
