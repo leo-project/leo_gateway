@@ -437,8 +437,7 @@
  "watchdog.cpu.max_cpu_load_avg",
  "leo_gateway.wd_threshold_cpu_load_avg",
  [
-  {datatype, integer},
-  {default, 2}
+  {default, 1.5}
  ]}.
 
 %% @doc Maximum CPU load util - default:100 = "100%"
