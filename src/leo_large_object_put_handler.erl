@@ -161,7 +161,7 @@ handle_call({put, _Bin}, _From, #state{key = _Key,
     {reply, {error, Errors}, State};
 
 handle_call(rollback, _From, #state{key = Key} = State) ->
-    ok = leo_large_object_commons:delete_chunked_objects(Key),
+    catch leo_large_object_commons:delete_chunked_objects(Key),
     {reply, ok, State#state{errors = []}};
 
 

@@ -586,6 +586,8 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                     case Cause of
                         timeout ->
                             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req_1);
+                        unavailable ->
+                            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req_1);
                         _Other  ->
                             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req_1)
                     end;
