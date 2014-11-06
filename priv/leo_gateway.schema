@@ -405,9 +405,9 @@
   {default, 5000}
  ]}.
 
-%% @doc REX - Maximum memory capacity for binary - defalut:32MB
+%% @doc REX - Threshold memory capacity for binary - defalut:32MB
 {mapping,
- "watchdog.rex.max_mem_capacity",
+ "watchdog.rex.threshold_mem_capacity",
  "leo_gateway.wd_threshold_mem_capacity",
  [
   {datatype, integer},
@@ -432,17 +432,17 @@
   {default, 5000}
  ]}.
 
-%% @doc Maximum CPU load avg for 1min/5min - default:2
+%% @doc Threshold CPU load avg for 1min/5min - default:2
 {mapping,
- "watchdog.cpu.max_cpu_load_avg",
+ "watchdog.cpu.threshold_cpu_load_avg",
  "leo_gateway.wd_threshold_cpu_load_avg",
  [
   {default, 1.5}
  ]}.
 
-%% @doc Maximum CPU load util - default:100 = "100%"
+%% @doc Threshold CPU load util - default:100 = "100%"
 {mapping,
- "watchdog.cpu.max_cpu_util",
+ "watchdog.cpu.threshold_cpu_util",
  "leo_gateway.wd_threshold_cpu_util",
  [
   {datatype, integer},
@@ -467,18 +467,18 @@
   {default, 5000}
  ]}.
 
-%% Maximum input size/sec - default:128MB
+%% Threshold input size/sec - default:128MB
 {mapping,
- "watchdog.io.max_input_per_sec",
+ "watchdog.io.threshold_input_per_sec",
  "leo_gateway.wd_threshold_input_per_sec",
  [
   {datatype, integer},
   {default, 134217728}
  ]}.
 
-%% Maximum output size/sec - default:128MB
+%% Threshold output size/sec - default:128MB
 {mapping,
- "watchdog.io.max_output_per_sec",
+ "watchdog.io.threshold_output_per_sec",
  "leo_gateway.wd_threshold_output_per_sec",
  [
   {datatype, integer},
