@@ -131,6 +131,7 @@
 -define(XML_ERROR_CODE_InvalidRange,    "InvalidRange").
 -define(XML_ERROR_CODE_InternalError,   "InternalError").
 -define(XML_ERROR_CODE_ServiceUnavailable, "ServiceUnavailable").
+-define(XML_ERROR_CODE_SlowDown, "SlowDown").
 -define(XML_ERROR_CODE_BucketAlreadyExists, "BucketAlreadyExists").
 -define(XML_ERROR_CODE_BucketAlreadyOwnedByYou, "BucketAlreadyOwnedByYou").
 
@@ -142,6 +143,7 @@
 -define(XML_ERROR_MSG_InvalidRange,    "The requested range cannot be satisfied.").
 -define(XML_ERROR_MSG_InternalError,   "We encountered an internal error. Please try again.").
 -define(XML_ERROR_MSG_ServiceUnavailable,   "Please reduce your request rate.").
+-define(XML_ERROR_MSG_SlowDown,   "Please reduce your request rate.").
 -define(XML_ERROR_MSG_BucketAlreadyExists,     "Please select a different name and try again.").
 -define(XML_ERROR_MSG_BucketAlreadyOwnedByYou, "Your previous request to create the named bucket succeeded and you already own it.").
 
@@ -194,9 +196,9 @@
                                                     ?XML_ERROR_MSG_InternalError,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 -define(reply_timeout(_H, _Key, _ReqId, _R),
-        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,
-                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_ServiceUnavailable,
-                                                    ?XML_ERROR_MSG_ServiceUnavailable,
+        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_SlowDown,
+                                                    ?XML_ERROR_MSG_SlowDown,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
 -define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
