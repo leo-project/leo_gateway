@@ -30,6 +30,7 @@
 
 -behaviour(supervisor).
 
+-include("leo_gateway.hrl").
 
 %% External exports
 -export([start_link/0]).
@@ -45,10 +46,4 @@ start_link() ->
 %% @spec init([]) -> SupervisorTree
 %% @doc supervisor callback.
 init([]) ->
-    {ok, {{one_for_one, 10, 10}, []}}.
-
-
-%%--------------------------------------------------------------------
-%% Internal Functions.
-%%--------------------------------------------------------------------
-
+    {ok, {_SupFlags = {one_for_one, 5, 60}, []}}.

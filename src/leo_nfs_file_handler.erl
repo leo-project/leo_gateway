@@ -184,7 +184,7 @@ rename_large_object_1(Key, Meta) ->
 
 %% @private
 rename_large_object_2(Meta) ->
-    leo_gateway_large_object_handler:delete_chunked_objects(Meta#?METADATA.key),
+    leo_large_object_commons:delete_chunked_objects(Meta#?METADATA.key),
     catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
     ok.
 
@@ -320,18 +320,18 @@ large_obj_update(Key, Data) ->
     LargeObjectProp   = ?env_large_object_properties(),
     ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
                                            LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
-    {ok, Handler} = leo_gateway_large_object_handler:start_link(Key, ChunkedObjLen),
-    case catch leo_gateway_large_object_handler:put(Handler, Data) of
+    {ok, Handler} = leo_large_object_put_handler:start_link(Key, ChunkedObjLen),
+    case catch leo_large_object_put_handler:put(Handler, Data) of
         ok ->
             large_obj_commit(Handler, Key, size(Data), ChunkedObjLen);
         {_, Cause} ->
-            ok = leo_gateway_large_object_handler:rollback(Handler),
+            ok = leo_large_object_put_handler:rollback(Handler),
             {error, Cause}
     end.
 
 %% @private
 large_obj_commit(Handler, Key, Size, ChunkedObjLen) ->
-    case catch leo_gateway_large_object_handler:result(Handler) of
+    case catch leo_large_object_put_handler:result(Handler) of
         {ok, #large_obj_info{length = TotalSize,
                              num_of_chunks = TotalChunks,
                              md5_context   = Digest}} when Size == TotalSize ->

@@ -32,6 +32,7 @@
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
+-include_lib("leo_watchdog/include/leo_watchdog.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([get_node_status/0,
@@ -111,6 +112,19 @@ get_node_status() ->
           {version,       Version},
           {dirs,          Directories},
           {ring_checksum, RingHashes},
+          {watchdog,
+           [{cpu_enabled,    ?env_wd_cpu_enabled(leo_gateway)},
+            {io_enabled,     ?env_wd_io_enabled(leo_gateway)},
+            {rex_interval,   ?env_wd_rex_interval(leo_gateway)},
+            {cpu_interval,   ?env_wd_cpu_interval(leo_gateway)},
+            {io_interval,    ?env_wd_io_interval(leo_gateway)},
+            {rex_threshold_mem_capacity,  ?env_wd_threshold_mem_capacity(leo_gateway)},
+            {cpu_threshold_cpu_load_avg,  ?env_wd_threshold_cpu_load_avg(leo_gateway)},
+            {cpu_threshold_cpu_util,      ?env_wd_threshold_cpu_util(leo_gateway)},
+            {io_threshold_input_per_sec,  ?env_wd_threshold_input_per_sec(leo_gateway)},
+            {io_threshold_output_per_sec, ?env_wd_threshold_output_per_sec(leo_gateway)}
+           ]
+          },
           {statistics,    Statistics},
           {http_conf,     HttpConf}
          ]}.
@@ -142,7 +156,8 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
     Ret = case leo_misc:node_existence(Node2) of
               true ->
                   case rpc:call(Node2, leo_manager_api, register,
-                                [RequestedTimes, Pid, erlang:node(), gateway], ?DEF_TIMEOUT) of
+                                [RequestedTimes, Pid,
+                                 erlang:node(), ?WORKER_NODE], ?DEF_TIMEOUT) of
                       {ok, SystemConf} ->
                           Options = lists:zip(
                                       record_info(

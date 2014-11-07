@@ -27,13 +27,14 @@
 -module(leo_nginx_conf_parser).
 
 %% External exports
--export([parse/1]).
+-export([parse/1, get_custom_headers/2]).
 
+-include_lib("eunit/include/eunit.hrl").
 
 %% regular expressions to retrieve custom header information
--define(REGEX_LOCATION_BLOCK, "location\s+([-_/a-zA-Z0-9]+)\s+{([^}]+)}").
--define(REGEX_KEY_VALUE_PAIR, "\s+([-_/a-zA-Z0-9]+)\s+([^;]+);").
-
+-define(REGEX_LOCATION_BLOCK, "location\s+([-~%\._/0-9a-zA-Z]+)\s+{([^}]+)}").
+-define(REGEX_KEY_VALUE_PAIR, "\s+([-~%\._/0-9a-zA-Z]+)\s+([^;]+);").
+-define(REGEX_EXPIRE_VALUE, "(?:([0-9]+)d)?(?:([0-9]+)h)?(?:([0-9]+)m)?(?:([0-9]+)s)?|(-?[0-9]+)").
 
 %% @doc Parse a nginx configuration file to get custom header settings.
 -spec(parse(FileName) ->
@@ -43,10 +44,126 @@
 parse(FileName) ->
     parse_1(file:read_file(FileName)).
 
+%% @doc Get custom HTTP headers based on the return value of parse function
+-spec(get_custom_headers(Path, ParseResult) ->
+             {ok, list()} when Path::binary(), ParseResult::list()).
+get_custom_headers(_Path, undefined) ->
+    {ok, []};
+get_custom_headers(Path, ParseResult) ->
+    Ret = match_path_pattern(Path, ParseResult),
+    case Ret of
+        undefined ->
+            {ok, []};
+        Value ->
+            make_result_headers(Value, [])
+    end.
 
 %%--------------------------------------------------------------------
 %% Internal Functions.
 %%--------------------------------------------------------------------
+% @private
+match_path_pattern(_Path, []) ->
+    undefined;
+match_path_pattern(Path, [{Prefix, Value}|T]) ->
+    case binary:match(Path, Prefix) of
+        nomatch ->
+            match_path_pattern(Path, T);
+        {0, _} ->
+            Value;
+        {_, _} ->
+            match_path_pattern(Path, T)
+    end.
+
+% @private
+make_result_headers([], Acc) ->
+    {ok, Acc};
+make_result_headers([{<<"add_header">>, KeyValuePair}|T], Acc) ->
+    [Key, Val|_] = binary:split(KeyValuePair, <<" ">>),
+    NewAcc = case Key of
+        <<"Cache-Control">> ->
+            merge_cache_control_values(Val, Acc);
+        _ ->
+            [{Key, Val}|Acc]
+    end,
+    make_result_headers(T, NewAcc);
+make_result_headers([{<<"expires">>, ExpireVal}|T], Acc) ->
+    ExpireInSec = normalize_expires(ExpireVal),
+    {_, CCVal}= make_cache_control_header(ExpireInSec),
+    NewAcc = merge_cache_control_values(CCVal, Acc),
+    make_result_headers(T, NewAcc);
+make_result_headers([{_, _KeyValuePair}|T], Acc) ->
+    make_result_headers(T, Acc).
+
+% @private
+normalize_expires(ExpireVal) ->
+    {ok, MP} = re:compile(?REGEX_EXPIRE_VALUE),
+    case re:run(ExpireVal, MP, [notempty,{capture, all_but_first, binary}]) of
+        {error, ErrType} ->
+            {error, ErrType};
+        nomatch ->
+            not_found;
+        {match, [_,_,_,_,Digit|_]} ->
+            % Consit of only digits
+            erlang:binary_to_integer(Digit);
+        {match, [Day, Hour, Minute, Second|_]} ->
+            % Follow the below format
+            % For example, `1d1h30m15s` stands for 1 day, 1 hour, 30 minutes, 15 secs
+            % so that in order to deal with that value at max-age field,
+            % that should be converted to `5415` in seconnds
+            day2int_in_sec(Day) + 
+            hour2int_in_sec(Hour) + 
+            minute2int_in_sec(Minute) +
+            sec2int_in_sec(Second);
+        {match, [Day, Hour, Minute|_]} ->
+            day2int_in_sec(Day) + 
+            hour2int_in_sec(Hour) + 
+            minute2int_in_sec(Minute) ;
+        {match, [Day, Hour|_]} ->
+            day2int_in_sec(Day) + 
+            hour2int_in_sec(Hour);
+        {match, [Day|_]} ->
+            day2int_in_sec(Day);
+        {match, _} ->
+            {error, invalid_format}
+    end.
+
+% @private
+day2int_in_sec(<<>>) ->
+    0;
+day2int_in_sec(BinDay) ->
+    erlang:binary_to_integer(BinDay) * 86400.
+
+hour2int_in_sec(<<>>) ->
+    0;
+hour2int_in_sec(BinHour) ->
+    erlang:binary_to_integer(BinHour) * 3600.
+
+minute2int_in_sec(<<>>) ->
+    0;
+minute2int_in_sec(BinMinute) ->
+    erlang:binary_to_integer(BinMinute) * 60.
+
+sec2int_in_sec(<<>>) ->
+    0;
+sec2int_in_sec(BinSec) ->
+    erlang:binary_to_integer(BinSec).
+
+% @private
+make_cache_control_header(ExpireVal) when is_integer(ExpireVal), ExpireVal >= 0 ->
+    BinExpireVal = erlang:integer_to_binary(ExpireVal),
+    {<<"Cache-Control">>, <<"max-age=", BinExpireVal/binary>>};
+make_cache_control_header(ExpireVal) when is_integer(ExpireVal) ->
+    {<<"Cache-Control">>, <<"no-cache">>}.
+
+merge_cache_control_values(NewVal, List) ->
+    case lists:keyfind(<<"Cache-Control">>, 1, List) of
+        false ->
+            [{<<"Cache-Control">>, NewVal}|List];
+        {_, OldVal} ->
+            List2 = lists:keydelete(<<"Cache-Control">>, 1, List),
+            [{<<"Cache-Control">>, <<OldVal/binary, <<", ">>/binary, NewVal/binary>>}|List2]
+    end.
+
 %% @private
 parse_1({error, Reason}) ->
     {error, Reason};
@@ -64,7 +181,7 @@ parse_1({ok, Binary}) ->
 
 %% @private
 parse_2([], _Bin, _MP2, Acc) ->
-    Acc;
+    {ok, Acc};
 parse_2([H|T], Bin, MP2, Acc) ->
     case parse_3(H, Bin, MP2) of
         {error, Cause} ->
@@ -119,3 +236,18 @@ parse_location_body_2([_, {KeyPos, KeyLen}, {ValPos, ValLen}|_T], Bin) ->
     {Key, Val};
 parse_location_body_2(_, _Bin) ->
     {error, invalid_location_format}.
+
+-ifdef(EUNIT).
+normalize_expires_test() ->
+    ?assertEqual(30, normalize_expires(<<"30">>)),
+    ?assertEqual(-10, normalize_expires(<<"-10">>)),
+    ?assertEqual(86400, normalize_expires(<<"1d">>)),
+    ?assertEqual(7200, normalize_expires(<<"2h">>)),
+    ?assertEqual(1800, normalize_expires(<<"30m">>)),
+    ?assertEqual(40, normalize_expires(<<"40s">>)),
+    ?assertEqual(90061, normalize_expires(<<"1d1h1m1s">>)),
+    ?assertEqual(86460, normalize_expires(<<"1d1m">>)),
+    ?assertEqual(3630, normalize_expires(<<"1h30s">>)),
+    ?assertEqual(172845, normalize_expires(<<"2d45s">>)),
+    ok.
+-endif.

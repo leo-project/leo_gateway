@@ -88,6 +88,7 @@
 -define(HTTP_ST_BAD_REQ,             400).
 -define(HTTP_ST_FORBIDDEN,           403).
 -define(HTTP_ST_NOT_FOUND,           404).
+-define(HTTP_ST_CONFLICT,            409).
 -define(HTTP_ST_BAD_RANGE,           416).
 -define(HTTP_ST_INTERNAL_ERROR,      500).
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
@@ -103,6 +104,9 @@
 -define(DEF_HTTP_SSL_C_FILE,          "./server_cert.pem").
 -define(DEF_HTTP_SSL_K_FILE,          "./server_key.pem").
 -define(DEF_HTTP_NUM_OF_ACCEPTORS,    32).
+-define(DEF_HTTP_CUSTOM_HEADER_CONF,  "./http_custom_header.conf").
+-define(DEF_HTTP_TIMEOUT_FOR_HEADER,  5000).
+-define(DEF_HTTP_TIMEOUT_FOR_BODY,    15000).
 -define(DEF_HTTP_CACHE,               false).
 -define(DEF_HTTP_MAX_KEEPALIVE,       1024).
 -define(DEF_CACHE_WORKERS,            64).
@@ -127,6 +131,9 @@
 -define(XML_ERROR_CODE_InvalidRange,    "InvalidRange").
 -define(XML_ERROR_CODE_InternalError,   "InternalError").
 -define(XML_ERROR_CODE_ServiceUnavailable, "ServiceUnavailable").
+-define(XML_ERROR_CODE_SlowDown, "SlowDown").
+-define(XML_ERROR_CODE_BucketAlreadyExists, "BucketAlreadyExists").
+-define(XML_ERROR_CODE_BucketAlreadyOwnedByYou, "BucketAlreadyOwnedByYou").
 
 %% error messages used in a error response
 -define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
@@ -136,6 +143,9 @@
 -define(XML_ERROR_MSG_InvalidRange,    "The requested range cannot be satisfied.").
 -define(XML_ERROR_MSG_InternalError,   "We encountered an internal error. Please try again.").
 -define(XML_ERROR_MSG_ServiceUnavailable,   "Please reduce your request rate.").
+-define(XML_ERROR_MSG_SlowDown,   "Please reduce your request rate.").
+-define(XML_ERROR_MSG_BucketAlreadyExists,     "Please select a different name and try again.").
+-define(XML_ERROR_MSG_BucketAlreadyOwnedByYou, "Your previous request to create the named bucket succeeded and you already own it.").
 
 %% Macros
 -define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
@@ -166,20 +176,29 @@
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_NoSuchKey,
                                                     ?XML_ERROR_MSG_NoSuchKey,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_conflict(_H, _Code, _Msg, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_CONFLICT, _H,
+                         io_lib:format(?XML_ERROR, [_Code, _Msg,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
 -define(reply_bad_range(_H, _Key, _ReqId, _R),
         cowboy_req:reply(?HTTP_ST_BAD_RANGE, _H,
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InvalidRange,
                                                     ?XML_ERROR_MSG_InvalidRange,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_service_unavailable_error(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_ServiceUnavailable,
+                                                    ?XML_ERROR_MSG_ServiceUnavailable,
+                                                    _Key, _ReqId]), _R)).
 -define(reply_internal_error(_H, _Key, _ReqId, _R),
         cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_InternalError,
                                                     ?XML_ERROR_MSG_InternalError,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 -define(reply_timeout(_H, _Key, _ReqId, _R),
-        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,
-                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_ServiceUnavailable,
-                                                    ?XML_ERROR_MSG_ServiceUnavailable,
+        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_SlowDown,
+                                                    ?XML_ERROR_MSG_SlowDown,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
 -define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
@@ -287,6 +306,9 @@
           ssl_keyfile = []             :: string(),       %% ssk key file name
           num_of_acceptors = 0         :: pos_integer(),  %% # of acceptors (http server's workers)
           max_keepalive = 0            :: pos_integer(),  %% # of request per processes
+          headers_config_file = []     :: string(),       %% HTTP custom header configuration file path
+          timeout_for_header           :: pos_integer(),  %% Timeout for reading header
+          timeout_for_body             :: pos_integer(),  %% Timeout for reading body
           %% for cache
           cache_method                 :: cache_method(), %% cahce method: [http | inner]
           cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers
@@ -316,6 +338,9 @@
           token_length = 0           :: non_neg_integer(),      %% length of tokened path
           min_layers = 0             :: non_neg_integer(),      %% acceptable # of min layers
           max_layers = 0             :: non_neg_integer(),      %% acceptable # of max layers
+          custom_header_settings     :: list() | undefined,     %% http custom header settings
+          timeout_for_header         :: pos_integer(),          %% Timeout for reading header
+          timeout_for_body           :: pos_integer(),          %% Timeout for reading body
           qs_prefix = <<>>           :: binary() | none,        %% query string
           range_header               :: string(),               %% range header
           has_inner_cache = false    :: boolean(),              %% has inner-cache?

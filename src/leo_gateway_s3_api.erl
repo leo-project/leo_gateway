@@ -77,15 +77,23 @@ init({_Any, http}, Req, Opts) ->
 %% @doc Handle a request
 %% @callback
 handle(Req, State) ->
-    {Host,    _} = cowboy_req:host(Req),
-    %% Host header must be included even if a request with HTTP/1.0
-    case Host of
-        <<>> ->
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                               ?XML_ERROR_MSG_InvalidArgument, <<>>, <<>>, Req);
-        _ ->
-            {Bucket, Path} = get_bucket_and_path(Req),
-            handle_1(Req, State, Bucket, Path)
+    case leo_watchdog_state:find_not_safe_items() of
+        not_found ->
+            {Host,    _} = cowboy_req:host(Req),
+            %% Host header must be included even if a request with HTTP/1.0
+            case Host of
+                <<>> ->
+                    {ok, Req2} = ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                       ?XML_ERROR_MSG_InvalidArgument, <<>>, <<>>, Req),
+                    {ok, Req2, State};
+                _ ->
+                    {Bucket, Path} = get_bucket_and_path(Req),
+                    handle_1(Req, State, Bucket, Path)
+            end;
+        {ok, ErrorItems} ->
+            ?debug("handle/2", "error-items:~p", [ErrorItems]),
+            {ok, Req2} = ?reply_service_unavailable_error([?SERVER_HEADER], <<>>, <<>>, Req),
+            {ok, Req2, State}
     end.
 
 %% @doc Terminater
@@ -135,6 +143,8 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok(Header, XML, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
@@ -167,6 +177,14 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
+        {error, invalid_access} ->
+            ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req);
+        {error, already_exists} ->
+            ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyExists,
+                               ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req);
+        {error, already_yours} ->
+            ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou,
+                               ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end;
@@ -266,7 +284,8 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
         false ->
             Ret = case cowboy_req:has_body(Req) of
                       true ->
-                          case cowboy_req:body(Req) of
+                          BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
+                          case cowboy_req:body(Req, BodyOpts) of
                               {ok, Bin, Req1} ->
                                   {ok, {Size, Bin, Req1}};
                               {error, Cause} ->
@@ -281,7 +300,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
 put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Params) ->
-    CS = cowboy_http:urldecode(?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE)),
+    CS = cow_qs:urldecode(?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE)),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
     CS2 = case binary:part(CS, {0, 1}) of
@@ -298,6 +317,8 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
             put_large_object_1(Directive, Req, Key, Meta, Params);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
@@ -314,6 +335,8 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
             resp_copy_obj_xml(Req, Meta);
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
             put_object_2(Req, Key, Meta);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
@@ -334,6 +357,8 @@ put_object_3(Req, Meta) ->
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Meta#?METADATA.key, <<>>, Req);
         {error, timeout} ->
@@ -363,7 +388,7 @@ put_large_object_2(Req, Key, Meta) ->
     end.
 
 put_large_object_3(Req, Meta) ->
-    leo_gateway_large_object_handler:delete_chunked_objects(Meta#?METADATA.key),
+    leo_large_object_commons:delete_chunked_objects(Meta#?METADATA.key),
     catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
     resp_copy_obj_xml(Req, Meta).
 
@@ -402,13 +427,13 @@ get_bucket_and_path(Req) ->
                   end,
     {Host,    _} = cowboy_req:host(Req),
     {RawPath, _} = cowboy_req:path(Req),
-    Path = cowboy_http:urldecode(RawPath),
+    Path = cow_qs:urldecode(RawPath),
     leo_http:key(EndPoints_2, Host, Path).
 
 
 %% @doc Handle an http-request
 %% @private
-handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, Bucket, Path) ->
+handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSettings, Props] = State, Bucket, Path) ->
     BinPart    = binary:part(Path, {byte_size(Path)-1, 1}),
     TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod = cowboy_req:get(method, Req),
@@ -446,6 +471,9 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, Props] = State, 
                              max_chunked_objs  = Props#http_options.max_chunked_objs,
                              max_len_of_obj    = Props#http_options.max_len_of_obj,
                              chunked_obj_len   = Props#http_options.chunked_obj_len,
+                             custom_header_settings  = CustomHeaderSettings,
+                             timeout_for_header      = Props#http_options.timeout_for_header,
+                             timeout_for_body        = Props#http_options.timeout_for_body,
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                              threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
@@ -481,6 +509,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
                 XML = gen_upload_initiate_xml(Bucket, Path_1, UploadId),
 
                 ?reply_ok([?SERVER_HEADER], XML, Req);
+            {error, unavailable} ->
+                ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req);
             {error, Cause} ->
@@ -518,6 +548,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, _,
                 put_object(?BIN_EMPTY, Req, Key2, Params);
             {error, not_found} ->
                 ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);
+            {error, unavailable} ->
+                ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req);
             {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -576,6 +608,8 @@ handle_multi_upload_1(true, Req, Path, UploadId, CL) ->
 
             Ret = cowboy_req:body(Req),
             handle_multi_upload_2(Ret, Req, Path, CL);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         _ ->
             ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
     end;
@@ -602,11 +636,15 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path, CL) ->
                     ETag2 = leo_hex:integer_to_hex(ETag1, 32),
                     XML   = gen_upload_completion_xml(Bucket, Path_1, ETag2, TotalUploadedObjs),
                     ?reply_ok([?SERVER_HEADER], XML, Req);
+                {error, unavailable} ->
+                    ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
                 {error, Cause} ->
                     ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
                            [binary_to_list(Path), Cause]),
                     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
             end;
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         {error, Cause} ->
             ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
@@ -786,7 +824,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                     {RawURI,  _} = cowboy_req:path(Req),
                     {QStr,    _} = cowboy_req:qs(Req),
                     {Headers, _} = cowboy_req:headers(Req),
-        
+
                     %% NOTE:
                     %% - from s3cmd, dragondisk and others:
                     %%     -   Path: <<"photo/img">>
@@ -815,7 +853,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                              << ?STR_SLASH, RawURI/binary >>
                                      end
                              end,
-        
+
                     Len = byte_size(QStr),
                     QStr_2 = case (Len > 0 andalso binary:last(QStr) == $=) of
                                  true ->
@@ -836,7 +874,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                              lists:sort(string:tokens(binary_to_list(QStr_2), "&"))),
                                      list_to_binary(Ret)
                              end,
-        
+
                     SignParams = #sign_params{http_verb     = HTTPMethod,
                                               content_md5   = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
                                               content_type  = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),

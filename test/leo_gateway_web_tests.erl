@@ -177,6 +177,13 @@ setup(InitFun, TermFun) ->
                 {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
                                        permissions = [read, write]}]}),
 
+    Date = erlang:list_to_binary(leo_http:rfc1123_date(leo_date:now())),
+    meck:new(cowboy_clock, [non_strict]),
+    meck:expect(cowboy_clock, rfc1123, 0, Date),
+
+    meck:new(leo_watchdog_state, [non_strict]),
+    meck:expect(leo_watchdog_state, find_not_safe_items, fun() -> not_found end),
+
     meck:new(leo_metrics_req, [non_strict]),
     meck:expect(leo_metrics_req, notify, fun(_) -> ok end),
     ok = rpc:call(Node1, meck, new,    [leo_metrics_req, [no_link, non_strict]]),

@@ -40,6 +40,7 @@
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
 -include_lib("leo_statistics/include/leo_statistics.hrl").
 -include_lib("nfs_rpc_server/src/nfs_rpc_app.hrl").
+-include_lib("leo_watchdog/include/leo_watchdog.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -behaviour(application).
@@ -88,6 +89,7 @@ start() ->
 %% @doc application start callback for leo_gateway.
 start(_Type, _StartArgs) ->
     consider_profiling(),
+    application:start(leo_watchdog),
     App = leo_gateway,
 
     %% Launch Logger(s)
@@ -313,6 +315,34 @@ after_process_0({ok, _Pid} = Res) ->
                  permanent, 2000, worker, [leo_gateway_qos_stat]},
     {ok, _} = supervisor:start_child(RefSup, ChildSpec),
 
+    %% Launch leo-watchdog
+    %% Watchdog for rex's binary usage
+    MaxMemCapacity = ?env_wd_threshold_mem_capacity(leo_gateway),
+    IntervalRex = ?env_wd_rex_interval(leo_gateway),
+    leo_watchdog_sup:start_child(rex, [MaxMemCapacity], IntervalRex),
+
+    %% Wachdog for CPU
+    case ?env_wd_cpu_enabled(leo_gateway) of
+        true ->
+            MaxCPULoadAvg = ?env_wd_threshold_cpu_load_avg(leo_gateway),
+            MaxCPUUtil    = ?env_wd_threshold_cpu_util(leo_gateway),
+            IntervalCpu   = ?env_wd_cpu_interval(leo_gateway),
+            leo_watchdog_sup:start_child(cpu, [MaxCPULoadAvg, MaxCPUUtil], IntervalCpu);
+        false ->
+            void
+    end,
+
+    %% Wachdog for IO
+    case ?env_wd_io_enabled(leo_gateway) of
+        true ->
+            MaxInput   = ?env_wd_threshold_input_per_sec(leo_gateway),
+            MaxOutput  = ?env_wd_threshold_output_per_sec(leo_gateway),
+            IntervalIo = ?env_wd_io_interval(leo_gateway),
+            leo_watchdog_sup:start_child(io, [MaxInput, MaxOutput], IntervalIo);
+        false ->
+            void
+    end,
+
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);
 
@@ -339,20 +369,22 @@ after_process_1(SystemConf, MembersCur, MembersPrev) ->
         undefined ->
             ChildSpec = {leo_redundant_manager_sup,
                          {leo_redundant_manager_sup, start_link,
-                          [gateway, NewManagerNodes, ?env_queue_dir(leo_gateway)]},
+                          [?WORKER_NODE, NewManagerNodes,
+                           ?env_queue_dir(leo_gateway)]},
                          permanent, 2000, supervisor, [leo_redundant_manager_sup]},
             {ok, _} = supervisor:start_child(RefSup, ChildSpec);
         _ ->
             {ok, _} = leo_redundant_manager_sup:start_link(
                         gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
     end,
-    ok = leo_redundant_manager_api:set_options([{n, SystemConf#?SYSTEM_CONF.n},
-                                                {r, SystemConf#?SYSTEM_CONF.r},
-                                                {w, SystemConf#?SYSTEM_CONF.w},
-                                                {d, SystemConf#?SYSTEM_CONF.d},
-                                                {bit_of_ring, SystemConf#?SYSTEM_CONF.bit_of_ring},
-                                                {num_of_dc_replicas,   SystemConf#?SYSTEM_CONF.num_of_dc_replicas},
-                                                {num_of_rack_replicas, SystemConf#?SYSTEM_CONF.num_of_rack_replicas}]),
+    ok = leo_redundant_manager_api:set_options(
+           [{n, SystemConf#?SYSTEM_CONF.n},
+            {r, SystemConf#?SYSTEM_CONF.r},
+            {w, SystemConf#?SYSTEM_CONF.w},
+            {d, SystemConf#?SYSTEM_CONF.d},
+            {bit_of_ring, SystemConf#?SYSTEM_CONF.bit_of_ring},
+            {num_of_dc_replicas,   SystemConf#?SYSTEM_CONF.num_of_dc_replicas},
+            {num_of_rack_replicas, SystemConf#?SYSTEM_CONF.num_of_rack_replicas}]),
 
     {ok,_MembersChecksum} = leo_redundant_manager_api:synchronize(
                               ?SYNC_TARGET_MEMBER, [{?VER_CUR,  MembersCur },
@@ -451,7 +483,8 @@ log_file_appender([], []) ->
 log_file_appender([], Acc) ->
     lists:reverse(Acc);
 log_file_appender([{Type, _}|T], Acc) when Type == file ->
-    log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|[{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]).
+    log_file_appender(T, [{?LOG_ID_FILE_ERROR, ?LOG_APPENDER_FILE}|
+                          [{?LOG_ID_FILE_INFO, ?LOG_APPENDER_FILE}|Acc]]).
 
 
 %% @doc Retrieve properties
@@ -477,6 +510,9 @@ get_options() ->
     SSLKeyFile           = leo_misc:get_value('ssl_keyfile',         HttpProp, ?DEF_HTTP_SSL_K_FILE),
     NumOfAcceptors       = leo_misc:get_value('num_of_acceptors',    HttpProp, ?DEF_HTTP_NUM_OF_ACCEPTORS),
     MaxKeepAlive         = leo_misc:get_value('max_keepalive',       HttpProp, ?DEF_HTTP_MAX_KEEPALIVE),
+    CustomHeaderConf     = leo_misc:get_value('headers_config_file', HttpProp, ?DEF_HTTP_CUSTOM_HEADER_CONF),
+    Timeout4Header       = leo_misc:get_value('timeout_for_header',  HttpProp, ?DEF_HTTP_TIMEOUT_FOR_HEADER),
+    Timeout4Body         = leo_misc:get_value('timeout_for_body',    HttpProp, ?DEF_HTTP_TIMEOUT_FOR_BODY),
 
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
@@ -533,6 +569,9 @@ get_options() ->
                                 ssl_keyfile              = SSLKeyFile,
                                 num_of_acceptors         = NumOfAcceptors,
                                 max_keepalive            = MaxKeepAlive,
+                                headers_config_file      = CustomHeaderConf,
+                                timeout_for_header       = Timeout4Header,
+                                timeout_for_body         = Timeout4Body,
                                 cache_method             = CacheMethod,
                                 cache_workers            = CacheWorkers,
                                 cache_ram_capacity       = CacheRAMCapacity,
@@ -556,6 +595,9 @@ get_options() ->
     ?info("start/3", "ssl keyfile: ~p",              [SSLKeyFile]),
     ?info("start/3", "num of acceptors: ~p",         [NumOfAcceptors]),
     ?info("start/3", "max keepalive: ~p",            [MaxKeepAlive]),
+    ?info("start/3", "http custom header config: ~p",[CustomHeaderConf]),
+    ?info("start/3", "timeout for header : ~p",      [Timeout4Header]),
+    ?info("start/3", "timeout for body: ~p",         [Timeout4Body]),
     ?info("start/3", "cache_method: ~p",             [CacheMethod]),
     ?info("start/3", "cache workers: ~p",            [CacheWorkers]),
     ?info("start/3", "cache ram capacity: ~p",       [CacheRAMCapacity]),
