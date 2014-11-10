@@ -396,16 +396,16 @@
 %% --------------------------------------------------------------------
 %% GATEWAY - Watchdog
 %% --------------------------------------------------------------------
-%% @doc Check inteval (ms) - defalut:5sec
+%% @doc Check inteval (sec) - defalut:5sec
 {mapping,
  "watchdog.rex.interval",
  "leo_gateway.watchdog_rex_interval",
  [
   {datatype, integer},
-  {default, 5000}
+  {default, 5}
  ]}.
 
-%% @doc REX - Threshold memory capacity for binary - defalut:32MB
+%% @doc Threshold memory capacity of binary for rex(rpc) - default:32MB
 {mapping,
  "watchdog.rex.threshold_mem_capacity",
  "leo_gateway.wd_threshold_mem_capacity",
@@ -423,21 +423,21 @@
   {default, false}
  ]}.
 
-%% @doc Check inteval (ms) - defalut:5sec
+%% @doc Check inteval (sec) - defalut:5sec
 {mapping,
  "watchdog.cpu.interval",
  "leo_gateway.wd_cpu_interval",
  [
   {datatype, integer},
-  {default, 5000}
+  {default, 5}
  ]}.
 
-%% @doc Threshold CPU load avg for 1min/5min - default:2
+%% @doc Threshold CPU load avg for 1min/5min - default:2.0
 {mapping,
  "watchdog.cpu.threshold_cpu_load_avg",
- "leo_gateway.wd_threshold_cpu_load_avg",
+ "leo_storage.wd_threshold_cpu_load_avg",
  [
-  {default, 1.5}
+  {default, "2.0"}
  ]}.
 
 %% @doc Threshold CPU load util - default:100 = "100%"
@@ -458,13 +458,13 @@
   {default, false}
  ]}.
 
-%% @doc Check inteval (ms) - defalut:5sec
+%% @doc Check inteval (sec) - defalut:5sec
 {mapping,
  "watchdog.io.interval",
  "leo_gateway.wd_io_interval",
  [
   {datatype, integer},
-  {default, 5000}
+  {default, 1}
  ]}.
 
 %% Threshold input size/sec - default:128MB
