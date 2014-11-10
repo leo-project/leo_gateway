@@ -399,7 +399,7 @@
 %% @doc Check inteval (sec) - defalut:5sec
 {mapping,
  "watchdog.rex.interval",
- "leo_gateway.watchdog_rex_interval",
+  "leo_gateway.wd_rex_interval",
  [
   {datatype, integer},
   {default, 5}
