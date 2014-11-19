@@ -212,10 +212,11 @@
         end).
 
 %% NFS related
--define(DEF_MOUNTD_PORT,      22050).
--define(DEF_MOUNTD_ACCEPTORS, 128).
--define(DEF_NFSD_PORT,        2049).
--define(DEF_NFSD_ACCEPTORS,   128).
+-define(DEF_MOUNTD_PORT,        22050).
+-define(DEF_MOUNTD_ACCEPTORS,   128).
+-define(DEF_NFSD_PORT,          2049).
+-define(DEF_NFSD_ACCEPTORS,     128).
+-define(DEF_NFSD_MAX_FILE_SIZE, 18446744073709551615). %% max value in 64bit
 
 -define(env_nfs_options(),
         case application:get_env(leo_gateway, nfs) of
