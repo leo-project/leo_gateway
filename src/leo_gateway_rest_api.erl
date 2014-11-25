@@ -188,6 +188,8 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, _CustomHeaderSet
                                      max_chunked_objs  = Props#http_options.max_chunked_objs,
                                      max_len_of_obj    = Props#http_options.max_len_of_obj,
                                      chunked_obj_len   = Props#http_options.chunked_obj_len,
+                                     timeout_for_header      = Props#http_options.timeout_for_header,
+                                     timeout_for_body        = Props#http_options.timeout_for_body,
                                      reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                                      threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len},
             handle_2(Req, HTTPMethod, Path, ReqParams, State);
