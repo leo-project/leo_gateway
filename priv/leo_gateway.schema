@@ -402,7 +402,7 @@
 %% @doc Check inteval (sec) - defalut:5sec
 {mapping,
  "watchdog.rex.interval",
- "leo_watchdog.wd_rex_interval",
+ "leo_watchdog.rex_interval",
  [
   {datatype, integer},
   {default, 5}
@@ -412,7 +412,7 @@
 %% @doc Threshold memory capacity of binary for rex(rpc) - default:32MB
 {mapping,
  "watchdog.rex.threshold_mem_capacity",
- "leo_watchdog.wd_threshold_mem_capacity",
+ "leo_watchdog.rex_threshold_mem_capacity",
  [
   {datatype, integer},
   {default, 33554432}
@@ -424,7 +424,7 @@
 %% @doc CPU - Is enabled
 {mapping,
  "watchdog.cpu.is_enabled",
- "leo_watchdog.wd_cpu_enabled",
+ "leo_watchdog.cpu_enabled",
  [
   {datatype, atom},
   {default, false}
@@ -433,7 +433,7 @@
 %% @doc CPU - Raised error times - defalut:3
 {mapping,
  "watchdog.cpu.raised_error_times",
- "leo_watchdog.wd_cpu_raised_error_times",
+ "leo_watchdog.cpu_raised_error_times",
  [
   {datatype, integer},
   {default, 3}
@@ -442,7 +442,7 @@
 %% @doc Check inteval (sec) - defalut:5sec
 {mapping,
  "watchdog.cpu.interval",
- "leo_watchdog.wd_cpu_interval",
+ "leo_watchdog.cpu_interval",
  [
   {datatype, integer},
   {default, 5}
@@ -451,15 +451,15 @@
 %% @doc Threshold CPU load avg for 1min/5min - default:3.0
 {mapping,
  "watchdog.cpu.threshold_cpu_load_avg",
- "leo_watchdog.wd_threshold_cpu_load_avg",
+ "leo_watchdog.cpu_threshold_load_avg",
  [
-  {default, "3.0"}
+  {default, "5.0"}
  ]}.
 
 %% @doc Threshold CPU load util - default:100 = "100%"
 {mapping,
  "watchdog.cpu.threshold_cpu_util",
- "leo_watchdog.wd_threshold_cpu_util",
+ "leo_watchdog.cpu_threshold_util",
  [
   {datatype, integer},
   {default, 100}
@@ -471,7 +471,7 @@
 %% @doc IO - Is enabled
 {mapping,
  "watchdog.io.is_enabled",
- "leo_watchdog.wd_io_enabled",
+ "leo_watchdog.io_enabled",
  [
   {datatype, atom},
   {default, false}
@@ -480,7 +480,7 @@
 %% @doc Check inteval (sec) - defalut:1sec
 {mapping,
  "watchdog.io.interval",
- "leo_watchdog.wd_io_interval",
+ "leo_watchdog.io_interval",
  [
   {datatype, integer},
   {default, 1}
@@ -489,7 +489,7 @@
 %% @doc Threshold input size for interval - default:128MB
 {mapping,
  "watchdog.io.threshold_input_per_sec",
- "leo_watchdog.wd_threshold_input_per_sec",
+ "leo_watchdog.io_threshold_input_per_sec",
  [
   {datatype, integer},
   {default, 134217728}
@@ -498,7 +498,7 @@
 %% @doc Threshold output size for interval - default:128MB
 {mapping,
  "watchdog.io.threshold_output_per_sec",
- "leo_watchdog.wd_threshold_output_per_sec",
+ "leo_watchdog.io_threshold_output_per_sec",
  [
   {datatype, integer},
   {default, 134217728}
