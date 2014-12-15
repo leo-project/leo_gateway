@@ -768,7 +768,7 @@
  "leo_mq.backend_db",
  [
   {datatype, atom},
-  {default, 'bitcask'}
+  {default, 'leveldb'}
  ]}.
 
 %% @doc
