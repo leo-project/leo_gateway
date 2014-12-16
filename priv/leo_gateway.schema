@@ -593,6 +593,23 @@
   {default, 30000}
  ]}.
 
+%% @doc Timeout value when requesting a GET to a storage
+{mapping,
+ "timeout.get",
+ "leo_gateway.timeout.get",
+ [
+  {datatype, integer},
+  {default, 30000}
+ ]}.
+
+%% @doc Timeout value when requesting a LS(find_by_parent_dir) to a storage
+{mapping,
+ "timeout.ls",
+ "leo_gateway.timeout.ls",
+ [
+  {datatype, integer},
+  {default, 30000}
+ ]}.
 
 %% --------------------------------------------------------------------
 %% GATEWAY - LOG

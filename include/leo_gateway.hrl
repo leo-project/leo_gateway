@@ -189,9 +189,21 @@
         end).
 
 -define(env_timeout_level_5(),
-        case leo_misc:get_env(leo_gateway, timeout_level_5) of
+        case leo_misc:get_env(leo_gateway, level_5) of
             {ok, EnvTimeoutL5} -> EnvTimeoutL5;
             _ -> ?TIMEOUT_L5_SEC
+        end).
+
+-define(env_timeout_for_get(),
+        case leo_misc:get_env(leo_gateway, get) of
+            {ok, EnvTimeout6} -> EnvTimeout6;
+            _ -> ?DEF_REQ_TIMEOUT
+        end).
+
+-define(env_timeout_for_ls(),
+        case leo_misc:get_env(leo_gateway, ls) of
+            {ok, EnvTimeout7} -> EnvTimeout7;
+            _ -> ?DEF_REQ_TIMEOUT
         end).
 
 %% QoS related
