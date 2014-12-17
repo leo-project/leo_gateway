@@ -544,6 +544,71 @@
   {default, 128}
  ]}.
 
+%% @doc
+{mapping,
+ "mount.port",
+ "mount.port",
+ [
+  {datatype, integer},
+  {default, 22050}
+ ]}.
+{mapping,
+ "mount.num_of_acceptors",
+ "mount.num_of_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
+{mapping,
+ "nfs.port",
+ "nfs.port",
+ [
+  {datatype, integer},
+  {default, 2049}
+ ]}.
+{mapping,
+ "nfs.num_of_acceptors",
+ "nfs.num_of_acceptors",
+ [
+  {datatype, integer},
+  {default, 128}
+ ]}.
+%% @doc Application parameters for Mount/NFS server
+{translation, "rpc_server.args",
+ fun(Conf) ->
+         MountPort      = cuttlefish_util:conf_get_value("mount.port", Conf),
+         MountAcceptors = cuttlefish_util:conf_get_value("mount.num_of_acceptors", Conf),
+         NFSPort        = cuttlefish_util:conf_get_value("nfs.port", Conf),
+         NFSAcceptors   = cuttlefish_util:conf_get_value("nfs.num_of_acceptors", Conf),
+         [
+          {nfs_rpc_app_arg,
+           mountd3,
+           MountAcceptors,
+           [{port, MountPort}],
+           100005,
+           mountprog,
+           [],
+           3,
+           3,
+           true,
+           leo_nfs_mount3_svc,
+           [],
+           []},
+          {nfs_rpc_app_arg,
+           nfsd3,
+           NFSAcceptors,
+           [{port, NFSPort}],
+           100003,
+           nfs3_program,
+           [],
+           3,
+           3,
+           true,
+           leo_nfs_proto3_svc,
+           [],
+           []}]
+ end}.
+
 
 %% --------------------------------------------------------------------
 %% GATEWAY - Timeout
@@ -832,70 +897,6 @@
   {default, false}
  ]}.
 
-%% @doc
-{mapping,
- "mount.port",
- "mount.port",
- [
-  {datatype, integer},
-  {default, 22050}
- ]}.
-{mapping,
- "mount.num_of_acceptors",
- "mount.num_of_acceptors",
- [
-  {datatype, integer},
-  {default, 128}
- ]}.
-{mapping,
- "nfs.port",
- "nfs.port",
- [
-  {datatype, integer},
-  {default, 2049}
- ]}.
-{mapping,
- "nfs.num_of_acceptors",
- "nfs.num_of_acceptors",
- [
-  {datatype, integer},
-  {default, 128}
- ]}.
-%% @doc Application parameters for Mount/NFS server
-{translation, "rpc_server.args",
- fun(Conf) ->
-         MountPort = cuttlefish_util:conf_get_value("mount.port", Conf),
-         MountAcceptors = cuttlefish_util:conf_get_value("mount.num_of_acceptors", Conf),
-         NFSPort = cuttlefish_util:conf_get_value("nfs.port", Conf),
-         NFSAcceptors = cuttlefish_util:conf_get_value("nfs.num_of_acceptors", Conf),
-         [
-          {nfs_rpc_app_arg,
-           mountd3,
-           MountAcceptors,
-           [{port, MountPort}],
-           100005,
-           mountprog,
-           [],
-           3,
-           3,
-           true,
-           leo_nfs_mount3_svc,
-           [],
-           []},
-          {nfs_rpc_app_arg,
-           nfsd3,
-           NFSAcceptors,
-           [{port, NFSPort}],
-           100003,
-           nfs3_program,
-           [],
-           3,
-           3,
-           true,
-           leo_nfs_proto3_svc,
-           [],
-           []}]
- end}.
 
 %% --------------------------------------------------------------------
 %% VM.ARGS
