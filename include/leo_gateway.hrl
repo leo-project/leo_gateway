@@ -189,9 +189,21 @@
         end).
 
 -define(env_timeout_level_5(),
-        case leo_misc:get_env(leo_gateway, timeout_level_5) of
+        case leo_misc:get_env(leo_gateway, level_5) of
             {ok, EnvTimeoutL5} -> EnvTimeoutL5;
             _ -> ?TIMEOUT_L5_SEC
+        end).
+
+-define(env_timeout_for_get(),
+        case leo_misc:get_env(leo_gateway, get) of
+            {ok, EnvTimeout6} -> EnvTimeout6;
+            _ -> ?DEF_REQ_TIMEOUT
+        end).
+
+-define(env_timeout_for_ls(),
+        case leo_misc:get_env(leo_gateway, ls) of
+            {ok, EnvTimeout7} -> EnvTimeout7;
+            _ -> ?DEF_REQ_TIMEOUT
         end).
 
 %% QoS related
@@ -212,10 +224,11 @@
         end).
 
 %% NFS related
--define(DEF_MOUNTD_PORT,      22050).
--define(DEF_MOUNTD_ACCEPTORS, 128).
--define(DEF_NFSD_PORT,        2049).
--define(DEF_NFSD_ACCEPTORS,   128).
+-define(DEF_MOUNTD_PORT,        22050).
+-define(DEF_MOUNTD_ACCEPTORS,   128).
+-define(DEF_NFSD_PORT,          2049).
+-define(DEF_NFSD_ACCEPTORS,     128).
+-define(DEF_NFSD_MAX_FILE_SIZE, 18446744073709551615). %% max value in 64bit
 
 -define(env_nfs_options(),
         case application:get_env(leo_gateway, nfs) of

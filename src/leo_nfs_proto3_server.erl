@@ -423,7 +423,7 @@ nfsproc3_fsstat_3(_1, Clnt, State) ->
 %% @doc
 nfsproc3_fsinfo_3(_1, Clnt, State) ->
     ?debug("nfsproc3_fsinfo_3", "args:~p client:~p", [_1, Clnt]),
-    MaxFileSize = 1024 * 1024 * 1024 * 4,
+    MaxFileSize = ?DEF_NFSD_MAX_FILE_SIZE,
     {reply, {?NFS3_OK, {{false, void}, %% post_op_attr
                         5242880,       %% rtmax
                         5242880,       %% rtperf(limited at client up to 1024 * 1024)

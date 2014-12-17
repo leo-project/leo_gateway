@@ -271,7 +271,7 @@ timeout(_)                              -> ?env_timeout_level_5().
 
 timeout(put, [#?OBJECT{dsize = DSize}, _]) ->
     timeout(DSize);
-timeout(get, _) ->
-    ?DEF_REQ_TIMEOUT;
+timeout(get, _) -> ?env_timeout_for_get();
+timeout(find_by_parent_dir, _) -> ?env_timeout_for_ls();
 timeout(_, _) ->
     ?DEF_REQ_TIMEOUT.

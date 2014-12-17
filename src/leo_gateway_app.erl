@@ -315,34 +315,6 @@ after_process_0({ok, _Pid} = Res) ->
                  permanent, 2000, worker, [leo_gateway_qos_stat]},
     {ok, _} = supervisor:start_child(RefSup, ChildSpec),
 
-    %% Launch leo-watchdog
-    %% Watchdog for rex's binary usage
-    MaxMemCapacity = ?env_wd_threshold_mem_capacity(leo_gateway),
-    IntervalRex = ?env_wd_rex_interval(leo_gateway),
-    leo_watchdog_sup:start_child(rex, [MaxMemCapacity], IntervalRex),
-
-    %% Wachdog for CPU
-    case ?env_wd_cpu_enabled(leo_gateway) of
-        true ->
-            MaxCPULoadAvg = ?env_wd_threshold_cpu_load_avg(leo_gateway),
-            MaxCPUUtil    = ?env_wd_threshold_cpu_util(leo_gateway),
-            IntervalCpu   = ?env_wd_cpu_interval(leo_gateway),
-            leo_watchdog_sup:start_child(cpu, [MaxCPULoadAvg, MaxCPUUtil], IntervalCpu);
-        false ->
-            void
-    end,
-
-    %% Wachdog for IO
-    case ?env_wd_io_enabled(leo_gateway) of
-        true ->
-            MaxInput   = ?env_wd_threshold_input_per_sec(leo_gateway),
-            MaxOutput  = ?env_wd_threshold_output_per_sec(leo_gateway),
-            IntervalIo = ?env_wd_io_interval(leo_gateway),
-            leo_watchdog_sup:start_child(io, [MaxInput, MaxOutput], IntervalIo);
-        false ->
-            void
-    end,
-
     %% Check status of the storage-cluster
     inspect_cluster_status(Res, ManagerNodes1);
 

@@ -74,6 +74,8 @@ start(#http_options{handler                = Handler,
                                    Ret;
                                not_found ->
                                    undefined;
+                               {error, enoent} ->
+                                   undefined;
                                {error, Reason} ->
                                    ?error("start/1", "read http custom header file failed. cause:~p", [Reason]),
                                    undefined
