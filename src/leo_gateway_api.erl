@@ -121,6 +121,7 @@ get_node_status() ->
             {rex_threshold_mem_capacity,  ?env_wd_threshold_mem_capacity()},
             {cpu_threshold_cpu_load_avg,  ?env_wd_threshold_cpu_load_avg()},
             {cpu_threshold_cpu_util,      ?env_wd_threshold_cpu_util()},
+            {cpu_raised_error_times,      ?env_wd_cpu_raised_error_times()},
             {io_threshold_input_per_sec,  ?env_wd_threshold_input_per_sec()},
             {io_threshold_output_per_sec, ?env_wd_threshold_output_per_sec()}
            ]
