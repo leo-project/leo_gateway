@@ -127,16 +127,25 @@ onresponse(CacheCondition) ->
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false,
                                  qs_prefix     = Prefix}) ->
-    Marker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
-                 {undefined, _} -> [];
-                 {Val_1,     _} -> Val_1
+    NormalizedMarker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
+                 {undefined, _} -> <<>>;
+                 {Marker,     _} ->
+                     %% Normalize Marker
+                     %% Append $BucketName/ at the beginning of Marker as necessary
+                     KeySize = size(Key),
+                     case binary:match(Marker, Key) of
+                         {0, KeySize} ->
+                             Marker;
+                         _Other ->
+                             <<Key/binary, Marker/binary>>
+                     end
              end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
                   {undefined, _} -> 1000;
                   {Val_2,     _} -> list_to_integer(binary_to_list(Val_2))
               end,
 
-    case get_bucket_1(AccessKeyId, Key, none, Marker, MaxKeys, Prefix) of
+    case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
