@@ -203,8 +203,8 @@ invoke([#redundant_node{node      = Node,
         {value, {ok, _Meta} = Ret} ->
             Ret;
         %% error
-        {value, {error,_Cause} = Ret} ->
-            Ret;
+        {value, {error,_Cause}} = Error ->
+            {error, handle_error(Node, Mod, Method, Args, Error)};
         Error ->
             E = handle_error(Node, Mod, Method, Args, Error),
             invoke(T, Mod, Method, Args, [E|Errors])
@@ -245,7 +245,9 @@ error_filter([_H|T],                Prev) -> error_filter(T, Prev).
 
 %% @doc Handle an error response
 %%
-handle_error(_Node, _Mod, _Method, _Args, {value, {error, not_found = Error}}) ->
+handle_error(_Node,_Mod,_Method,_Args, {value, {error, not_found = Error}}) ->
+    Error;
+handle_error(_Node,_Mod,_Method,_Args, {value, {error, unavailable = Error}}) ->
     Error;
 handle_error(Node, Mod, Method, _Args, {value, {error, Cause}}) ->
     ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
