@@ -122,7 +122,7 @@
  "leo_gateway.system_version",
  [
   {datatype, string},
-  {default, "1.2.6"}
+  {default, "1.2.7"}
  ]}.
 
 
@@ -511,6 +511,148 @@
  [
   {datatype, integer},
   {default, 134217728}
+ ]}.
+
+
+%%
+%%  Watchdog.disk
+%%
+%% @doc Disk - Is enabled
+{mapping,
+ "watchdog.disk.is_enabled",
+ "leo_watchdog.disk_enabled",
+ [
+  {datatype, atom},
+  {default, false}
+ ]}.
+
+%% @doc Disk - Raised error times - defalut:3
+{mapping,
+ "watchdog.disk.raised_error_times",
+ "leo_watchdog.disk_raised_error_times",
+ [
+  {datatype, integer},
+  {default, 3}
+ ]}.
+
+%% @doc Check inteval (sec) - defalut:1sec
+{mapping,
+ "watchdog.disk.interval",
+ "leo_watchdog.disk_interval",
+ [
+  {datatype, integer},
+  {default, 1}
+ ]}.
+
+
+%% @doc
+{mapping,
+ "watchdog.disk.target_paths",
+ "leo_watchdog.disk_target_paths",
+ [
+  {datatype, string},
+  {default, []}
+ ]}.
+
+{translation, "leo_watchdog.disk_target_paths",
+ fun(Conf) ->
+         %% retrieve pathes
+         Paths = cuttlefish_util:conf_get_value("obj_containers.path", Conf),
+         Paths_1 = case string:tokens(Paths, "[ , ]") of
+                       [] ->
+                           ["./avs"];
+                       Tokens_1 ->
+                           Tokens_1
+                   end,
+         lists:map(
+           fun(Path) ->
+                   {ok, Curr} = file:get_cwd(),
+                   Path_1 = case Path of
+                                "/"   ++ _Rest -> Path;
+                                "../" ++ _Rest -> Path;
+                                "./"  ++  Rest -> Curr ++ "/" ++ Rest;
+                                _              -> Curr ++ "/" ++ Path
+                            end,
+                   Path_2 = case (string:len(Path_1) == string:rstr(Path_1, "/")) of
+                                true  -> Path_1;
+                                false -> Path_1 ++ "/"
+                            end,
+                   Path_2
+           end, Paths_1)
+ end}.
+
+
+%% @doc Threshold disk use% - default:85%
+{mapping,
+ "watchdog.disk.threshold_disk_use",
+ "leo_watchdog.disk_threshold_use",
+ [
+  {datatype, integer},
+  {default, 85}
+ ]}.
+
+%% @doc Threshold disk util% - default:100%
+{mapping,
+ "watchdog.disk.threshold_disk_util",
+ "leo_watchdog.disk_threshold_util",
+ [
+  {datatype, integer},
+  {default, 100}
+ ]}.
+
+%% @doc Threshold disk read kb/sec
+%%      default:131072(KB) - 256MB
+{mapping,
+ "watchdog.disk.threshold_disk_rkb",
+ "leo_watchdog.disk_threshold_rkb",
+ [
+  {datatype, integer},
+  {default, 262144}
+ ]}.
+
+%% @doc Threshold disk write kb/sec
+%%      default:262144(KB) - 256MB
+{mapping,
+ "watchdog.disk.threshold_disk_wkb",
+ "leo_watchdog.disk_threshold_wkb",
+ [
+  {datatype, integer},
+  {default, 262144}
+ ]}.
+
+
+%% @doc Threshold disk write kb/sec
+%%      default:262144(KB) - 256MB
+{mapping,
+ "watchdog.disk.target_devices",
+ "leo_watchdog.disk_target_devices",
+ [
+  {datatype, string},
+  {default, []}
+ ]}.
+
+{translation, "leo_watchdog.disk_target_devices",
+ fun(Conf) ->
+         Managers = cuttlefish_util:conf_get_value("watchdog.disk.target_devices", Conf),
+         case string:tokens(Managers, "[ , ]") of
+             [] ->
+                 [];
+             Tokens ->
+                 Tokens
+         end
+ end}.
+
+
+%%
+%%  Watchdog.Cluster
+%%
+%% @doc Cluster - Is enabled
+{mapping,
+ "watchdog.cluster.is_enabled",
+ "leo_watchdog.cluster_enabled",
+ [
+  {datatype, atom},
+  {default, false}
  ]}.
 
 

@@ -84,7 +84,7 @@ handle(Req, State) ->
             case Host of
                 <<>> ->
                     {ok, Req2} = ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                                       ?XML_ERROR_MSG_InvalidArgument, <<>>, <<>>, Req),
+                                                    ?XML_ERROR_MSG_InvalidArgument, <<>>, <<>>, Req),
                     {ok, Req2, State};
                 _ ->
                     {Bucket, Path} = get_bucket_and_path(Req),
@@ -127,16 +127,26 @@ onresponse(CacheCondition) ->
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false,
                                  qs_prefix     = Prefix}) ->
-    Marker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
-                 {undefined, _} -> [];
-                 {Val_1,     _} -> Val_1
-             end,
+    NormalizedMarker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
+                           {undefined, _} ->
+                               <<>>;
+                           {Marker, _} ->
+                               %% Normalize Marker
+                               %% Append $BucketName/ at the beginning of Marker as necessary
+                               KeySize = size(Key),
+                               case binary:match(Marker, Key) of
+                                   {0, KeySize} ->
+                                       Marker;
+                                   _Other ->
+                                       <<Key/binary, Marker/binary>>
+                               end
+                       end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
                   {undefined, _} -> 1000;
                   {Val_2,     _} -> list_to_integer(binary_to_list(Val_2))
               end,
 
-    case get_bucket_1(AccessKeyId, Key, none, Marker, MaxKeys, Prefix) of
+    case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
@@ -151,7 +161,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end;
 get_bucket(Req, Bucket, #req_params{access_key_id = _AccessKeyId,
-                                     is_acl        = true}) ->
+                                    is_acl        = true}) ->
     Bucket_2 = formalize_bucket(Bucket),
     case leo_s3_bucket:find_bucket_by_name(Bucket_2) of
         {ok, BucketInfo} ->
@@ -181,10 +191,10 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req);
         {error, already_exists} ->
             ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyExists,
-                               ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req);
+                            ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req);
         {error, already_yours} ->
             ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou,
-                               ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req);
+                            ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req);
         {error, timeout} ->
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end;
