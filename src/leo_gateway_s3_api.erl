@@ -289,7 +289,7 @@ put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true} = Params) 
         {ok, Body, Req1} ->
             % 1. Check Content-MD5 with body
             ContentMD5 = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
-            CalculatedMD5 = list_to_binary(leo_hex:binary_to_hex(crypto:hash(md5, Body))),
+            CalculatedMD5 = base64:encode(crypto:hash(md5, Body)),
             delete_multi_objects_2(Req1, Body, ContentMD5, CalculatedMD5, Params);
         {error, _Cause} ->
             ?reply_malformed_xml([?SERVER_HEADER], Req)
