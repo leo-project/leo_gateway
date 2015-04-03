@@ -80,6 +80,7 @@
 -define(HTTP_QS_BIN_PART_NUMBER, <<"partNumber">>).
 -define(HTTP_QS_BIN_MARKER,      <<"marker">>).
 -define(HTTP_QS_BIN_MAXKEYS,     <<"max-keys">>).
+-define(HTTP_QS_BIN_MULTI_DELETE,<<"delete">>).
 
 -define(HTTP_ST_OK,                  200).
 -define(HTTP_ST_NO_CONTENT,          204).
@@ -134,6 +135,8 @@
 -define(XML_ERROR_CODE_SlowDown, "SlowDown").
 -define(XML_ERROR_CODE_BucketAlreadyExists, "BucketAlreadyExists").
 -define(XML_ERROR_CODE_BucketAlreadyOwnedByYou, "BucketAlreadyOwnedByYou").
+-define(XML_ERROR_CODE_MalformedXML, "MalformedXML").
+-define(XML_ERROR_CODE_BadDigest, "BadDigest").
 
 %% error messages used in a error response
 -define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
@@ -146,6 +149,8 @@
 -define(XML_ERROR_MSG_SlowDown,   "Please reduce your request rate.").
 -define(XML_ERROR_MSG_BucketAlreadyExists,     "Please select a different name and try again.").
 -define(XML_ERROR_MSG_BucketAlreadyOwnedByYou, "Your previous request to create the named bucket succeeded and you already own it.").
+-define(XML_ERROR_MSG_MalformedXML, "The XML you provided was not well-formed or did not alidate against our published schema").
+-define(XML_ERROR_MSG_BadDigest, "The Content-MD5 you specified did not match what we received.").
 
 %% Macros
 -define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
@@ -199,6 +204,16 @@
         cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_SlowDown,
                                                     ?XML_ERROR_MSG_SlowDown,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_malformed_xml(_H, _R),
+        cowboy_req:reply(?HTTP_ST_OK, _H,
+                         io_lib:format(?XML_ERROR_2, [?XML_ERROR_CODE_MalformedXML,
+                                                      ?XML_ERROR_MSG_MalformedXML,
+                                                      "", ""]), _R)).
+-define(reply_bad_digest(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_BadDigest,
+                                                    ?XML_ERROR_MSG_BadDigest,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
 -define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
@@ -278,6 +293,15 @@
                       "<RequestId>~s</RequestId>",
                       "</Error>"])).
 
+-define(XML_ERROR_2,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<Error>",
+                      "<Code>~s</Code>",
+                      "<Message>~s</Message>",
+                      "<RequestId>~s</RequestId>",
+                      "<HostId>~s</HostId>",
+                      "</Error>"])).
+
 -define(XML_ACL_POLICY,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
@@ -295,6 +319,23 @@
                       "</Grantee>",
                       "<Permission>~s</Permission>",
                       "</Grant>"])).
+
+-define(XML_MULTIPLE_DELETE,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "~s",
+                      "~s",
+                      "</DeleteResult>"])).
+
+-define(XML_MULTIPLE_DELETE_SUCCESS_ELEM,
+        lists:append(["<Deleted><Key>",
+                      "~s",
+                      "</Key></Deleted>"])).
+
+-define(XML_MULTIPLE_DELETE_ERROR_ELEM,
+        lists:append(["<Error><Key>",
+                      "~s",
+                      "</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"])).
 
 %% Records
 -record(http_options, {
@@ -346,6 +387,7 @@
           has_inner_cache = false    :: boolean(),              %% has inner-cache?
           is_cached = false          :: boolean(),              %% is cached?
           is_dir = false             :: boolean(),              %% is directory?
+          is_multi_delete = false    :: boolean(),              %% is multi delete request?
           %% for large-object
           is_upload = false            :: boolean(),            %% is upload operation? (for multipart upload)
           is_acl = false               :: boolean(),            %% is acl operation?

@@ -282,6 +282,19 @@ get_x_amz_meta_directive(_Req, Other) ->
 put_object(Req, Key, Params) ->
     put_object(get_x_amz_meta_directive(Req), Req, Key, Params).
 
+%% @doc handle MULTIPLE DELETE request
+put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true} = Params) ->
+    BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
+    case cowboy_req:body(Req, BodyOpts) of
+        {ok, Body, Req1} ->
+            % 1. Check Content-MD5 with body
+            ContentMD5 = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
+            CalculatedMD5 = list_to_binary(leo_hex:binary_to_hex(crypto:hash(md5, Body))),
+            delete_multi_objects_2(Req1, Body, ContentMD5, CalculatedMD5, Params);
+        {error, _Cause} ->
+            ?reply_malformed_xml([?SERVER_HEADER], Req)
+    end;
+
 put_object(?BIN_EMPTY, Req, Key, Params) ->
     {Size, _} = cowboy_req:body_length(Req),
 
@@ -429,6 +442,10 @@ range_object(Req, Key, Params) ->
 %% @doc Create a key
 %% @private
 get_bucket_and_path(Req) ->
+    {RawPath, _} = cowboy_req:path(Req),
+    get_bucket_and_path(Req, RawPath).
+
+get_bucket_and_path(Req, Path) ->
     EndPoints_2 = case leo_s3_endpoint:get_endpoints() of
                       {ok, EndPoints_1} ->
                           [Ep || #endpoint{endpoint = Ep} <- EndPoints_1];
@@ -436,8 +453,6 @@ get_bucket_and_path(Req) ->
                           []
                   end,
     {Host,    _} = cowboy_req:host(Req),
-    {RawPath, _} = cowboy_req:path(Req),
-    Path = cow_qs:urldecode(RawPath),
     leo_http:key(EndPoints_2, Host, Path).
 
 
@@ -733,6 +748,10 @@ resp_copy_obj_xml(Req, Meta) ->
 %%      Set request params
 %% @private
 request_params(Req, Params) ->
+    IsMultiDelete = case cowboy_req:qs_val(?HTTP_QS_BIN_MULTI_DELETE, Req) of
+                   {undefined, _} -> false;
+                   _ -> true
+               end,
     IsUpload = case cowboy_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req) of
                    {undefined, _} -> false;
                    _ -> true
@@ -747,7 +766,8 @@ request_params(Req, Params) ->
                end,
     Range    = element(1, cowboy_req:header(?HTTP_HEAD_RANGE, Req)),
 
-    Params#req_params{is_upload       = IsUpload,
+    Params#req_params{is_multi_delete = IsMultiDelete,
+                      is_upload       = IsUpload,
                       upload_id       = UploadId,
                       upload_part_num = PartNum,
                       range_header    = Range}.
@@ -796,6 +816,13 @@ auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
     end.
 
 %% @private
+auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, #req_params{is_multi_delete = true} = ReqParams) when TokenLen =< 1 ->
+    case is_public_read_write(ACLs) of
+        true ->
+            {ok, []};
+        false ->
+            auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
+    end;
 auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen =< 1 ->
     auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
 auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1,
@@ -1113,6 +1140,93 @@ generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
           end,
     io_lib:format(?XML_ACL_POLICY, [ID, ID, lists:foldl(Fun, [], ACLs)]).
 
+generate_delete_multi_xml(IsQuiet, DeletedKeys, ErrorKeys) ->
+    DeletedElems = generate_delete_multi_xml_deleted_elem(DeletedKeys, []),
+    ErrorElems = case IsQuiet of
+                     true ->
+                         "";
+                     false ->
+                         generate_delete_multi_xml_error_elem(ErrorKeys, [])
+                 end,
+    io_lib:format(?XML_MULTIPLE_DELETE, [DeletedElems, ErrorElems]).
+
+generate_delete_multi_xml_deleted_elem([], Acc) ->
+    Acc;
+generate_delete_multi_xml_deleted_elem([DeletedKey|Rest], Acc) ->
+    generate_delete_multi_xml_deleted_elem(Rest, lists:append(
+          [Acc,
+           io_lib:format(?XML_MULTIPLE_DELETE_SUCCESS_ELEM, [DeletedKey])])).
+
+generate_delete_multi_xml_error_elem([], Acc) ->
+    Acc;
+generate_delete_multi_xml_error_elem([ErrorKey|Rest], Acc) ->
+    generate_delete_multi_xml_deleted_elem(Rest, lists:append(
+          [Acc,
+           io_lib:format(?XML_MULTIPLE_DELETE_ERROR_ELEM, [ErrorKey])])).
+
+%% @doc
+%% @private
+%% Private functions for Delete multiple objects
+%% 2. Parse request XML
+delete_multi_objects_2(Req, Body, MD5, MD5, Params) ->
+    Acc = fun(#xmlText{value = " ", pos = P}, Acc, S) ->
+                  {Acc, P, S};
+             (X, Acc, S) ->
+                  {[X|Acc], S}
+          end,
+    try
+        {#xmlElement{content = Content},_} = xmerl_scan:string(
+                                                binary_to_list(Body),
+                                                [{space,normalize}, {acc_fun, Acc}]),
+        delete_multi_objects_3(Req, Content, false, [], Params)
+    catch _:Cause ->
+        ?error("delete_multi_objects_2/5", "req:~p, cause:~p", [Req, Cause]),
+        ?reply_malformed_xml([?SERVER_HEADER], Req)
+    end;
+delete_multi_objects_2(Req, _Body, _MD5, _, _Params) ->
+    ?reply_bad_digest([?SERVER_HEADER], <<>>, <<>>, Req).
+
+%% @doc
+%% @private
+%% 3. Retrieve every keys (ignore version element)
+delete_multi_objects_3(Req, [], IsQuiet, Keys, Params) ->
+    delete_multi_objects_4(Req, IsQuiet, Keys, [], [], Params);
+delete_multi_objects_3(Req, [#xmlElement{name = 'Quiet'}|Rest], _IsQuiet, Keys, Params) ->
+    delete_multi_objects_3(Req, Rest, true, Keys, Params);
+delete_multi_objects_3(Req, [#xmlElement{name = 'Object', content = KeyElem}|Rest], IsQuiet, Keys, Params) ->
+    [#xmlElement{content = TextElem}|_] = KeyElem,
+    [#xmlText{value = Key}|_] = TextElem,
+    delete_multi_objects_3(Req, Rest, IsQuiet, [Key|Keys], Params);
+delete_multi_objects_3(Req, [_|Rest], IsQuiet, Keys, Params) ->
+    delete_multi_objects_3(Req, Rest, IsQuiet, Keys, Params).
+
+%% @doc
+%% @private
+%% 4. Issue delete requests for all keys by using leo_gateway_rpc_handler:delete
+delete_multi_objects_4(Req, IsQuiet, [], DeletedKeys, ErrorKeys, Params) ->
+    delete_multi_objects_5(Req, IsQuiet, DeletedKeys, ErrorKeys, Params);
+delete_multi_objects_4(Req, IsQuiet, [Key|Rest], DeletedKeys, ErrorKeys,
+                       #req_params{bucket = Bucket} = Params) ->
+    BinKey = list_to_binary(Key),
+    Path = <<Bucket/binary, <<"/">>/binary, BinKey/binary>>,
+    case leo_gateway_rpc_handler:delete(Path) of
+        ok ->
+            delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
+        {error, not_found} ->
+            delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
+        {error, _} ->
+            delete_multi_objects_4(Req, IsQuiet, Rest, DeletedKeys, [Key|ErrorKeys], Params)
+    end.
+
+%% @doc
+%% @private
+%% 5. Make response XML based on the result of delete requests (ignore version related elements)
+delete_multi_objects_5(Req, IsQuiet, DeletedKeys, ErrorKeys, _Params) ->
+    XML = generate_delete_multi_xml(IsQuiet, DeletedKeys, ErrorKeys),
+    %% 6. Respond the response XML
+    ?reply_ok([?SERVER_HEADER,
+               {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}
+              ], XML, Req).
 
 %% @private
 formalize_bucket(Bucket) ->

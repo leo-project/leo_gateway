@@ -52,6 +52,13 @@ handle(?HTTP_GET, Req, Key, #req_params{is_dir = true,
 %% @doc PUT operation on buckets.
 handle(?HTTP_PUT, Req, Key, #req_params{is_dir = true,
                                         token_length = 1,
+                                        is_multi_delete = true,
+                                        handler = Handler} = Params) ->
+    Handler:put_object(Req, Key, Params);
+
+%% @doc PUT operation on buckets.
+handle(?HTTP_PUT, Req, Key, #req_params{is_dir = true,
+                                        token_length = 1,
                                         handler = Handler} = Params) ->
     Handler:put_bucket(Req, Key, Params);
 
