@@ -443,7 +443,8 @@ range_object(Req, Key, Params) ->
 %% @private
 get_bucket_and_path(Req) ->
     {RawPath, _} = cowboy_req:path(Req),
-    get_bucket_and_path(Req, RawPath).
+    Path = cow_qs:urldecode(RawPath),
+    get_bucket_and_path(Req, Path).
 
 get_bucket_and_path(Req, Path) ->
     EndPoints_2 = case leo_s3_endpoint:get_endpoints() of
