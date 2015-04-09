@@ -287,7 +287,7 @@ put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true} = Params) 
     BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
     case cowboy_req:body(Req, BodyOpts) of
         {ok, Body, Req1} ->
-            % 1. Check Content-MD5 with body
+            %% Check Content-MD5 with body
             ContentMD5 = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
             CalculatedMD5 = base64:encode(crypto:hash(md5, Body)),
             delete_multi_objects_2(Req1, Body, ContentMD5, CalculatedMD5, Params);
@@ -750,9 +750,9 @@ resp_copy_obj_xml(Req, Meta) ->
 %% @private
 request_params(Req, Params) ->
     IsMultiDelete = case cowboy_req:qs_val(?HTTP_QS_BIN_MULTI_DELETE, Req) of
-                   {undefined, _} -> false;
-                   _ -> true
-               end,
+                        {undefined, _} -> false;
+                        _ -> true
+                    end,
     IsUpload = case cowboy_req:qs_val(?HTTP_QS_BIN_UPLOADS, Req) of
                    {undefined, _} -> false;
                    _ -> true
@@ -1155,15 +1155,15 @@ generate_delete_multi_xml_deleted_elem([], Acc) ->
     Acc;
 generate_delete_multi_xml_deleted_elem([DeletedKey|Rest], Acc) ->
     generate_delete_multi_xml_deleted_elem(Rest, lists:append(
-          [Acc,
-           io_lib:format(?XML_MULTIPLE_DELETE_SUCCESS_ELEM, [DeletedKey])])).
+                                                   [Acc,
+                                                    io_lib:format(?XML_MULTIPLE_DELETE_SUCCESS_ELEM, [DeletedKey])])).
 
 generate_delete_multi_xml_error_elem([], Acc) ->
     Acc;
 generate_delete_multi_xml_error_elem([ErrorKey|Rest], Acc) ->
     generate_delete_multi_xml_deleted_elem(Rest, lists:append(
-          [Acc,
-           io_lib:format(?XML_MULTIPLE_DELETE_ERROR_ELEM, [ErrorKey])])).
+                                                   [Acc,
+                                                    io_lib:format(?XML_MULTIPLE_DELETE_ERROR_ELEM, [ErrorKey])])).
 
 %% @doc
 %% @private
@@ -1177,12 +1177,12 @@ delete_multi_objects_2(Req, Body, MD5, MD5, Params) ->
           end,
     try
         {#xmlElement{content = Content},_} = xmerl_scan:string(
-                                                binary_to_list(Body),
-                                                [{space,normalize}, {acc_fun, Acc}]),
+                                               binary_to_list(Body),
+                                               [{space,normalize}, {acc_fun, Acc}]),
         delete_multi_objects_3(Req, Content, false, [], Params)
     catch _:Cause ->
-        ?error("delete_multi_objects_2/5", "req:~p, cause:~p", [Req, Cause]),
-        ?reply_malformed_xml([?SERVER_HEADER], Req)
+            ?error("delete_multi_objects_2/5", "req:~p, cause:~p", [Req, Cause]),
+            ?reply_malformed_xml([?SERVER_HEADER], Req)
     end;
 delete_multi_objects_2(Req, _Body, _MD5, _, _Params) ->
     ?reply_bad_digest([?SERVER_HEADER], <<>>, <<>>, Req).

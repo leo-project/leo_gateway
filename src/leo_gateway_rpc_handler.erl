@@ -176,7 +176,7 @@ put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
 %% @doc Do invoke rpc calls with handling retries
 %%
 -spec(invoke(list(), atom(), atom(), list(), list()) ->
-                ok|{ok, any()}|{ok, #?METADATA{}, binary()}|{error, any()}).
+             ok|{ok, any()}|{ok, #?METADATA{}, binary()}|{error, any()}).
 invoke([], _Mod, _Method, _Args, Errors) ->
     {error, error_filter(Errors)};
 invoke([#redundant_node{available = false}|T], Mod, Method, Args, Errors) ->
