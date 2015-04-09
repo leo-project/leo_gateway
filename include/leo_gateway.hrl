@@ -2,7 +2,7 @@
 %%
 %% LeoFS Gateway
 %%
-%% Copyright (c) 2012-2014 Rakuten, Inc.
+%% Copyright (c) 2012-2015 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -38,7 +38,6 @@
 -define(DEF_TIMEOUT,      5000). %%  5 sec
 -define(DEF_REQ_TIMEOUT, 30000). %% 30 sec
 -endif.
-
 
 
 %% @pending
@@ -382,4 +381,3 @@
                                       ]}
               })
         end).
-
