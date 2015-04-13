@@ -596,13 +596,13 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_DELETE, _,
 %%
 handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _,
          #req_params{path = Path,
-                     chunked_obj_len = CL,
+                     chunked_obj_len = ChunkedLen,
                      is_upload = false,
                      upload_id = UploadId,
                      upload_part_num = PartNum}, State) when UploadId /= <<>>,
                                                              PartNum  == 0 ->
     Res = cowboy_req:has_body(Req),
-    {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId, CL),
+    {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId, ChunkedLen),
     {ok, Req_2, State};
 
 %% For Regular cases
@@ -625,7 +625,7 @@ handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
 
 %% @doc Handle multi-upload processing
 %% @private
-handle_multi_upload_1(true, Req, Path, UploadId, CL) ->
+handle_multi_upload_1(true, Req, Path, UploadId, ChunkedLen) ->
     Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
 
     case leo_gateway_rpc_handler:head(Path4Conf) of
@@ -633,18 +633,19 @@ handle_multi_upload_1(true, Req, Path, UploadId, CL) ->
             _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
             Ret = cowboy_req:body(Req),
-            handle_multi_upload_2(Ret, Req, Path, CL);
+            handle_multi_upload_2(Ret, Req, Path, ChunkedLen);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         _ ->
             ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_1(false, Req, Path,_UploadId, _CL) ->
+handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen) ->
     ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req).
 
-handle_multi_upload_2({ok, Bin, Req}, _Req, Path, CL) ->
+handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
     %% trim spaces
-    Acc = fun(#xmlText{value = " ", pos = P}, Acc, S) ->
+    Acc = fun(#xmlText{value = " ",
+                       pos = P}, Acc, S) ->
                   {Acc, P, S};
              (X, Acc, S) ->
                   {[X|Acc], S}
@@ -656,17 +657,31 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path, CL) ->
 
     case handle_multi_upload_3(TotalUploadedObjs, Path, []) of
         {ok, {Len, ETag1}} ->
-            case leo_gateway_rpc_handler:put(Path, <<>>, Len, CL, TotalUploadedObjs, ETag1) of
-                {ok, _} ->
-                    [Bucket|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
-                    ETag2 = leo_hex:integer_to_hex(ETag1, 32),
-                    XML   = gen_upload_completion_xml(Bucket, Path_1, ETag2, TotalUploadedObjs),
-                    ?reply_ok([?SERVER_HEADER], XML, Req);
-                {error, unavailable} ->
-                    ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
-                {error, Cause} ->
+            %% Retrieve the child object's metadata
+            %% to set the actual chunked length
+            IndexBin = list_to_binary(integer_to_list(1)),
+            ChildKey = << Path/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+
+            case leo_gateway_rpc_handler:head(ChildKey) of
+                {ok, #?METADATA{del = 0,
+                                dsize = ChildObjSize}} ->
+                    case leo_gateway_rpc_handler:put(Path, <<>>, Len, ChildObjSize,
+                                                     TotalUploadedObjs, ETag1) of
+                        {ok, _} ->
+                            [Bucket|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
+                            ETag2 = leo_hex:integer_to_hex(ETag1, 32),
+                            XML   = gen_upload_completion_xml(Bucket, Path_1, ETag2, TotalUploadedObjs),
+                            ?reply_ok([?SERVER_HEADER], XML, Req);
+                        {error, unavailable} ->
+                            ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
+                        {error, Cause} ->
+                            ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
+                                   [binary_to_list(Path), Cause]),
+                            ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
+                    end;
+                _ ->
                     ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
-                           [binary_to_list(Path), Cause]),
+                           [binary_to_list(Path), invalid_metadata]),
                     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
             end;
         {error, unavailable} ->
@@ -675,7 +690,7 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path, CL) ->
             ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_2({error, Cause}, Req, Path, _CL) ->
+handle_multi_upload_2({error, Cause}, Req, Path, _ChunkedLen) ->
     ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 

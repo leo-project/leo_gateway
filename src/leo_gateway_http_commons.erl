@@ -724,8 +724,6 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
             ?reply_timeout_without_body([?SERVER_HEADER], Req)
     end.
 
--undef(DEF_SEPARATOR).
--define(DEF_SEPARATOR, <<"\n">>).
 
 %% @doc Retrieve a part of an object
 -spec(range_object(cowboy_req:req(), binary(), #req_params{}) ->
@@ -761,18 +759,50 @@ get_range_object_1(Req, Bucket, Key, [End|Rest], _) ->
 
 get_range_object_2(Req, Bucket, Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #?METADATA{del = 0, cnumber = 0} = _Meta} ->
+        {ok, #?METADATA{del = 0,
+                        cnumber = 0}} ->
             get_range_object_small(Req, Bucket, Key, Start, End);
-        {ok, #?METADATA{del = 0, cnumber = N, dsize = ObjectSize, csize = CS} = _Meta} ->
+        {ok, #?METADATA{del = 0,
+                        cnumber = N,
+                        dsize = ObjectSize,
+                        csize = CS}} ->
+            %% Retrieve start and end position of the object
             {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
+
+            %% Retrieve the grand-child's metadata
+            %% to get collect chunk size of the object
             {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
-            get_range_object_large(Req, Bucket, Key, NewStartPos, NewEndPos, N, Index, CurPos);
+            Ret = case (N < Index) of
+                      true ->
+                          IndexBin = list_to_binary(integer_to_list(1)),
+                          Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+                          case leo_gateway_rpc_handler:head(Key_1) of
+                              {ok, #?METADATA{del = 0,
+                                              dsize = ChildObjSize}} ->
+                                  move_curpos2head(NewStartPos, ChildObjSize, 0, 0);
+                              _ ->
+                                  {error, invalid_metadata}
+                          end;
+                      false ->
+                          {CurPos, Index}
+                  end,
+
+            case Ret of
+                {error, Cause} ->
+                    {error, Cause};
+                {CurPos_1, Index_1} ->
+                    get_range_object_large(Req, Bucket, Key,
+                                           NewStartPos, NewEndPos, N, Index_1, CurPos_1)
+            end;
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         _ ->
             {error, not_found}
     end.
 
+
+%% @doc Retrieve the small object
+%% @private
 get_range_object_small(Req, Bucket, Key, Start, End) ->
     case leo_gateway_rpc_handler:get(Key, Start, End) of
         {ok, _Meta, <<>>} ->
@@ -787,11 +817,16 @@ get_range_object_small(Req, Bucket, Key, Start, End) ->
             {error, Cause}
     end.
 
+%% @doc
+%% @private
 move_curpos2head(Start, ChunkedSize, CurPos, Idx) when (CurPos + ChunkedSize - 1) < Start ->
     move_curpos2head(Start, ChunkedSize, CurPos + ChunkedSize, Idx + 1);
 move_curpos2head(_Start, _ChunkedSize, CurPos, Idx) ->
     {CurPos, Idx}.
 
+
+%% @doc
+%% @private
 calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
     NewStartPos = ObjectSize + EndPos,
     NewEndPos   = ObjectSize - 1,
@@ -801,6 +836,9 @@ calc_pos(StartPos, 0, ObjectSize) ->
 calc_pos(StartPos, EndPos, _ObjectSize) ->
     {StartPos, EndPos}.
 
+
+%% @doc Retrieve the large object
+%% @private
 get_range_object_large(_Req,_Bucket,_Key,_Start,_End, Total, Total, CurPos) ->
     {ok, CurPos};
 get_range_object_large(_Req,_Bucket,_Key,_Start, End,_Total,_Index, CurPos) when CurPos > End ->
@@ -810,9 +848,9 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos) ->
     Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
     case leo_gateway_rpc_handler:head(Key2) of
-        {ok, #?METADATA{cnumber = 0, dsize = CS}} ->
-            %% only children
-            %% get and chunk
+        {ok, #?METADATA{cnumber = 0,
+                        dsize = CS}} ->
+            %% get and chunk an object
             NewPos = send_chunk(Req, Bucket, Key2, Start, End, CurPos, CS),
             get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos);
 
@@ -829,15 +867,17 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos) ->
             {error, Cause}
     end.
 
-send_chunk(_Req, _,  _Key, Start, _End, CurPos, ChunkSize) when (CurPos + ChunkSize - 1) < Start ->
+%% @doc
+%% @private
+send_chunk(_Req,_,_Key, Start,_End, CurPos, ChunkSize) when (CurPos + ChunkSize - 1) < Start ->
     %% skip proc
     CurPos + ChunkSize;
-send_chunk(Req, _Bucket, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
-                                                                  (CurPos + ChunkSize - 1) =< End ->
+send_chunk(Req,_Bucket, Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
+                                                                 (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->
-            %% @FIXME current impl can't handle a file which consist of grand childs
+            %% @FIXME current impl can't handle a file which consist of grand children
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
             cowboy_req:chunk(Bin, Req),
             CurPos + ChunkSize;
@@ -865,6 +905,7 @@ send_chunk(Req, _Bucket, Key, Start, End, CurPos, ChunkSize) ->
         {error, Cause} ->
             {error, Cause}
     end.
+
 
 %%--------------------------------------------------------------------
 %% INNER Functions

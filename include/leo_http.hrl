@@ -37,6 +37,9 @@
 -define(BIN_SLASH,     <<"/">>).
 -define(BIN_EMPTY,     <<>>).
 
+-undef(DEF_SEPARATOR).
+-define(DEF_SEPARATOR, <<"\n">>).
+
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
 %% HTTP HEADER

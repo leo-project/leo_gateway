@@ -139,8 +139,7 @@ handle_call({put, Bin}, _From, #state{key = Key,
                                           ?DEF_SEPARATOR/binary,
                                           NumOfChunksBin/binary >>,
                           Ret = leo_gateway_rpc_handler:put(
-                                  ChunkedKey,
-                                  Bin_2, MaxObjLen, NumOfChunks),
+                                  ChunkedKey, Bin_2, MaxObjLen, NumOfChunks),
                           AsyncNotify = {async_notify, ChunkedKey, Ret},
                           erlang:send(self(), AsyncNotify)
                   end,
