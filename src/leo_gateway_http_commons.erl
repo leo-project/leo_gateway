@@ -772,28 +772,19 @@ get_range_object_2(Req, Bucket, Key, Start, End) ->
             %% Retrieve the grand-child's metadata
             %% to get collect chunk size of the object
             {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
-            Ret = case (N < Index) of
-                      true ->
-                          IndexBin = list_to_binary(integer_to_list(1)),
-                          Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-                          case leo_gateway_rpc_handler:head(Key_1) of
-                              {ok, #?METADATA{del = 0,
-                                              dsize = ChildObjSize}} ->
-                                  move_curpos2head(NewStartPos, ChildObjSize, 0, 0);
-                              _ ->
-                                  {error, invalid_metadata}
-                          end;
-                      false ->
-                          {CurPos, Index}
-                  end,
 
-            case Ret of
-                {error, Cause} ->
-                    {error, Cause};
-                {CurPos_1, Index_1} ->
-                    get_range_object_large(Req, Bucket, Key,
-                                           NewStartPos, NewEndPos, N, Index_1, CurPos_1)
-            end;
+            IndexBin = list_to_binary(integer_to_list(1)),
+            Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+            {CurPos_1, Index_1} =
+                case leo_gateway_rpc_handler:head(Key_1) of
+                    {ok, #?METADATA{del = 0,
+                                    dsize = ChildObjSize}} ->
+                        move_curpos2head(NewStartPos, ChildObjSize, 0, 0);
+                    _ ->
+                        {CurPos, Index}
+                end,
+            get_range_object_large(Req, Bucket, Key,
+                                   NewStartPos, NewEndPos, N, Index_1, CurPos_1);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         _ ->
