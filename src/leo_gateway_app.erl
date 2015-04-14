@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012-2014 Rakuten, Inc.
+%% Copyright (c) 2012-2015 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -122,6 +122,20 @@ prep_stop(_State) ->
     catch leo_redundant_manager_sup:stop(),
     catch leo_mq_sup:stop(),
     catch leo_logger_sup:stop(),
+
+    case get_options() of
+        {ok, HttpOptions} ->
+            case HttpOptions#http_options.handler of
+                ?PROTO_HANDLER_S3 ->
+                    leo_gateway_s3_api:stop();
+                ?PROTO_HANDLER_REST ->
+                    leo_gateway_rest_api:stop();
+                _ ->
+                    void
+            end;
+        _ ->
+            void
+    end,
     ok.
 
 %% @spec stop(_State) -> ServerRet

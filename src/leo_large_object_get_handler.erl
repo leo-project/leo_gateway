@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway Large Object GET Handler
 %%
-%% Copyright (c) 2012-2014 Rakuten, Inc.
+%% Copyright (c) 2012-2015 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -110,9 +110,9 @@ handle_call(stop, _From, State) ->
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
             #state{key = Key, transport = Transport, socket = Socket} = State) ->
     Ref_1 = case catch leo_cache_api:put_begin_tran(Key) of
-               {ok, Ref} -> Ref;
-               _ -> undefined
-           end,
+                {ok, Ref} -> Ref;
+                _ -> undefined
+            end,
     Reply = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
                                                       chunk_key = Key,
                                                       request = Req,
@@ -168,8 +168,8 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
                                             } = ReqInfo) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key_1 = << ChunkObjKey/binary,
-              ?DEF_SEPARATOR/binary,
-              IndexBin/binary >>,
+               ?DEF_SEPARATOR/binary,
+               IndexBin/binary >>,
 
     case leo_gateway_rpc_handler:get(Key_1) of
         %%

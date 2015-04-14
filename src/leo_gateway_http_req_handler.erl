@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway
 %%
-%% Copyright (c) 2012-2014 Rakuten, Inc.
+%% Copyright (c) 2012-2015 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -48,6 +48,13 @@ handle(_HTTPMethod, Req, Key, #req_params{token_length = Len,
 handle(?HTTP_GET, Req, Key, #req_params{is_dir = true,
                                         handler = Handler} = Params) ->
     Handler:get_bucket(Req, Key, Params);
+
+%% @doc PUT operation on buckets.
+handle(?HTTP_PUT, Req, Key, #req_params{is_dir = true,
+                                        token_length = 1,
+                                        is_multi_delete = true,
+                                        handler = Handler} = Params) ->
+    Handler:put_object(Req, Key, Params);
 
 %% @doc PUT operation on buckets.
 handle(?HTTP_PUT, Req, Key, #req_params{is_dir = true,

@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway Large Object PUT Handler
 %%
-%% Copyright (c) 2012-2014 Rakuten, Inc.
+%% Copyright (c) 2012-2015 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -139,8 +139,7 @@ handle_call({put, Bin}, _From, #state{key = Key,
                                           ?DEF_SEPARATOR/binary,
                                           NumOfChunksBin/binary >>,
                           Ret = leo_gateway_rpc_handler:put(
-                                  ChunkedKey,
-                                  Bin_2, MaxObjLen, NumOfChunks),
+                                  ChunkedKey, Bin_2, MaxObjLen, NumOfChunks),
                           AsyncNotify = {async_notify, ChunkedKey, Ret},
                           erlang:send(self(), AsyncNotify)
                   end,
