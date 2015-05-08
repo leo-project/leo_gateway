@@ -167,25 +167,36 @@ consider_profiling() ->
 %%
 -spec(inspect_cluster_status(any(), list()) ->
              pid()).
-inspect_cluster_status(Res, ManagerNodes) ->
-    case ?get_several_info_from_manager(ManagerNodes) of
+inspect_cluster_status(Res, Managers) ->
+    case ?get_several_info_from_manager(Managers) of
         {{ok, SystemConf}, {ok, {MembersCur, MembersPrev}}} ->
             case get_cluster_state(MembersCur) of
                 ?STATE_STOP ->
                     timer:apply_after(?CHECK_INTERVAL, ?MODULE,
-                                      inspect_cluster_status, [ok, ManagerNodes]);
+                                      inspect_cluster_status, [ok, Managers]);
                 ?STATE_RUNNING ->
                     ok = after_process_1(SystemConf, MembersCur, MembersPrev)
             end;
         {{ok,_SystemConf}, {error,_Cause}} ->
             timer:apply_after(?CHECK_INTERVAL, ?MODULE,
-                              inspect_cluster_status, [ok, ManagerNodes]);
+                              inspect_cluster_status, [ok, Managers]);
         _Error ->
             timer:apply_after(?CHECK_INTERVAL, ?MODULE, inspect_cluster_status,
-                              [ok, ManagerNodes]),
+                              [ok, Managers]),
             io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE,_Error])
     end,
     Res.
+
+
+%% @private
+is_alive_managers([]) ->
+    false;
+is_alive_managers([Manager|Rest]) ->
+    case leo_misc:node_existence(Manager) of
+        true ->            true;
+        false ->
+            is_alive_managers(Rest)
+    end.
 
 
 %%--------------------------------------------------------------------
@@ -195,15 +206,30 @@ inspect_cluster_status(Res, ManagerNodes) ->
 %% @private
 -spec(after_process_0({ok, pid()} | {error, any()}) ->
              {ok, pid()} | {error, any()}).
-after_process_0({ok, _Pid} = Res) ->
+after_process_0({ok, Pid}) ->
     ok = leo_misc:init_env(),
-    ManagerNodes0  = ?env_manager_nodes(leo_gateway),
-    ManagerNodes1 = lists:map(fun(X) when is_list(X) ->
-                                      list_to_atom(X);
-                                 (X) ->
-                                      X
-                              end, ManagerNodes0),
+    Managers_0  = ?env_manager_nodes(leo_gateway),
+    Managers_1 = lists:map(fun(X) when is_list(X) ->
+                                  list_to_atom(X);
+                             (X) ->
+                                  X
+                          end, Managers_0),
 
+    case is_alive_managers(Managers_1) of
+        true ->
+            after_process_0_1(Pid, Managers_1);
+        false ->
+            ?error("inspect_cluster_status/1", "cause:~s, managers:~p",
+                   ["Not alive managers", Managers_1]),
+            init:stop()
+    end;
+after_process_0(Error) ->
+    io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
+    Error.
+
+
+%% @private
+after_process_0_1(Pid, Managers) ->
     %% Launch SNMPA
     catch leo_statistics_api:start_link(leo_gateway),
     ok = leo_statistics_api:create_tables(ram_copies, [node()]),
@@ -225,7 +251,7 @@ after_process_0({ok, _Pid} = Res) ->
 
             %% Launch S3Libs:Auth/Bucket/EndPoint
             ok = leo_s3_libs:start(slave,
-                                   [{'provider', ManagerNodes1},
+                                   [{'provider', Managers},
                                     {'bucket_prop_sync_interval', BucketPropSyncInterval}]),
             leo_s3_endpoint:get_endpoints();
         _ ->
@@ -330,11 +356,8 @@ after_process_0({ok, _Pid} = Res) ->
     {ok, _} = supervisor:start_child(RefSup, ChildSpec),
 
     %% Check status of the storage-cluster
-    inspect_cluster_status(Res, ManagerNodes1);
+    inspect_cluster_status({ok, Pid}, Managers).
 
-after_process_0(Error) ->
-    io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
-    Error.
 
 
 %% @doc After process of start_link
@@ -343,25 +366,25 @@ after_process_0(Error) ->
              ok).
 after_process_1(SystemConf, MembersCur, MembersPrev) ->
     %% Launch Redundant-manager#2
-    ManagerNodes    = ?env_manager_nodes(leo_gateway),
-    NewManagerNodes = lists:map(fun(X) when is_list(X) ->
-                                        list_to_atom(X);
-                                   (X) ->
-                                        X
-                                end, ManagerNodes),
+    Managers    = ?env_manager_nodes(leo_gateway),
+    NewManagers = lists:map(fun(X) when is_list(X) ->
+                                    list_to_atom(X);
+                               (X) ->
+                                    X
+                            end, Managers),
 
     RefSup = whereis(leo_gateway_sup),
     case whereis(leo_redundant_manager_sup) of
         undefined ->
             ChildSpec = {leo_redundant_manager_sup,
                          {leo_redundant_manager_sup, start_link,
-                          [?WORKER_NODE, NewManagerNodes,
+                          [?WORKER_NODE, NewManagers,
                            ?env_queue_dir(leo_gateway)]},
                          permanent, 2000, supervisor, [leo_redundant_manager_sup]},
             {ok, _} = supervisor:start_child(RefSup, ChildSpec);
         _ ->
             {ok, _} = leo_redundant_manager_sup:start_link(
-                        gateway, NewManagerNodes, ?env_queue_dir(leo_gateway))
+                        gateway, NewManagers, ?env_queue_dir(leo_gateway))
     end,
     ok = leo_redundant_manager_api:set_options(
            [{n, SystemConf#?SYSTEM_CONF.n},
@@ -389,7 +412,7 @@ after_process_1(SystemConf, MembersCur, MembersPrev) ->
                         end;
                    (_, true) ->
                         void
-                end, false, NewManagerNodes),
+                end, false, NewManagers),
     ok.
 
 
