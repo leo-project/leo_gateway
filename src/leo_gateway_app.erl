@@ -143,6 +143,7 @@ prep_stop(_State) ->
 stop(_State) ->
     ok.
 
+
 -spec profile_output() -> ok.
 profile_output() ->
     eprof:stop_profiling(),
@@ -175,7 +176,7 @@ inspect_cluster_status(Res, Managers) ->
                     timer:apply_after(?CHECK_INTERVAL, ?MODULE,
                                       inspect_cluster_status, [ok, Managers]);
                 ?STATE_RUNNING ->
-                    ok = after_process_1(SystemConf, MembersCur, MembersPrev)
+                    ok = after_process_2(SystemConf, MembersCur, MembersPrev)
             end;
         {{ok,_SystemConf}, {error,_Cause}} ->
             timer:apply_after(?CHECK_INTERVAL, ?MODULE,
@@ -217,7 +218,14 @@ after_process_0({ok, Pid}) ->
 
     case is_alive_managers(Managers_1) of
         true ->
-            after_process_0_1(Pid, Managers_1);
+            case catch after_process_1(Pid, Managers_1) of
+                {ok, Pid} ->
+                    {ok, Pid};
+                {_, Cause} ->
+                    ?error("inspect_cluster_status/1", "cause:~p",
+                           [{"After process failure", Cause}]),
+                    init:stop()
+            end;
         false ->
             ?error("inspect_cluster_status/1", "cause:~s, managers:~p",
                    ["Not alive managers", Managers_1]),
@@ -225,13 +233,13 @@ after_process_0({ok, Pid}) ->
     end;
 after_process_0(Error) ->
     io:format("~p:~s,~w - cause:~p~n", [?MODULE, "after_process/1", ?LINE, Error]),
-    Error.
+    init:stop().
 
 
 %% @private
-after_process_0_1(Pid, Managers) ->
+after_process_1(Pid, Managers) ->
     %% Launch SNMPA
-    catch leo_statistics_api:start_link(leo_gateway),
+    ok = leo_statistics_api:start_link(leo_gateway),
     ok = leo_statistics_api:create_tables(ram_copies, [node()]),
     ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
     ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
@@ -359,12 +367,11 @@ after_process_0_1(Pid, Managers) ->
     inspect_cluster_status({ok, Pid}, Managers).
 
 
-
 %% @doc After process of start_link
 %% @private
--spec(after_process_1(#?SYSTEM_CONF{}, list(#member{}), list(#member{})) ->
+-spec(after_process_2(#?SYSTEM_CONF{}, list(#member{}), list(#member{})) ->
              ok).
-after_process_1(SystemConf, MembersCur, MembersPrev) ->
+after_process_2(SystemConf, MembersCur, MembersPrev) ->
     %% Launch Redundant-manager#2
     Managers    = ?env_manager_nodes(leo_gateway),
     NewManagers = lists:map(fun(X) when is_list(X) ->
