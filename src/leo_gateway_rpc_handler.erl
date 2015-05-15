@@ -220,7 +220,7 @@ get_request_parameters(Method, Key) ->
         leo_redundant_manager_api:get_redundancies_by_key(Method, Key),
 
     UnivDateTime = erlang:universaltime(),
-    {_,_,NowPart} = erlang:now(),
+    {_,_,NowPart} = os:timestamp(),
     {{Y,MO,D},{H,MI,S}} = UnivDateTime,
 
     ReqId = erlang:phash2([Y,MO,D,H,MI,S, erlang:node(), Key, NowPart]),
