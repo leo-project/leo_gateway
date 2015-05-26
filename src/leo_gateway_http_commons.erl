@@ -238,6 +238,7 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
 get_object(Req, Key, #req_params{bucket                 = Bucket,
                                  custom_header_settings = CustomHeaderSettings,
                                  has_inner_cache        = HasInnerCache}) ->
+    leo_cache_tran:tran(self(), object, Key),
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -303,6 +304,7 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
              {ok, cowboy_req:req()}).
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = Bucket,
                                                       custom_header_settings = CustomHeaderSettings}) ->
+    leo_cache_tran:tran(self(), object, Key),
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
         {ok, match} when CacheObj#cache.file_path /= [] ->
