@@ -187,6 +187,9 @@ invoke([#redundant_node{node      = Node,
     Timeout = timeout(Method, Args),
 
     case rpc:nb_yield(RPCKey, Timeout) of
+        %% is_dir
+        {value, Ret} when is_boolean(Ret) ->
+            Ret;
         %% delete
         {value, ok = Ret} ->
             Ret;
