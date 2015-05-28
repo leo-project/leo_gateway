@@ -114,8 +114,8 @@ nfsproc3_null_3(_Clnt, State) ->
 
 %% @doc
 nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
-    ?debug("nfsproc3_getattr_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
+    ?debug("nfsproc3_getattr_3", "path:~p client:~p", [Path, Clnt]),
     case leo_nfs_file_handler:binary_is_contained(Path, $/) of
         %% object
         true ->
@@ -173,9 +173,9 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
 
 %% @doc
 nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
-    ?debug("nfsproc3_lookup_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
     Path4S3 = filename:join(Dir, Name),
+    ?debug("nfsproc3_lookup_3", "path:~p client:~p", [Path4S3, Clnt]),
     %% A path for directory must be trailing with '/'
     Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
     case leo_nfs_file_handler:is_file(Path4S3) orelse
@@ -192,10 +192,11 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
     end.
 
 %% @doc
-nfsproc3_access_3(_1, Clnt, State) ->
-    ?debug("nfsproc3_access_3", "args:~p client:~p", [_1, Clnt]),
+nfsproc3_access_3({{UID}, AccessBitMask} = _1, Clnt, State) ->
+    {ok, Path} = leo_nfs_state_ets:get_path(UID),
+    ?debug("nfsproc3_access_3", "path:~p mask:~p client:~p", [Path, AccessBitMask, Clnt]),
     {reply, {?NFS3_OK, {{false, void}, %% post_op_attr for obj
-                        63             %% access bits(up all)
+                        AccessBitMask  %% access bits(up all)
                        }}, State}.
 
 %% @doc
