@@ -193,6 +193,7 @@ setup(InitFun, TermFun) ->
     ok = file:write_file("./server_cert.pem", ?SSL_CERT_DATA),
     ok = file:write_file("./server_key.pem",  ?SSL_KEY_DATA),
 
+    application:start(leo_cache),
     leo_cache_api:start(),
 
     InitFun(),
