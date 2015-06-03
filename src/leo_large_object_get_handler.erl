@@ -109,27 +109,45 @@ handle_call(stop, _From, State) ->
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
             #state{key = Key, transport = Transport, socket = Socket} = State) ->
-    Ref_1 = case catch leo_cache_api:put_begin_tran(Key) of
-                {ok, Ref} -> Ref;
-                _ -> undefined
+    {Mode_1, Ref_1} = case catch leo_cache_api:put_begin_tran(Key) of
+                      {ok, Mode, Ref} -> {Mode, Ref};
+                      _ -> {write, undefined}
             end,
-    Reply = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
-                                                      chunk_key = Key,
-                                                      request = Req,
-                                                      metadata = Meta,
-                                                      reference = Ref_1,
-                                                      transport = Transport,
-                                                      socket = Socket}),
-    case Reply of
-        {ok, _Req} ->
-            CacheMeta = #cache_meta{
-                           md5   = Meta#?METADATA.checksum,
-                           mtime = Meta#?METADATA.timestamp,
-                           content_type = leo_mime:guess_mime(Key)},
-            catch leo_cache_api:put_end_tran(Ref_1, Key, CacheMeta, true);
-        _ ->
-            catch leo_cache_api:put_end_tran(Ref_1, Key, undefined, false)
-    end,
+    Reply = case Mode_1 of
+                write ->
+                    Ret = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
+                                                                    chunk_key = Key,
+                                                                    request = Req,
+                                                                    metadata = Meta,
+                                                                    reference = Ref_1,
+                                                                    transport = Transport,
+                                                                    socket = Socket}),
+                    case Ret of
+                        {ok, _Req} ->
+                            CacheMeta = #cache_meta{
+                                           md5   = Meta#?METADATA.checksum,
+                                           mtime = Meta#?METADATA.timestamp,
+                                           content_type = leo_mime:guess_mime(Key)},
+                            catch leo_cache_api:put_end_tran(Ref_1, Key, CacheMeta, true);
+                        _ ->
+                            catch leo_cache_api:put_end_tran(Ref_1, Key, undefined, false)
+                    end;
+                read ->
+                    TotalSize = Meta#?METADATA.dsize,
+                    Ret_1 = case catch handle_read_loop(TotalSize, #req_info{key = Key,
+                                                                             request = Req,
+                                                                             reference = Ref_1,
+                                                                             transport = Transport,
+                                                                             socket = Socket}) of
+                                {'EXIT', Reason} ->
+                                    {error, Reason};
+                                Ret ->
+                                    Ret
+                            end,
+                    ok = file:close(Ref_1),
+                    Ret_1
+            end,
+
     {reply, Reply, State}.
 
 handle_cast(_Msg, State) ->
@@ -179,6 +197,7 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
             case Transport:send(Socket, Bin) of
                 ok ->
                     catch leo_cache_api:put(Ref, AcctualKey, Bin),
+                    leo_cache_tran:end_tran(transfer, AcctualKey),
                     handle_loop(Index + 1, TotalChunkObjs, ReqInfo);
                 {error, Cause} ->
                     ?error("handle_loop/3", "key:~s, index:~p, cause:~p",
@@ -206,4 +225,38 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
             ?error("handle_loop/3", "key:~s, index:~p, cause:~p",
                    [binary_to_list(Key_1), Index, Cause]),
             {error, Cause}
+    end.
+
+%% @doc Read Mode
+%% @private
+-spec(handle_read_loop(TotalSize, ReqInfo) ->
+            {ok, any()} | {error, any()} when TotalSize::non_neg_integer(),
+                                              ReqInfo::#req_info{}).
+handle_read_loop(TotalSize, ReqInfo) ->
+    handle_read_loop(0, TotalSize, ReqInfo).
+
+%% @private
+handle_read_loop(TotalSize, TotalSize, #req_info{request = Req}) ->
+    {ok, Req};
+handle_read_loop(Offset, TotalSize, #req_info{key = Key,
+                                              reference = Ref,
+                                              transport = Transport,
+                                              socket = Socket
+                                             } = ReqInfo) ->
+    ReadSize = case file:read(Ref, ?READMODE_READSIZE) of
+                   {ok, Bin} ->
+                       Transport:send(Socket, Bin),
+                       byte_size(Bin);
+                   eof ->
+                       0;
+                   {error, Reason} ->
+                       erlang:error(Reason)
+               end,
+    case ReadSize of
+        0 ->
+            leo_cache_tran:begin_tran(self(), transfer, Key),
+            leo_cache_tran:wait_tran(transfer, Key),
+            handle_read_loop(Offset, TotalSize, ReqInfo);
+        _ ->
+            handle_read_loop(Offset + ReadSize, TotalSize, ReqInfo)
     end.

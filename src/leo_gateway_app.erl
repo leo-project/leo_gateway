@@ -79,6 +79,7 @@ start() ->
     application:ensure_started(ssl),
     application:ensure_started(ranch),
     application:ensure_started(asn1),
+    application:ensure_started(leo_cache),
     application:start(leo_gateway).
 
 
@@ -334,6 +335,7 @@ after_process_1(Pid, Managers) ->
     CacheDiscThresholdLen = HttpOptions#http_options.cache_disc_threshold_len,
     CacheDiscDirData      = HttpOptions#http_options.cache_disc_dir_data,
     CacheDiscDirJournal   = HttpOptions#http_options.cache_disc_dir_journal,
+    application:ensure_started(leo_cache),
     ok = leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
                               {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
                               {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
