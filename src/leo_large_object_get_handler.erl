@@ -144,7 +144,7 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
                                 Ret ->
                                     Ret
                             end,
-                    ok = file:close(Ref_1),
+                    leo_cache_api:readmode_end(Ref_1, Key),
                     Ret_1
             end,
 
@@ -254,7 +254,7 @@ handle_read_loop(Offset, TotalSize, #req_info{key = Key,
                end,
     case ReadSize of
         0 ->
-            leo_cache_tran:begin_tran(self(), transfer, Key),
+            leo_cache_tran:begin_tran(transfer, Key),
             leo_cache_tran:wait_tran(transfer, Key),
             handle_read_loop(Offset, TotalSize, ReqInfo);
         _ ->
