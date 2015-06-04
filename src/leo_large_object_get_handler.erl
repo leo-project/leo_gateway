@@ -101,7 +101,7 @@ get(Pid, TotalOfChunkedObjs, Req, Meta) ->
 %% GEN_SERVER CALLBACKS
 %%====================================================================
 init([Key, Transport, Socket]) ->
-    ReadSize = leo_misc:get_env(leo_gateway, 'cache_reader_read_size'),
+    {ok, ReadSize} = leo_misc:get_env(leo_gateway, 'cache_reader_read_size'),
     State = #state{key = Key,
                    transport = Transport,
                    socket = Socket,
@@ -256,6 +256,7 @@ handle_read_loop(Offset, TotalSize, #req_info{key = Key,
                    eof ->
                        0;
                    {error, Reason} ->
+                       ?error("handle_read_loop/3", "Ref:~p, Reason:~s, ReadSizeMax:~p", [Ref, Reason, ReadSizeMax]),
                        erlang:error(Reason)
                end,
     case ReadSize of
