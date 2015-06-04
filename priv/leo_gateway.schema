@@ -393,6 +393,15 @@
          string:tokens(Patterns, "[ , ]")
  end}.
 
+%% @doc Read Size for Reader Mode
+{mapping,
+ "cache.cache_reader_read_size",
+ "leo_gateway.cache.cache_reader_read_size",
+ [
+  {datatype, integer},
+  {default, 4194304}
+ ]}.
+
 %% --------------------------------------------------------------------
 %% GATEWAY - Watchdog
 %% --------------------------------------------------------------------

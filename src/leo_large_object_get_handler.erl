@@ -51,7 +51,8 @@
           key = <<>>            :: binary(),
           socket = undefined    :: any(),
           transport = undefined :: undefined | module(),
-          iterator              :: leo_large_object_commons:iterator()
+          iterator              :: leo_large_object_commons:iterator(),
+          readsize              :: pos_integer()
          }).
 
 -record(req_info, {
@@ -61,7 +62,8 @@
           metadata   :: #?METADATA{},
           reference  :: reference(),
           transport  :: any(),
-          socket     :: any()
+          socket     :: any(),
+          readsize   :: pos_integer()
          }).
 
 
@@ -99,16 +101,18 @@ get(Pid, TotalOfChunkedObjs, Req, Meta) ->
 %% GEN_SERVER CALLBACKS
 %%====================================================================
 init([Key, Transport, Socket]) ->
+    ReadSize = leo_misc:get_env(leo_gateway, 'cache_reader_read_size'),
     State = #state{key = Key,
                    transport = Transport,
-                   socket = Socket},
+                   socket = Socket,
+                   readsize = ReadSize},
     {ok, State}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
-            #state{key = Key, transport = Transport, socket = Socket} = State) ->
+            #state{key = Key, transport = Transport, socket = Socket, readsize = ReadSize} = State) ->
     {Mode_1, Ref_1} = case catch leo_cache_api:put_begin_tran(Key) of
                       {ok, Mode, Ref} -> {Mode, Ref};
                       _ -> {write, undefined}
@@ -138,7 +142,8 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
                                                                              request = Req,
                                                                              reference = Ref_1,
                                                                              transport = Transport,
-                                                                             socket = Socket}) of
+                                                                             socket = Socket,
+                                                                             readsize = ReadSize}) of
                                 {'EXIT', Reason} ->
                                     {error, Reason};
                                 Ret ->
@@ -241,9 +246,10 @@ handle_read_loop(TotalSize, TotalSize, #req_info{request = Req}) ->
 handle_read_loop(Offset, TotalSize, #req_info{key = Key,
                                               reference = Ref,
                                               transport = Transport,
-                                              socket = Socket
+                                              socket = Socket,
+                                              readsize = ReadSizeMax
                                              } = ReqInfo) ->
-    ReadSize = case file:read(Ref, ?READMODE_READSIZE) of
+    ReadSize = case file:read(Ref, ReadSizeMax) of
                    {ok, Bin} ->
                        Transport:send(Socket, Bin),
                        byte_size(Bin);

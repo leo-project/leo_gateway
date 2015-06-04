@@ -121,6 +121,7 @@
 -define(DEF_CACHE_DISC_DIR_JOURNAL,   "./cache/journal").
 -define(DEF_CACHE_EXPIRE,             300).
 -define(DEF_CACHE_MAX_CONTENT_LEN,    1000000).
+-define(DEF_CACHE_READER_READ_SIZE,   4194304).
 -define(DEF_LOBJ_MAX_CHUNKED_OBJS,       1000).
 -define(DEF_LOBJ_MAX_LEN_OF_OBJ,         524288000).
 -define(DEF_LOBJ_CHUNK_OBJ_LEN,          5242880).
@@ -365,6 +366,7 @@
           cache_max_content_len = 0    :: pos_integer(),  %% cache max content length (byte)
           cachable_content_type = []   :: list(),         %% cachable content types
           cachable_path_pattern = []   :: list(),         %% cachable path patterns
+          cache_reader_read_size = 0   :: pos_integer(),  %% cache read size (Reader Mode)
           %% for large-object
           max_chunked_objs = 0         :: pos_integer(),  %% max chunked objects
           max_len_of_obj = 0           :: pos_integer(),  %% max length a object (byte)

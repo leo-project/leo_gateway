@@ -103,6 +103,7 @@ get_node_status() ->
          {cache_max_content_len,    leo_misc:get_value('cache_max_content_len',    CacheProps, ?DEF_CACHE_MAX_CONTENT_LEN)},
          {cachable_content_type,    leo_misc:get_value('cachable_content_type',    CacheProps, [])},
          {cachable_path_pattern,    leo_misc:get_value('cachable_path_pattern',    CacheProps, [])},
+         {cache_reader_read_size,   leo_misc:get_value('cache_reader_read_size',   CacheProps, ?DEF_CACHE_READER_READ_SIZE)},
          {max_chunked_objs,         leo_misc:get_value('max_chunked_objs',         LObjProps,  ?DEF_LOBJ_MAX_CHUNKED_OBJS)},
          {chunked_obj_len,          leo_misc:get_value('chunked_obj_len',          LObjProps,  ?DEF_LOBJ_CHUNK_OBJ_LEN)},
          {reading_chunked_obj_len,  leo_misc:get_value('reading_chunked_obj_len',  LObjProps,  ?DEF_LOBJ_READING_CHUNK_OBJ_LEN)},
