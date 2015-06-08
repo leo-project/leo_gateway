@@ -740,14 +740,34 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     Header = [?SERVER_HEADER,
               {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}],
+    Length = get_body_length(Req, Key, Range),
     Req2 = cowboy_req:set_resp_body_fun(
+             Length,
              fun(Socket, Transport) ->
                      get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
-             end, Req),
+             end, 
+             Req),
     ?reply_ok(Header, Req2).
 %    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_PARTIAL_CONTENT, Header, Req),
 %    get_range_object_1(Req2, Bucket, Key, Range, undefined).
 
+get_body_length(Req, Key, Range) ->
+    get_body_length(Req, Key, Range, 0).
+
+get_body_length(_Req, _Key, [], Acc) ->
+    Acc;
+get_body_length(Req, Key, [{Start, infinity}|Rest], Acc) ->
+    case leo_gateway_rpc_handler:head(Key) of
+        {ok, #?METADATA{dsize = ObjectSize}} ->
+            get_body_length(Req, Key, Rest, Acc + ObjectSize - Start);
+        {_, _} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req),
+            error
+    end;
+get_body_length(Req, Key, [{Start, End}|Rest], Acc) ->
+    get_body_length(Req, Key, Rest, Acc + End - Start + 1);
+get_body_length(Req, Key, [End|Rest], Acc) ->
+    get_body_length(Req, Key, Rest, Acc + End + 1).
 
 get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
     {ok, Req};
