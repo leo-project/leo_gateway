@@ -738,36 +738,37 @@ get_range_object(Req, Bucket, Key, {error, badarg}) ->
     ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
 get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
-    Header = [?SERVER_HEADER,
-              {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}],
-    Length = get_body_length(Req, Key, Range),
-    Req2 = cowboy_req:set_resp_body_fun(
-             Length,
-             fun(Socket, Transport) ->
-                     get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
-             end, 
-             Req),
-    ?reply_ok(Header, Req2).
-%    {ok, Req2} = cowboy_req:chunked_reply(?HTTP_ST_PARTIAL_CONTENT, Header, Req),
-%    get_range_object_1(Req2, Bucket, Key, Range, undefined).
+    case get_body_length_1(Key, Range) of
+        error ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+        Length ->
+            Header = [?SERVER_HEADER,
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
+                      {?HTTP_HEAD_RESP_CONTENT_LENGTH,integer_to_list(Length)}],
+            Req2 = cowboy_req:set_resp_body_fun(
+                     fun(Socket, Transport) ->
+                             get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
+                     end, 
+                     Req),
+            ?reply_ok(Header, Req2)
+    end.
 
-get_body_length(Req, Key, Range) ->
-    get_body_length(Req, Key, Range, 0).
-
-get_body_length(_Req, _Key, [], Acc) ->
-    Acc;
-get_body_length(Req, Key, [{Start, infinity}|Rest], Acc) ->
+get_body_length_1(Key, Range) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{dsize = ObjectSize}} ->
-            get_body_length(Req, Key, Rest, Acc + ObjectSize - Start);
+            get_body_length(Range, ObjectSize, 0);
         {_, _} ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req),
             error
-    end;
-get_body_length(Req, Key, [{Start, End}|Rest], Acc) ->
-    get_body_length(Req, Key, Rest, Acc + End - Start + 1);
-get_body_length(Req, Key, [End|Rest], Acc) ->
-    get_body_length(Req, Key, Rest, Acc + End + 1).
+    end.
+
+get_body_length([], _ObjectSize, Acc) ->
+    Acc;
+get_body_length([{Start, infinity}|Rest], ObjectSize, Acc) ->
+    get_body_length(Rest, ObjectSize, Acc + ObjectSize - Start);
+get_body_length([{Start, End}|Rest], ObjectSize, Acc) when End < ObjectSize ->
+    get_body_length(Rest, ObjectSize, Acc + End - Start + 1);
+get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize->
+    get_body_length(Rest, ObjectSize, Acc + End + 1).
 
 get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
     {ok, Req};
@@ -828,7 +829,6 @@ get_range_object_small(Req, Bucket, Key, Start, End, Socket, Transport) ->
             ok;
         {ok, _Meta, Bin} ->
             ?access_log_get(Bucket, Key, byte_size(Bin), ?HTTP_ST_OK),
-            %cowboy_req:chunk(Bin, Req);
             Transport:send(Socket, Bin);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
@@ -898,7 +898,6 @@ send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) 
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand children
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            %cowboy_req:chunk(Bin, Req),
             Transport:send(Socket, Bin),
             CurPos + ChunkSize;
         Error ->
@@ -920,7 +919,6 @@ send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport)
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand childs
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            %cowboy_req:chunk(Bin, Req),
             Transport:send(Socket, Bin),
             CurPos + ChunkSize;
         {error, Cause} ->
