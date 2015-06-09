@@ -765,10 +765,16 @@ get_body_length([], _ObjectSize, Acc) ->
     Acc;
 get_body_length([{Start, infinity}|Rest], ObjectSize, Acc) ->
     get_body_length(Rest, ObjectSize, Acc + ObjectSize - Start);
+get_body_length([{Start, End}|Rest], ObjectSize, Acc) when End < 0 ->
+    get_body_length(Rest, ObjectSize, Acc + ObjectSize - Start);
 get_body_length([{Start, End}|Rest], ObjectSize, Acc) when End < ObjectSize ->
     get_body_length(Rest, ObjectSize, Acc + End - Start + 1);
-get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize->
-    get_body_length(Rest, ObjectSize, Acc + End + 1).
+get_body_length([End|Rest], ObjectSize, Acc) when End < 0 ->
+    get_body_length(Rest, ObjectSize, Acc + ObjectSize);
+get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
+    get_body_length(Rest, ObjectSize, Acc + End + 1);
+get_body_length(_, _, _) ->
+    error.
 
 get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
     {ok, Req};
