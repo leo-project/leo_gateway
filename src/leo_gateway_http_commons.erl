@@ -744,6 +744,7 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_RESP_CONTENT_LENGTH,integer_to_list(Length)}],
             Req2 = cowboy_req:set_resp_body_fun(
+                     Length,
                      fun(Socket, Transport) ->
                              get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
                      end, 
