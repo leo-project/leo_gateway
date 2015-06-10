@@ -739,9 +739,7 @@ get_range_object(Req, Bucket, Key, {error, badarg}) ->
 get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     case get_body_length_1(Key, Range) of
-        error ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-        Length ->
+        {ok, Length} ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_RESP_CONTENT_LENGTH,integer_to_list(Length)}],
@@ -750,19 +748,25 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
                              get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
                      end, 
                      Req),
-            ?reply_ok(Header, Req2)
+            ?reply_partial_content(Header, Req2);
+        {error, bad_range} ->
+            ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+        _ ->
+            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 get_body_length_1(Key, Range) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{dsize = ObjectSize}} ->
             get_body_length(Range, ObjectSize, 0);
-        {_, _} ->
-            error
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 get_body_length([], _ObjectSize, Acc) ->
-    Acc;
+    {ok, Acc};
 get_body_length([{Start, infinity}|Rest], ObjectSize, Acc) ->
     get_body_length(Rest, ObjectSize, Acc + ObjectSize - Start);
 get_body_length([{Start, End}|Rest], ObjectSize, Acc) when End < 0 ->
@@ -774,7 +778,7 @@ get_body_length([End|Rest], ObjectSize, Acc) when End < 0 ->
 get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
     get_body_length(Rest, ObjectSize, Acc + End + 1);
 get_body_length(_, _, _) ->
-    error.
+    {error, bad_range}.
 
 get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
     {ok, Req};
