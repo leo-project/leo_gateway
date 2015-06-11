@@ -739,30 +739,39 @@ get_range_object(Req, Bucket, Key, {error, badarg}) ->
 get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     case get_body_length_1(Key, Range) of
-        error ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-        Length ->
+        {ok, Length} ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
                       {?HTTP_HEAD_RESP_CONTENT_LENGTH,integer_to_list(Length)}],
             Req2 = cowboy_req:set_resp_body_fun(
+                     Length,
                      fun(Socket, Transport) ->
                              get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
                      end, 
                      Req),
-            ?reply_ok(Header, Req2)
+            ?reply_partial_content(Header, Req2);
+        {error, bad_range} ->
+            ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
+        {error, unavailable} ->
+            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+        {error, timeout} ->
+            ?reply_timeout_without_body([?SERVER_HEADER], Req);
+        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            ?reply_internal_error_without_body([?SERVER_HEADER], Req);
+        _ ->
+            ?reply_not_found_without_body([?SERVER_HEADER], Req)
     end.
 
 get_body_length_1(Key, Range) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{dsize = ObjectSize}} ->
             get_body_length(Range, ObjectSize, 0);
-        {_, _} ->
-            error
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 get_body_length([], _ObjectSize, Acc) ->
-    Acc;
+    {ok, Acc};
 get_body_length([{Start, infinity}|Rest], ObjectSize, Acc) ->
     get_body_length(Rest, ObjectSize, Acc + ObjectSize - Start);
 get_body_length([{Start, End}|Rest], ObjectSize, Acc) when End < 0 ->
@@ -774,11 +783,20 @@ get_body_length([End|Rest], ObjectSize, Acc) when End < 0 ->
 get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
     get_body_length(Rest, ObjectSize, Acc + End + 1);
 get_body_length(_, _, _) ->
-    error.
+    {error, bad_range}.
 
+get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, Socket, Transport) ->
+    Transport:close(Socket);
+%    Transport:close(Socket),
+%    case Reason of
+%        unavailable ->
+%            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+%        not_found ->
+%            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+%        _ ->
+%            ?reply_internal_error_without_body([?SERVER_HEADER], Req)
+%    end;
 get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
-    {ok, Req};
-get_range_object_1(Req,_Bucket,_Key, _, {error, _}, _Socket, _Transport) ->
     {ok, Req};
 get_range_object_1(Req, Bucket, Key, [{Start, infinity}|Rest], _, Socket, Transport) ->
     Ret = get_range_object_2(Req, Bucket, Key, Start, 0, Socket, Transport),
@@ -819,25 +837,26 @@ get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
             get_range_object_large(Req, Bucket, Key,
                                    NewStartPos, NewEndPos, N, Index_1, CurPos_1,
                                    Socket, Transport);
-        {error, unavailable} ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-        _ ->
-            {error, not_found}
+        Error ->
+            Error
     end.
 
 
 %% @doc Retrieve the small object
 %% @private
-get_range_object_small(Req, Bucket, Key, Start, End, Socket, Transport) ->
+get_range_object_small(_Req, Bucket, Key, Start, End, Socket, Transport) ->
     case leo_gateway_rpc_handler:get(Key, Start, End) of
         {ok, _Meta, <<>>} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_OK),
             ok;
         {ok, _Meta, Bin} ->
             ?access_log_get(Bucket, Key, byte_size(Bin), ?HTTP_ST_OK),
-            Transport:send(Socket, Bin);
-        {error, unavailable} ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+            case Transport:send(Socket, Bin) of
+                ok ->
+                    ok;
+                {error, Cause} ->
+                    {error, Cause}
+            end;
         {error, Cause} ->
             {error, Cause}
     end.
@@ -864,6 +883,8 @@ calc_pos(StartPos, EndPos, _ObjectSize) ->
 
 %% @doc Retrieve the large object
 %% @private
+get_range_object_large(_Req,_Bucket,_Key,_Start,_End, _Total, _Index, {error, _} = Error, _Socket, _Transport) ->
+    Error;
 get_range_object_large(_Req,_Bucket,_Key,_Start,_End, Total, Total, CurPos, _Socket, _Transport) ->
     {ok, CurPos};
 get_range_object_large(_Req,_Bucket,_Key,_Start, End,_Total,_Index, CurPos, _Socket, _Transport) when CurPos > End ->
@@ -886,8 +907,6 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Sock
                 {error, Cause} ->
                     {error, Cause}
             end;
-        {error, unavailable} ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, Cause} ->
             {error, Cause}
     end.
@@ -904,8 +923,12 @@ send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) 
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand children
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            Transport:send(Socket, Bin),
-            CurPos + ChunkSize;
+            case Transport:send(Socket, Bin) of
+                ok ->
+                    CurPos + ChunkSize;
+                {error, Cause} ->
+                    {error, Cause}
+            end;
         Error ->
             Error
     end;
@@ -925,8 +948,12 @@ send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport)
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand childs
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            Transport:send(Socket, Bin),
-            CurPos + ChunkSize;
+            case Transport:send(Socket, Bin) of
+                ok ->
+                    CurPos + ChunkSize;
+                {error, Cause} ->
+                    {error, Cause}
+            end;
         {error, Cause} ->
             {error, Cause}
     end.
