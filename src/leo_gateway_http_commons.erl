@@ -822,7 +822,7 @@ calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
     NewStartPos = ObjectSize + EndPos,
     NewEndPos   = ObjectSize - 1,
     {NewStartPos, NewEndPos};
-calc_pos(StartPos, 0, ObjectSize) ->
+calc_pos(StartPos, 0, ObjectSize) when StartPos > 0 ->
     {StartPos, ObjectSize - 1};
 calc_pos(StartPos, EndPos, _ObjectSize) ->
     {StartPos, EndPos}.
