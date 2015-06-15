@@ -741,8 +741,8 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     case get_body_length_1(Key, Range) of
         {ok, Length} ->
             Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-                      {?HTTP_HEAD_RESP_CONTENT_LENGTH,integer_to_list(Length)}],
+                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}
+                     ],
             Req2 = cowboy_req:set_resp_body_fun(
                      Length,
                      fun(Socket, Transport) ->
