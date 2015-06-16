@@ -42,6 +42,7 @@
 
 -record(req_large_obj, {
           handler :: pid(),
+          bucket  :: binary(),
           key     :: binary(),
           length  :: pos_integer(),
           timeout_for_body     :: pos_integer(),
@@ -396,13 +397,14 @@ move_large_object(#?METADATA{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, D
     end.
 
 move_large_object(#?METADATA{dsize = Size}, DstKey,
-                  #req_params{chunked_obj_len = ChunkedSize},
+                  #req_params{chunked_obj_len = ChunkedSize, bucket = Bucket},
                   ReadHandler) ->
     {ok, WriteHandler}  = leo_large_object_put_handler:start_link(DstKey, ChunkedSize),
     try
         case move_large_object_1(
                leo_large_object_move_handler:get_chunk_obj(ReadHandler),
                #req_large_obj{handler       = WriteHandler,
+                              bucket        = Bucket,
                               key           = DstKey,
                               length        = Size,
                               chunked_size  = ChunkedSize}, ReadHandler) of
@@ -436,6 +438,7 @@ move_large_object_1({error, Cause},
     ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 move_large_object_1(done, #req_large_obj{handler = WriteHandler,
+                                         bucket = Bucket,
                                          key = Key,
                                          length = Size,
                                          chunked_size = ChunkedSize}, _) ->
@@ -448,6 +451,7 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
             case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
                                              ChunkedSize, TotalChunks, Digest_1) of
                 {ok, _ETag} ->
+                    ?access_log_put(Bucket, Key, Size, ?HTTP_ST_OK),
                     ok;
                 {error, timeout = Cause} ->
                     {error, Cause};
