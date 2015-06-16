@@ -211,10 +211,10 @@ after_process_0({ok, Pid}) ->
     ok = leo_misc:init_env(),
     Managers_0  = ?env_manager_nodes(leo_gateway),
     Managers_1 = lists:map(fun(X) when is_list(X) ->
-                                  list_to_atom(X);
-                             (X) ->
-                                  X
-                          end, Managers_0),
+                                   list_to_atom(X);
+                              (X) ->
+                                   X
+                           end, Managers_0),
 
     case is_alive_managers(Managers_1) of
         true ->
@@ -328,6 +328,10 @@ after_process_1(Pid, Managers) ->
     end,
 
     %% Launch LeoCache
+    {ok, _} = supervisor:start_child(
+                leo_gateway_sup, {leo_cache_sup,
+                                  {leo_cache_sup, start_link,
+                                   []}, permanent, 2000, worker, [leo_cache_sup]}),
     NumOfCacheWorkers     = HttpOptions#http_options.cache_workers,
     CacheRAMCapacity      = HttpOptions#http_options.cache_ram_capacity,
     CacheDiscCapacity     = HttpOptions#http_options.cache_disc_capacity,
@@ -357,12 +361,11 @@ after_process_1(Pid, Managers) ->
         false ->
             void
     end,
-    RefSup = whereis(leo_gateway_sup),
     ChildSpec = {leo_gateway_qos_stat,
                  {leo_gateway_qos_stat, start_link,
                   [SVManagers, QoS_StatEnabled]},
                  permanent, 2000, worker, [leo_gateway_qos_stat]},
-    {ok, _} = supervisor:start_child(RefSup, ChildSpec),
+    {ok, _} = supervisor:start_child(leo_gateway_sup, ChildSpec),
 
     %% Check status of the storage-cluster
     inspect_cluster_status({ok, Pid}, Managers).
@@ -380,8 +383,6 @@ after_process_2(SystemConf, MembersCur, MembersPrev) ->
                                (X) ->
                                     X
                             end, Managers),
-
-    RefSup = whereis(leo_gateway_sup),
     case whereis(leo_redundant_manager_sup) of
         undefined ->
             ChildSpec = {leo_redundant_manager_sup,
@@ -389,7 +390,7 @@ after_process_2(SystemConf, MembersCur, MembersPrev) ->
                           [?WORKER_NODE, NewManagers,
                            ?env_queue_dir(leo_gateway)]},
                          permanent, 2000, supervisor, [leo_redundant_manager_sup]},
-            {ok, _} = supervisor:start_child(RefSup, ChildSpec);
+            {ok, _} = supervisor:start_child(leo_gateway_sup, ChildSpec);
         _ ->
             {ok, _} = leo_redundant_manager_sup:start_link(
                         gateway, NewManagers, ?env_queue_dir(leo_gateway))
