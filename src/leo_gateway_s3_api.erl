@@ -62,6 +62,7 @@
 %% API
 %%--------------------------------------------------------------------
 start(Sup, HttpOptions) ->
+    ets:new(?ETS_MULTIPART_UPLOAD, [named_table, set, public]),
     leo_gateway_http_commons:start(Sup, HttpOptions).
 
 stop() ->
@@ -253,6 +254,7 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 -spec(get_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 get_object(Req, Key, Params) ->
+    ?error("get_object/3", "Key: ~p, Params: ~p", [Key, Params]),
     leo_gateway_http_commons:get_object(Req, Key, Params).
 
 
@@ -524,10 +526,16 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
     %% from the cache
     _ = (catch leo_cache_api:delete(Path)),
     %% Insert a metadata into the storage-cluster
-    NowBin = list_to_binary(integer_to_list(leo_date:now())),
+    Now = leo_date:now(),
+    NowBin = list_to_binary(integer_to_list(Now)),
     UploadId    = leo_hex:binary_to_hex(crypto:hash(md5, << Path/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
-
+    MpInfo = #multi_part_info{
+                path = Path,
+                upload_id = UploadIdBin,
+                initiated = Now
+               },
+    ets:insert(?ETS_MULTIPART_UPLOAD, {UploadIdBin, MpInfo}),
     {ok, Req_2} =
         case leo_gateway_rpc_handler:put(
                << Path/binary, ?STR_NEWLINE, UploadIdBin/binary >>, <<>>, 0) of
@@ -605,6 +613,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _,
                                                              PartNum  == 0 ->
     Res = cowboy_req:has_body(Req),
     {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId, ChunkedLen),
+    ets:delete(?ETS_MULTIPART_UPLOAD, UploadId),
     {ok, Req_2, State};
 
 %% For Regular cases
