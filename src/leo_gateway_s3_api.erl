@@ -184,6 +184,7 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
     CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
     case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
         ok ->
+            ?access_log_bucket_put(Bucket, ?HTTP_ST_OK),
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
@@ -222,6 +223,8 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
 delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     case delete_bucket_1(AccessKeyId, Key) of
         ok ->
+            Bucket = formalize_bucket(Key),
+            ?access_log_bucket_delete(Bucket, ?HTTP_ST_NO_CONTENT),
             ?reply_no_content([?SERVER_HEADER], Req);
         not_found ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
@@ -236,6 +239,7 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     Bucket = formalize_bucket(Key),
     case head_bucket_1(AccessKeyId, Bucket) of
         ok ->
+            ?access_log_bucket_head(Bucket, ?HTTP_ST_OK),
             ?reply_ok([?SERVER_HEADER], Req);
         not_found ->
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
