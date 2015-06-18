@@ -286,6 +286,16 @@
                       "<Key>~s</Key>",
                       "<ETag>\"~s-~s\"</ETag>",
                       "</CompleteMultipartUploadResult>"])).
+-define(XML_LIST_PART,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListPartsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "<Bucket>~s</Bucket>",
+                      "<Key>~s</Key>",
+                      "<UploadId>~s</UploadId>",
+                      "<IsTruncated>~s</IsTruncated>",
+                      "~s",
+                      "</ListPartsResult>"])).
+
 
 -define(XML_ERROR,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",

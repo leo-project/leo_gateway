@@ -83,7 +83,8 @@
                                     _       -> ?PROTO_HANDLER_S3
                                 end).
 %% Multi Part Upload
--define(ETS_MULTIPART_UPLOAD, 'leo_gateway_mp_upload').
+-define(ETS_MULTIPART_UPLOAD_LIST, 'leo_gateway_mp_upload_list').
+-define(ETS_MULTIPART_UPLOAD_PARTS, 'leo_gateway_mp_upload_parts').
 
 %%----------------------------------------------------------------------
 %% ERROR MESSAGES
@@ -106,7 +107,8 @@
 %% Multi Part Upload
 -record(multi_part_info, {path = <<>>       :: binary(),
                           upload_id = <<>>  :: binary(),
-                          initiated = 0     :: integer()
+                          initiated = 0     :: integer(),
+                          parts = []        :: list(integer())
                          }).
 
 %%----------------------------------------------------------------------
