@@ -381,3 +381,52 @@
                                       ]}
               })
         end).
+
+%% access-log for buckets
+-define(access_log_bucket_put(_Bucket, _Response),
+        begin
+            leo_logger_client_base:append(
+              {?LOG_ID_ACCESS,
+               #message_log{format  = "[BUCKET-PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       "",
+                                       0,
+                                       0,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+            %% ?notify_metrics(<<"PUT">>,_Bucket,_Size)
+        end).
+-define(access_log_bucket_delete(_Bucket, _Response),
+        begin
+            leo_logger_client_base:append(
+              {?LOG_ID_ACCESS,
+               #message_log{format  = "[BUCKET-DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       "",
+                                       0,
+                                       0,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+            %% ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
+        end).
+-define(access_log_bucket_head(_Bucket, _Response),
+        begin
+            leo_logger_client_base:append(
+              {?LOG_ID_ACCESS,
+               #message_log{format  = "[BUCKET-HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       "",
+                                       0,
+                                       0,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+        end).
