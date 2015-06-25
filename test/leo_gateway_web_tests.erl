@@ -367,7 +367,7 @@ get_bucket_acl_normal1_([_TermFun, _Node0,_Node1]) ->
             try
                 {ok, {SC,Body}} =
                     httpc:request(get, {lists:append(["http://",
-                                                      ?TARGET_HOST, ":8080/bucket?acl"]), [{"Authorization","auth:hoge"}]},
+                                                      ?TARGET_HOST, ":8080/bucket?acl"]), [{"Authorization","AWS auth:hoge"}]},
                                   [], [{full_result, false}]),
                 ?assertEqual(200, SC),
                 {_XmlDoc, Rest} = xmerl_scan:string(Body),

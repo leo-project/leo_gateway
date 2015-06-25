@@ -873,10 +873,8 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
         {undefined, _} ->
             {error, undefined};
         {AuthorizationBin, _} ->
-            case binary:match(AuthorizationBin, <<":">>) of
-                nomatch ->
-                    {error, nomatch};
-                _Found ->
+            case AuthorizationBin of
+                <<Head:4/binary, _Rest/binary>> when Head =:= <<"AWS ">> ; Head =:= <<"AWS4">> ->
                     IsCreateBucketOp = (TokenLen   == 1 andalso
                                         HTTPMethod == ?HTTP_PUT andalso
                                         not IsACL),
@@ -934,6 +932,13 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                      list_to_binary(Ret)
                              end,
 
+                    SignVer = case Head of
+                                  <<"AWS4">> ->
+                                      v4;
+                                  _ ->
+                                      v2
+                              end,
+
                     SignParams = #sign_params{http_verb     = HTTPMethod,
                                               content_md5   = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
                                               content_type  = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
@@ -942,8 +947,12 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                               raw_uri       = RawURI,
                                               requested_uri = Path_1,
                                               query_str     = QStr_3,
+                                              sign_ver      = SignVer,
+                                              req           = Req,
                                               amz_headers   = leo_http:get_amz_headers4cow(Headers)},
-                    leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
+                    leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp);
+                _->
+                    {error, nomatch}
             end
     end.
 
