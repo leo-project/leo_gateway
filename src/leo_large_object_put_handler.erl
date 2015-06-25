@@ -145,6 +145,9 @@ handle_call({put, Bin}, _From, #state{key = Key,
                   end,
             SpawnRet = erlang:spawn_monitor(Fun),
             Context_1 = crypto:hash_update(Context, Bin_2),
+			<< Head:8/binary, _Rest/binary>> = Bin_2,
+			Offset = MaxObjLen * NumOfChunks,
+			?debug("handle_call", "Save Chunk, Key: ~p, Chunk: ~p, Offset: ~p, Bin: ~p", [Key, NumOfChunks, Offset, leo_hex:binary_to_hex(Head)]),
             {reply, ok, State#state{stacked_bin   = StackedBin_1,
                                     num_of_chunks = NumOfChunks + 1,
                                     total_len     = TotalLen_1,
@@ -155,8 +158,9 @@ handle_call({put, Bin}, _From, #state{key = Key,
                                     total_len   = TotalLen_1}}
     end;
 
-handle_call({put, _Bin}, _From, #state{key = _Key,
+handle_call({put, _Bin}, _From, #state{key = Key,
                                        errors = Errors} = State) ->
+	?debug("handle_call", "Large Put Failed Key: ~p, Error: ~p", [Key, Errors]),
     {reply, {error, Errors}, State};
 
 handle_call(rollback, _From, #state{key = Key} = State) ->
