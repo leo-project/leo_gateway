@@ -243,7 +243,7 @@ update_acl(_,_,_) ->
 -spec(add_bucket(binary(), binary(), string(), atom()) ->
              ok | {error, any()}).
 add_bucket(AccessKey, Bucket, CannedACL, _Atom) ->
-    leo_s3_bucket:put(AccessKey, Bucket, CannedACL, _Atom).
+    leo_s3_bucket:put(AccessKey, Bucket, CannedACL, _Atom, ets).
 
 %% @doc Delete a bucket(S3-API)
 %%
