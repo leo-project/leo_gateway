@@ -55,6 +55,7 @@
 -define(HTTP_HEAD_LAST_MODIFIED,      <<"last-modified">>).
 -define(HTTP_HEAD_PREFIX,             <<"prefix">>).
 -define(HTTP_HEAD_RANGE,              <<"range">>).
+-define(HTTP_HEAD_CONTENT_ENCODING,   <<"content-encoding">>).
 
 -define(HTTP_HEAD_RESP_AGE,               <<"Age">>).
 -define(HTTP_HEAD_RESP_CACHE_CTRL,        <<"Cache-Control">>).
@@ -70,6 +71,8 @@
 -define(HTTP_HEAD_X_AMZ_ID_2,                   <<"x-amz-id-2">>).
 -define(HTTP_HEAD_X_AMZ_REQ_ID,                 <<"x-amz-request-id">>).
 -define(HTTP_HEAD_X_AMZ_ACL,                    <<"x-amz-acl">>).
+-define(HTTP_HEAD_X_AMZ_CONTENT_SHA256,         <<"x-amz-content-sha256">>).
+-define(HTTP_HRAD_X_AMZ_DATE,                   <<"x-amz-date">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_X_FROM_CACHE,                 <<"x-from-cache">>).
@@ -393,6 +396,7 @@
           is_multi_delete = false    :: boolean(),              %% is multi delete request?
           %% for large-object
           is_upload = false            :: boolean(),            %% is upload operation? (for multipart upload)
+          is_aws_chunked = false       :: boolean(),            %% is AWS Chunked? (Signature V4)
           is_acl = false               :: boolean(),            %% is acl operation?
           upload_id = <<>>             :: binary(),             %% upload id for multipart upload
           upload_part_num = 0          :: non_neg_integer(),    %% upload part number for multipart upload
@@ -401,7 +405,8 @@
           max_len_of_obj = 0           :: non_neg_integer(),    %% max length a object (byte)
           chunked_obj_len = 0          :: non_neg_integer(),    %% chunked object length for large-object (byte)
           reading_chunked_obj_len = 0  :: non_neg_integer(),    %% creading hunked object length for large object (byte)
-          threshold_of_chunk_len = 0   :: non_neg_integer()     %% threshold of chunk length for large-object (byte)
+          threshold_of_chunk_len = 0   :: non_neg_integer(),    %% threshold of chunk length for large-object (byte)
+          content_decode_fun = fun(Bin)->{ok,Bin}end :: function()  %% content decode function
          }).
 
 -record(cache, {
