@@ -62,6 +62,7 @@
 %% API
 %%--------------------------------------------------------------------
 start(Sup, HttpOptions) ->
+    ets:new(?ETS_MULTIPART_UPLOAD_LIST, [named_table, set, public]),
     leo_gateway_http_commons:start(Sup, HttpOptions).
 
 stop() ->
@@ -257,6 +258,7 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
 -spec(get_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 get_object(Req, Key, Params) ->
+    ?error("get_object/3", "Key: ~p, Params: ~p", [Key, Params]),
     leo_gateway_http_commons:get_object(Req, Key, Params).
 
 
@@ -470,6 +472,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
     TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod = cowboy_req:get(method, Req),
 
+%    ?error("handle_1", "Query String: ~p", [cowboy_req:qs_vals(Req)]),
     {Prefix, IsDir, Path_1, Req_2} =
         case cowboy_req:qs_val(?HTTP_HEAD_PREFIX, Req) of
             {undefined, Req_1} ->
@@ -509,6 +512,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                              threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
+%    ?error("handle_1", "Method: ~p, Params: ~p", [HTTPMethod, ReqParams]),
     handle_2(AuthRet, Req_2, HTTPMethod, Path_1, ReqParams, State).
 
 %% @doc Handle a request (sub)
@@ -528,10 +532,10 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
     %% from the cache
     _ = (catch leo_cache_api:delete(Path)),
     %% Insert a metadata into the storage-cluster
-    NowBin = list_to_binary(integer_to_list(leo_date:now())),
+    Now = leo_date:now(),
+    NowBin = list_to_binary(integer_to_list(Now)),
     UploadId    = leo_hex:binary_to_hex(crypto:hash(md5, << Path/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
-
     {ok, Req_2} =
         case leo_gateway_rpc_handler:put(
                << Path/binary, ?STR_NEWLINE, UploadIdBin/binary >>, <<>>, 0) of
@@ -539,6 +543,13 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
                 %% Response xml to a client
                 [Bucket|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
                 XML = gen_upload_initiate_xml(Bucket, Path_1, UploadId),
+                MpInfo = #multi_part_info{
+                            path = Path,
+                            upload_id = UploadIdBin,
+                            initiated = Now,
+                            parts = []
+                           },
+                ets:insert(?ETS_MULTIPART_UPLOAD_LIST, {UploadIdBin, MpInfo}),
 
                 ?reply_ok([?SERVER_HEADER], XML, Req);
             {error, unavailable} ->
@@ -577,7 +588,16 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, _,
     {ok, Req_2} =
         case leo_gateway_rpc_handler:head(Key1) of
             {ok, _Metadata} ->
-                put_object(?BIN_EMPTY, Req, Key2, Params);
+                put_object(?BIN_EMPTY, Req, Key2, Params),
+                case ets:lookup(?ETS_MULTIPART_UPLOAD_LIST, UploadId) of
+                    [{UploadId, MpInfo}] ->
+                        Parts = MpInfo#multi_part_info.parts,
+                        MpInfo2 = MpInfo#multi_part_info{parts = [PartNum1 | Parts]},
+%                        ?error("handle_2", "MpInfo2: ~p", [MpInfo2]),
+                        ets:insert(?ETS_MULTIPART_UPLOAD_LIST, {UploadId, MpInfo2});
+                    [] ->
+                        void
+                end;
             {error, not_found} ->
                 ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);
             {error, unavailable} ->
@@ -609,12 +629,52 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _,
                                                              PartNum  == 0 ->
     Res = cowboy_req:has_body(Req),
     {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId, ChunkedLen),
+    ets:delete(?ETS_MULTIPART_UPLOAD_LIST, UploadId),
     {ok, Req_2, State};
 
 %% For Regular cases
 %%
 handle_2({ok, AccessKeyId}, Req, ?HTTP_POST,  Path, Params, State) ->
     handle_2({ok, AccessKeyId}, Req, ?HTTP_PUT,  Path, Params, State);
+
+%% List Parts
+handle_2({ok, _AccessKeyId}, Req, ?HTTP_GET, 
+         Path, #req_params{upload_id = UploadId}, State ) when UploadId /= <<>> ->
+%    ?error("handle_2", "Path: ~s UploadId: ~s", [Path, UploadId]),
+    {ok, Req_2} = 
+    case ets:lookup(?ETS_MULTIPART_UPLOAD_LIST, UploadId) of
+        [{UploadId, MpInfo}] ->
+            Parts = MpInfo#multi_part_info.parts,
+            PartsXML = 
+            lists:foldl(
+              fun(PartNum, Acc) ->
+                      PartNumBin = list_to_binary(integer_to_list(PartNum)),
+                      Key = << Path/binary, ?STR_NEWLINE, PartNumBin/binary >>,
+                      case leo_gateway_rpc_handler:head(Key) of
+                          {ok, #?METADATA{dsize     = Size,
+                                          checksum   = Checksum,
+                                          timestamp  = TS} = MetaData} ->
+%                              ?error("handle_2/6", "MetaData: ~p", [MetaData]),
+                              lists:append([Acc,
+                                            "<Part>",
+                                            "<PartNumber>",     integer_to_list(PartNum),   "</PartNumber>",
+                                            "<LastModified>",   leo_http:web_date(TS),      "</LastModified>",
+                                            "<ETag>",           leo_hex:integer_to_hex(Checksum, 32),   "</ETag>",
+                                            "<Size>",           integer_to_list(Size),      "</Size>",
+                                            "</Part>"]);
+                          _ ->
+                              Acc
+                      end
+              end, "", lists:reverse(Parts)),
+            [Bucket | Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
+            XML = gen_list_part_xml(Bucket, Path_1, UploadId, PartsXML),
+%            ?error("handle_2", "List XML: ~s", [XML]),
+            ?reply_ok([?SERVER_HEADER], XML, Req);
+        [] ->
+            ?error("handle_2", "UploadId: ~s Not Found", [UploadId]),
+            ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req)
+    end,
+    {ok, Req_2, State};
 
 handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
     case catch leo_gateway_http_req_handler:handle(
@@ -753,6 +813,14 @@ gen_upload_completion_xml(BucketBin, Path, ETag, Total) ->
     TotalStr = integer_to_list(Total),
     Key = gen_upload_key(Path),
     io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket, Key, ETag, TotalStr]).
+
+%% @doc Generate List Part xml
+%% @private
+-spec(gen_list_part_xml(binary(), list(binary()), binary(), string()) -> list()).
+gen_list_part_xml(BucketBin, Path, UploadId, PartsXML) ->
+    Bucket = binary_to_list(BucketBin),
+    Key = gen_upload_key(Path),
+    io_lib:format(?XML_LIST_PART, [Bucket, Key, UploadId, false, PartsXML]).
 
 
 %% @doc Generate copy-obj's xml
