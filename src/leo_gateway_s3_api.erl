@@ -184,6 +184,7 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
     CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
     case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
         ok ->
+            ?access_log_bucket_put(Bucket, ?HTTP_ST_OK),
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
@@ -222,6 +223,8 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
 delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     case delete_bucket_1(AccessKeyId, Key) of
         ok ->
+            Bucket = formalize_bucket(Key),
+            ?access_log_bucket_delete(Bucket, ?HTTP_ST_NO_CONTENT),
             ?reply_no_content([?SERVER_HEADER], Req);
         not_found ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
@@ -236,6 +239,7 @@ head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
     Bucket = formalize_bucket(Key),
     case head_bucket_1(AccessKeyId, Bucket) of
         ok ->
+            ?access_log_bucket_head(Bucket, ?HTTP_ST_OK),
             ?reply_ok([?SERVER_HEADER], Req);
         not_found ->
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
@@ -335,7 +339,7 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
 
     case leo_gateway_rpc_handler:get(CS2) of
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
-            put_object_1(Directive, Req, Key, Meta, RespObject);
+            put_object_1(Directive, Req, Key, Meta, RespObject, Params);
         {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
             put_large_object_1(Directive, Req, Key, Meta, Params);
         {error, not_found} ->
@@ -350,14 +354,15 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
 
 %% @doc POST/PUT operation on Objects. COPY
 %% @private
-put_object_1(Directive, Req, Key, Meta, Bin) ->
+put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket = Bucket} = Params) ->
     Size = size(Bin),
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
+            ?access_log_put(Bucket, Key, Size, ?HTTP_ST_OK),
             resp_copy_obj_xml(Req, Meta);
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
-            put_object_2(Req, Key, Meta);
+            put_object_2(Req, Key, Meta, Params);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -368,15 +373,16 @@ put_object_1(Directive, Req, Key, Meta, Bin) ->
 
 %% @doc POST/PUT operation on Objects. REPLACE
 %% @private
-put_object_2(Req, Key, Meta) ->
+put_object_2(Req, Key, Meta, Params) ->
     case Key == Meta#?METADATA.key of
         true  -> resp_copy_obj_xml(Req, Meta);
-        false -> put_object_3(Req, Meta)
+        false -> put_object_3(Req, Meta, Params)
     end.
 
-put_object_3(Req, Meta) ->
+put_object_3(Req, #?METADATA{key = Key, dsize = Size} = Meta, #req_params{bucket = Bucket}) ->
     case leo_gateway_rpc_handler:delete(Meta#?METADATA.key) of
         ok ->
+            ?access_log_delete(Bucket, Key, Size, ?HTTP_ST_NO_CONTENT),
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
@@ -1225,12 +1231,18 @@ delete_multi_objects_4(Req, IsQuiet, [Key|Rest], DeletedKeys, ErrorKeys,
                        #req_params{bucket = Bucket} = Params) ->
     BinKey = list_to_binary(Key),
     Path = <<Bucket/binary, <<"/">>/binary, BinKey/binary>>,
-    case leo_gateway_rpc_handler:delete(Path) of
-        ok ->
-            delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
-        {error, not_found} ->
-            delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
-        {error, _} ->
+    case leo_gateway_rpc_handler:head(Path) of
+        {ok, Meta} ->
+            case leo_gateway_rpc_handler:delete(Path) of
+                ok ->
+                    ?access_log_delete(Bucket, Path, Meta#?METADATA.dsize, ?HTTP_ST_NO_CONTENT),
+                    delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
+                {error, not_found} ->
+                    delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
+                {error, _} ->
+                    delete_multi_objects_4(Req, IsQuiet, Rest, DeletedKeys, [Key|ErrorKeys], Params)
+            end;
+        _ ->
             delete_multi_objects_4(Req, IsQuiet, Rest, DeletedKeys, [Key|ErrorKeys], Params)
     end.
 
