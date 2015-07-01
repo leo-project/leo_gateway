@@ -188,6 +188,9 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
+        {error, invalid_bucket_format} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidBucketName,
+                               ?XML_ERROR_MSG_InvalidBucketName, Key, <<>>, Req);
         {error, invalid_access} ->
             ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req);
         {error, already_exists} ->
