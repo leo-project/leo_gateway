@@ -303,28 +303,32 @@ put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true} = Params) 
     end;
 
 put_object(?BIN_EMPTY, Req, Key, Params) ->
-    {Size, _} = cowboy_req:body_length(Req),
-
-    case (Size >= Params#req_params.threshold_of_chunk_len) of
-        true when Size >= Params#req_params.max_len_of_obj ->
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
-                               ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
-        true when Params#req_params.is_upload == false ->
-            leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
-        false ->
-            Ret = case cowboy_req:has_body(Req) of
-                      true ->
-                          BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
-                          case cowboy_req:body(Req, BodyOpts) of
-                              {ok, Bin, Req1} ->
-                                  {ok, {Size, Bin, Req1}};
-                              {error, Cause} ->
-                                  {error, Cause}
-                          end;
-                      false ->
-                          {ok, {0, ?BIN_EMPTY, Req}}
-                  end,
-            leo_gateway_http_commons:put_small_object(Ret, Key, Params)
+    case catch cowboy_req:body_length(Req) of
+        {'EXIT', _} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+        {Size, _} ->
+            case (Size >= Params#req_params.threshold_of_chunk_len) of
+                true when Size >= Params#req_params.max_len_of_obj ->
+                    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
+                                       ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
+                true when Params#req_params.is_upload == false ->
+                    leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
+                false ->
+                    Ret = case cowboy_req:has_body(Req) of
+                              true ->
+                                  BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
+                                  case cowboy_req:body(Req, BodyOpts) of
+                                      {ok, Bin, Req1} ->
+                                          {ok, {Size, Bin, Req1}};
+                                      {error, Cause} ->
+                                          {error, Cause}
+                                  end;
+                              false ->
+                                  {ok, {0, ?BIN_EMPTY, Req}}
+                          end,
+                    leo_gateway_http_commons:put_small_object(Ret, Key, Params)
+            end
     end;
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
