@@ -72,6 +72,7 @@
 -define(HTTP_HEAD_X_AMZ_REQ_ID,                 <<"x-amz-request-id">>).
 -define(HTTP_HEAD_X_AMZ_ACL,                    <<"x-amz-acl">>).
 -define(HTTP_HEAD_X_AMZ_CONTENT_SHA256,         <<"x-amz-content-sha256">>).
+-define(HTTP_HEAD_X_AMZ_DECODED_CONTENT_LENGTH, <<"x-amz-decoded-content-length">>).
 -define(HTTP_HRAD_X_AMZ_DATE,                   <<"x-amz-date">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
@@ -344,6 +345,23 @@
                       "</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"])).
 
 %% Records
+-type aws_chunk_state() ::  wait_size | wait_head | read_chunk | error | done.
+
+-record(aws_chunk_sign_params, {sign_head       :: binary(),
+                                sign_key        :: binary(),
+                                prev_sign       :: binary(),
+                                chunk_sign      :: binary(),
+                                chunk_size      :: non_neg_integer(),
+                                hash_context    :: undefined | {crypto:digest_type(), binary()}
+                               }).
+
+-record(aws_chunk_decode_state, {buffer         :: binary(),
+                                 dec_state      :: aws_chunk_state(),
+                                 chunk_offset   :: non_neg_integer(),
+                                 sign_params    :: #aws_chunk_sign_params{},
+                                 total_len      :: non_neg_integer()
+                                }).
+
 -record(http_options, {
           %% for basic
           handler                      :: atom(),         %% http-handler
@@ -406,7 +424,8 @@
           chunked_obj_len = 0          :: non_neg_integer(),    %% chunked object length for large-object (byte)
           reading_chunked_obj_len = 0  :: non_neg_integer(),    %% creading hunked object length for large object (byte)
           threshold_of_chunk_len = 0   :: non_neg_integer(),    %% threshold of chunk length for large-object (byte)
-          content_decode_fun = fun(Bin)->{ok,Bin}end :: function()  %% content decode function
+          transfer_decode_fun       :: function() | undefined,  %% transfer decode function
+          transfer_decode_state     :: #aws_chunk_decode_state{} | undefined    %% transfer decode state
          }).
 
 -record(cache, {
