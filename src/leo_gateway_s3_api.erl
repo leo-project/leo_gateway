@@ -143,7 +143,12 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                        end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
                   {undefined, _} -> 1000;
-                  {Val_2,     _} -> list_to_integer(binary_to_list(Val_2))
+                  {Val_2,     _} ->
+                      try
+                          list_to_integer(binary_to_list(Val_2))
+                      catch _:_ ->
+                          badarg
+                      end
               end,
 
     case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
@@ -151,6 +156,9 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
+        {error, badarg} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
@@ -958,8 +966,10 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
 %% @doc Get bucket list
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
--spec(get_bucket_1(binary(), binary(), char()|none, string()|none, integer(), binary()|none) ->
+-spec(get_bucket_1(binary(), binary(), char()|none, string()|none, integer()|badarg, binary()|none) ->
              {ok, list(), string()}|{error, any()}).
+get_bucket_1(_AccessKeyId, _Key, _Delimiter, _Marker, badarg, _Prefix) ->
+    {error, badarg};
 get_bucket_1(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
     get_bucket_1(AccessKeyId, ?BIN_SLASH, Delimiter, Marker, MaxKeys, none);
 
