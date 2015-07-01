@@ -636,16 +636,14 @@ aws_chunk_decode({ok, Acc}, IOList, read_chunk, Offset, #aws_chunk_sign_params{
             <<ChunkPart:ChunkRemainSize/binary, "\r\n", Rest/binary>> = Bin,
             Context_2 = crypto:hash_update(Context, ChunkPart),
             ChunkHash = crypto:hash_final(Context_2),
-			ChunkHashHex = leo_hex:binary_to_hex(ChunkHash),
-			ChunkHashBin = list_to_binary(ChunkHashHex),
+            ChunkHashBin = leo_hex:binary_to_hexbin(ChunkHash),
             BinToSign = <<"AWS4-HMAC-SHA256-PAYLOAD\n",
 			              SignHead/binary,
                           PrevSign/binary,  "\n",
                           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
                           ChunkHashBin/binary>>,
             Signature = crypto:hmac(sha256, SignKey, BinToSign),
-            SignatureHex = leo_hex:binary_to_hex(Signature),
-            Sign = list_to_binary(SignatureHex),
+            Sign = leo_hex:binary_to_hexbin(Signature),
             case Sign of
                 ChunkSign ->
                     ?debug("aws_chunk_decode/4", "Output Chunk Size: ~p, Sign: ~p", [ChunkSize, ChunkSign]),
