@@ -983,6 +983,13 @@ get_bucket_1(AccessKeyId, ?BIN_SLASH, _Delimiter, _Marker, _MaxKeys, none) ->
             Error
     end;
 
+get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
+    Prefix_1 = case Prefix of
+                   none -> <<>>;
+                   _    -> Prefix
+               end,
+    Key = << Bucket/binary, Prefix_1/binary >>,
+    {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none -> <<>>;
@@ -1075,7 +1082,7 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
     Len    = byte_size(KeyBin),
     Key    = binary_to_list(KeyBin),
     Prefix = binary_to_list(PrefixBin),
-    TruncatedStr = case length(MetadataList) =:= MaxKeys of
+    TruncatedStr = case length(MetadataList) =:= MaxKeys andalso MaxKeys =/= 0 of
                        true -> "true";
                        false -> "false"
                    end,
