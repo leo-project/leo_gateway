@@ -678,7 +678,7 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset, #aws_chunk_sign_params{
                             {{error, unmatch}, {Buffer, error, Offset, SignParams}}
                     end
             end;
-        _ ->
+        Len when ChunkRemainSize >= Len ->
             SignParams_2 = case SignHead of
                                undefined ->
                                    SignParams;
@@ -686,7 +686,9 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset, #aws_chunk_sign_params{
                                    Context_2 = crypto:hash_update(Context, Buffer),
                                    SignParams#aws_chunk_sign_params{hash_context = Context_2}
                            end,
-            {{ok, <<Acc/binary, Buffer/binary>>}, {<<>>, read_chunk, Offset + byte_size(Buffer), SignParams_2}}
+            {{ok, <<Acc/binary, Buffer/binary>>}, {<<>>, read_chunk, Offset + Len, SignParams_2}};
+        _ ->
+            {{ok, Acc}, {Buffer, read_chunk, Offset ,SignParams}}
     end.
 
 %% @doc Handle a request (sub)
