@@ -130,6 +130,7 @@
 %% error codes used in a error response
 -define(XML_ERROR_CODE_EntityTooLarge,  "EntityTooLarge").
 -define(XML_ERROR_CODE_InvalidArgument, "InvalidArgument").
+-define(XML_ERROR_CODE_InvalidRequest,  "InvalidRequest").
 -define(XML_ERROR_CODE_AccessDenied,    "AccessDenied").
 -define(XML_ERROR_CODE_NoSuchKey,       "NoSuchKey").
 -define(XML_ERROR_CODE_InvalidRange,    "InvalidRange").
@@ -145,6 +146,7 @@
 %% error messages used in a error response
 -define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
 -define(XML_ERROR_MSG_InvalidArgument, "Invalid Argument").
+-define(XML_ERROR_MSG_InvalidRequest, "SOAP requests must be made over an HTTPS connection.").
 -define(XML_ERROR_MSG_AccessDenied,    "Access Denied").
 -define(XML_ERROR_MSG_NoSuchKey,       "The specified key does not exist.").
 -define(XML_ERROR_MSG_InvalidRange,    "The requested range cannot be satisfied.").

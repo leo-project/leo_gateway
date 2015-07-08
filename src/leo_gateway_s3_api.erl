@@ -351,20 +351,26 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
               _ ->
                   CS
           end,
-
-    case leo_gateway_rpc_handler:get(CS2) of
-        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
-            put_object_1(Directive, Req, Key, Meta, RespObject, Params);
-        {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
-            put_large_object_1(Directive, Req, Key, Meta, Params);
-        {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
-        {error, unavailable} ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+    case Key =:= CS2 of
+        true ->
+            % 400
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidRequest,
+                                ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
+        false ->
+            case leo_gateway_rpc_handler:get(CS2) of
+                {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
+                    put_object_1(Directive, Req, Key, Meta, RespObject, Params);
+                {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
+                    put_large_object_1(Directive, Req, Key, Meta, Params);
+                {error, not_found} ->
+                    ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+                {error, unavailable} ->
+                    ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
+                {error, timeout} ->
+                    ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+            end
     end.
 
 %% @doc POST/PUT operation on Objects. COPY
