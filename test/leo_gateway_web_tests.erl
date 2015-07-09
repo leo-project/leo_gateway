@@ -74,7 +74,8 @@ gen_tests_1(Arg) ->
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
                fun put_object_normal1_/1,
-               fun put_object_aws_chunked_/1
+               fun put_object_aws_chunked_/1,
+               fun put_object_aws_chunked_error_/1
               ]).
 
 gen_tests_2(Arg) ->
@@ -852,6 +853,7 @@ put_object_aws_chunked_([_TermFun, _Node0, Node1]) ->
             SignHead = <<"20150706T051217Z\n20150706/us-east-1/s3/aws4_request\n">>,
             SignKey = <<"2040321d898be34c82d1db9e132124f11eb18a3d21569d1ed58b460b88954ac7">>,
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"05236">>, {Signature, SignHead, SignKey}}),
+            meck:expect(leo_s3_bucket, get_acls, 1, not_found),
             Chunks = gen_chunks(Signature, SignHead, SignKey, ?AWSCHUNKEDSIZE, <<>>),
             try
                 {ok, {SC, _Body}} =
@@ -864,6 +866,41 @@ put_object_aws_chunked_([_TermFun, _Node0, Node1]) ->
                                     ], "image/png", Chunks},
                               [], [{full_result, false}]),
                 ?assertEqual(200, SC)
+            catch
+                throw:Reason ->
+                    throw(Reason)
+            after
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
+                ok = meck:unload(leo_s3_auth)
+            end,
+            ok
+    end.
+
+put_object_aws_chunked_error_([_TermFun, _Node0, Node1]) ->
+    fun() ->
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link, non_strict]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, put, 2, {ok, 1}]),
+            meck:new(leo_s3_auth, [no_link, non_strict]),
+            Signature = <<"642797dcfdf817ac23b553420f52c160847d3747b2e86e5ac9d07cc5e7f60f63">>,
+            SignatureI = <<"incorrect">>,
+            SignHead = <<"20150706T051217Z\n20150706/us-east-1/s3/aws4_request\n">>,
+            SignKey = <<"2040321d898be34c82d1db9e132124f11eb18a3d21569d1ed58b460b88954ac7">>,
+            meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"05236">>, {Signature, SignHead, SignKey}}),
+            meck:expect(leo_s3_bucket, get_acls, 1, not_found),
+            Chunks = gen_chunks(SignatureI, SignHead, SignKey, ?AWSCHUNKEDSIZE, <<>>),
+            try
+                {ok, {SC, _Body}} =
+                httpc:request(put, {lists:append(["http://",
+                                                  ?TARGET_HOST,
+                                                  ":8080/testjv4/testFile.large.one"]),
+                                    [{"authorization","AWS4-HMAC-SHA256 Credential=05236/20150706/us-east-1/s3/aws4_request, SignedHeaders=content-length, Signature=642797dcfdf817ac23b553420f52c160847d3747b2e86e5ac9d07cc5e7f60f63"},
+                                     {"x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"},
+                                     {"x-amz-decoded-content-length", integer_to_list(?AWSCHUNKEDSIZE)}
+                                    ], "image/png", Chunks},
+                              [], [{full_result, false}]),
+                ?assertEqual(403, SC)
             catch
                 throw:Reason ->
                     throw(Reason)

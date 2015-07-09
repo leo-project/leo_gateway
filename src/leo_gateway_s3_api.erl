@@ -802,6 +802,10 @@ handle_2({ok, AccessKeyId}, Req, ?HTTP_POST,  Path, Params, State) ->
 handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
     case catch leo_gateway_http_req_handler:handle(
                  HTTPMethod, Req, Path, Params#req_params{access_key_id = AccessKeyId}) of
+        {'EXIT', {"aws-chunked decode failed", _} = Cause} ->
+            ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req),
+            {ok, Req_2, State};
         {'EXIT', Cause} ->
             ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             {ok, Req_2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req),
