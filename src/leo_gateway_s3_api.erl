@@ -892,15 +892,16 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1
 %% @doc bucket operations must be needed to auth
 %%      AND alter object operations as well
 %% @private
-auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams) ->
-    case cowboy_req:header(?HTTP_HEAD_DATE, Req) of
-        {undefined, _} ->
-            {error, undefined};
-        _ ->
-            auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams)
-    end.
+%%%auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams) ->
+%%%    case cowboy_req:header(?HTTP_HEAD_DATE, Req) of
+%%%        {undefined, _} ->
+%%%            {error, undefined};
+%%%        _ ->
+%%%            auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams)
+%%%    end.
 
-auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
+%%%auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
+auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
