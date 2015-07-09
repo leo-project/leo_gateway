@@ -142,6 +142,7 @@
 -define(XML_ERROR_CODE_MalformedXML, "MalformedXML").
 -define(XML_ERROR_CODE_BadDigest, "BadDigest").
 -define(XML_ERROR_CODE_InvalidBucketName, "InvalidBucketName").
+-define(XML_ERROR_CODE_SignatureDoesNotMatch, "SignatureDoesNotMatch").
 
 %% error messages used in a error response
 -define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
@@ -158,6 +159,7 @@
 -define(XML_ERROR_MSG_MalformedXML, "The XML you provided was not well-formed or did not alidate against our published schema").
 -define(XML_ERROR_MSG_BadDigest, "The Content-MD5 you specified did not match what we received.").
 -define(XML_ERROR_MSG_InvalidBucketName, "The specified bucket is not valid.").
+-define(XML_ERROR_MSG_SignatureDoesNotMatch, "The request signature we calculated does not match the signature you provided. Check your AWS secret access key and signing method.").
 
 %% Macros
 -define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
@@ -178,10 +180,9 @@
         cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,
                          io_lib:format(?XML_ERROR, [_Code, _Msg,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
--define(reply_forbidden(_H, _Key, _ReqId, _R),
+-define(reply_forbidden(_H, _Code, _Msg, _Key, _ReqId, _R),
         cowboy_req:reply(?HTTP_ST_FORBIDDEN, _H,
-                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_AccessDenied,
-                                                    ?XML_ERROR_MSG_AccessDenied,
+                         io_lib:format(?XML_ERROR, [_Code, _Msg,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 -define(reply_not_found(_H, _Key, _ReqId, _R),
         cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,
