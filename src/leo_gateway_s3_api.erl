@@ -143,7 +143,12 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                        end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
                   {undefined, _} -> 1000;
-                  {Val_2,     _} -> list_to_integer(binary_to_list(Val_2))
+                  {Val_2,     _} ->
+                      try
+                          list_to_integer(binary_to_list(Val_2))
+                      catch _:_ ->
+                          badarg
+                      end
               end,
 
     case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
@@ -151,6 +156,9 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
+        {error, badarg} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
@@ -188,8 +196,11 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok([?SERVER_HEADER], Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
+        {error, invalid_bucket_format} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidBucketName,
+                               ?XML_ERROR_MSG_InvalidBucketName, Key, <<>>, Req);
         {error, invalid_access} ->
-            ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req);
+            ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req);
         {error, already_exists} ->
             ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyExists,
                             ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req);
@@ -300,28 +311,32 @@ put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true} = Params) 
     end;
 
 put_object(?BIN_EMPTY, Req, Key, Params) ->
-    {Size, _} = cowboy_req:body_length(Req),
-
-    case (Size >= Params#req_params.threshold_of_chunk_len) of
-        true when Size >= Params#req_params.max_len_of_obj ->
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
-                               ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
-        true when Params#req_params.is_upload == false ->
-            leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
-        false ->
-            Ret = case cowboy_req:has_body(Req) of
-                      true ->
-                          BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
-                          case cowboy_req:body(Req, BodyOpts) of
-                              {ok, Bin, Req1} ->
-                                  {ok, {Size, Bin, Req1}};
-                              {error, Cause} ->
-                                  {error, Cause}
-                          end;
-                      false ->
-                          {ok, {0, ?BIN_EMPTY, Req}}
-                  end,
-            leo_gateway_http_commons:put_small_object(Ret, Key, Params)
+    case catch cowboy_req:body_length(Req) of
+        {'EXIT', _} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+        {Size, _} ->
+            case (Size >= Params#req_params.threshold_of_chunk_len) of
+                true when Size >= Params#req_params.max_len_of_obj ->
+                    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
+                                       ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
+                true when Params#req_params.is_upload == false ->
+                    leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
+                false ->
+                    Ret = case cowboy_req:has_body(Req) of
+                              true ->
+                                  BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
+                                  case cowboy_req:body(Req, BodyOpts) of
+                                      {ok, Bin, Req1} ->
+                                          {ok, {Size, Bin, Req1}};
+                                      {error, Cause} ->
+                                          {error, Cause}
+                                  end;
+                              false ->
+                                  {ok, {0, ?BIN_EMPTY, Req}}
+                          end,
+                    leo_gateway_http_commons:put_small_object(Ret, Key, Params)
+            end
     end;
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
@@ -336,20 +351,26 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
               _ ->
                   CS
           end,
-
-    case leo_gateway_rpc_handler:get(CS2) of
-        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
-            put_object_1(Directive, Req, Key, Meta, RespObject, Params);
-        {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
-            put_large_object_1(Directive, Req, Key, Meta, Params);
-        {error, not_found} ->
-            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
-        {error, unavailable} ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+    case Key =:= CS2 of
+        true ->
+            % 400
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidRequest,
+                                ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
+        false ->
+            case leo_gateway_rpc_handler:get(CS2) of
+                {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
+                    put_object_1(Directive, Req, Key, Meta, RespObject, Params);
+                {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
+                    put_large_object_1(Directive, Req, Key, Meta, Params);
+                {error, not_found} ->
+                    ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+                {error, unavailable} ->
+                    ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
+                {error, timeout} ->
+                    ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+            end
     end.
 
 %% @doc POST/PUT operation on Objects. COPY
@@ -516,8 +537,11 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
 handle_2({error, not_found}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req_2, State};
+handle_2({error, unmatch}, Req,_,Key,_,State) ->
+    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_SignatureDoesNotMatch, ?XML_ERROR_MSG_SignatureDoesNotMatch, Key, <<>>, Req),
+    {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
-    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req),
+    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req),
     {ok, Req_2, State};
 
 %% For Multipart Upload - Initiation
@@ -643,10 +667,10 @@ handle_multi_upload_1(true, Req, Path, UploadId, ChunkedLen) ->
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         _ ->
-            ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
+            ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req)
     end;
 handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen) ->
-    ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req).
+    ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req).
 
 handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
     %% trim spaces
@@ -868,7 +892,15 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1
 %% @doc bucket operations must be needed to auth
 %%      AND alter object operations as well
 %% @private
-auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
+auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams) ->
+    case cowboy_req:header(?HTTP_HEAD_DATE, Req) of
+        {undefined, _} ->
+            {error, undefined};
+        _ ->
+            auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams)
+    end.
+
+auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
@@ -951,8 +983,10 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
 %% @doc Get bucket list
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
--spec(get_bucket_1(binary(), binary(), char()|none, string()|none, integer(), binary()|none) ->
+-spec(get_bucket_1(binary(), binary(), char()|none, string()|none, integer()|badarg, binary()|none) ->
              {ok, list(), string()}|{error, any()}).
+get_bucket_1(_AccessKeyId, _Key, _Delimiter, _Marker, badarg, _Prefix) ->
+    {error, badarg};
 get_bucket_1(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
     get_bucket_1(AccessKeyId, ?BIN_SLASH, Delimiter, Marker, MaxKeys, none);
 
@@ -966,6 +1000,13 @@ get_bucket_1(AccessKeyId, ?BIN_SLASH, _Delimiter, _Marker, _MaxKeys, none) ->
             Error
     end;
 
+get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
+    Prefix_1 = case Prefix of
+                   none -> <<>>;
+                   _    -> Prefix
+               end,
+    Key = << Bucket/binary, Prefix_1/binary >>,
+    {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none -> <<>>;
@@ -1058,7 +1099,7 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
     Len    = byte_size(KeyBin),
     Key    = binary_to_list(KeyBin),
     Prefix = binary_to_list(PrefixBin),
-    TruncatedStr = case length(MetadataList) =:= MaxKeys of
+    TruncatedStr = case length(MetadataList) =:= MaxKeys andalso MaxKeys =/= 0 of
                        true -> "true";
                        false -> "false"
                    end,
