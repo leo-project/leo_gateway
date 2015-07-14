@@ -382,7 +382,7 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
         undefined ->
             %% empty response
             readdir_del_entry(NewCookieVerf),
-            {reply, {?NFS3_OK, {{false, void}, %% post_op_attr
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
                                 NewCookieVerf, %% cookie verfier
                                 {              %% dir_list(empty)
                                   void,        %% pre_op_attr
@@ -400,7 +400,7 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
                 false ->
                     void
             end,
-            {reply, {?NFS3_OK, {{false, void}, %% post_op_attr
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
                                 NewCookieVerf, %% cookie verfier
                                 {Resp,         %% pre_op_attr
                                  EOF}
@@ -567,6 +567,7 @@ readdir_create_resp(_Path, CurCookie,
                     _ReadDir,
                     Cookie, EOF, Resp)
   when CurCookie =:= Cookie ->
+    ?debug("readdir_create_resp", "resp:~p ~n", [Resp]),
     {Resp, EOF};
 
 readdir_create_resp(Path, CurCookie,
@@ -629,8 +630,8 @@ inode(Path) ->
 -spec(meta2fattr3(#?METADATA{}) ->
              tuple()).
 meta2fattr3(#?METADATA{dsize = -1, key = Key}) ->
-    Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
-    UT = leo_date:greg_seconds_to_unixtime(Now),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Key),
+    UT = get_dir_unix_timestamp(Path4S3Dir),
     {'NF3DIR',
      8#00777,    %% @todo determin based on ACL? protection mode bits
      0,          %% # of hard links
@@ -666,8 +667,8 @@ meta2fattr3(#?METADATA{key = Key, timestamp = TS, dsize = Size}) ->
 -spec(s3dir2fattr3(binary()) ->
              tuple()).
 s3dir2fattr3(Dir) ->
-    Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
-    UT  = leo_date:greg_seconds_to_unixtime(Now),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Dir),
+    UT = get_dir_unix_timestamp(Path4S3Dir),
     {'NF3DIR',
      8#00777,    %% @todo determin based on ACL? protection mode bits
      0,          %% # of hard links
@@ -702,3 +703,15 @@ bucket2fattr3(Bucket) ->
      {UT, 0}, %% last access
      {UT, 0}, %% last modification
      {UT, 0}}.%% last change
+
+%% @private
+get_dir_unix_timestamp(Dir) ->
+    case leo_gateway_rpc_handler:get_dir_meta(Dir) of
+        {ok, MetaBin} ->
+            Meta = binary_to_term(MetaBin),
+            leo_date:greg_seconds_to_unixtime(Meta#?METADATA.timestamp);
+        _Error ->
+            Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+            leo_date:greg_seconds_to_unixtime(Now)
+    end.
+

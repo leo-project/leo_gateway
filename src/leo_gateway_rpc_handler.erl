@@ -32,6 +32,7 @@
          get/1,
          get/2,
          get/3,
+         get_dir_meta/1,
          delete/1,
          put/2, put/3, put/4, put/6, put/7,
          invoke/5,
@@ -102,6 +103,18 @@ get(Key, StartPos, EndPos) ->
            [ReqParams#req_params.addr_id,
             Key, StartPos, EndPos,
             ReqParams#req_params.req_id],
+           []).
+
+%% @doc Retrieve a directory metadata encoded into binary from the storage-cluster
+%%
+-spec(get_dir_meta(binary()) ->
+             {ok, binary()}|{error, any()}).
+get_dir_meta(Key) ->
+    ReqParams = get_request_parameters(get, Key),
+    invoke(ReqParams#req_params.redundancies,
+           leo_storage_handler_directory,
+           get,
+           [Key],
            []).
 
 
@@ -203,7 +216,7 @@ invoke([#redundant_node{node      = Node,
         %% get-2
         {value, {ok, match} = Ret} ->
             Ret;
-        %% head
+        %% head/get_dir_meta
         {value, {ok, _Meta} = Ret} ->
             Ret;
         %% error

@@ -144,6 +144,7 @@
 -define(XML_ERROR_CODE_BucketAlreadyOwnedByYou, "BucketAlreadyOwnedByYou").
 -define(XML_ERROR_CODE_MalformedXML, "MalformedXML").
 -define(XML_ERROR_CODE_BadDigest, "BadDigest").
+-define(XML_ERROR_CODE_InvalidBucketName, "InvalidBucketName").
 
 %% error messages used in a error response
 -define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
@@ -158,6 +159,7 @@
 -define(XML_ERROR_MSG_BucketAlreadyOwnedByYou, "Your previous request to create the named bucket succeeded and you already own it.").
 -define(XML_ERROR_MSG_MalformedXML, "The XML you provided was not well-formed or did not alidate against our published schema").
 -define(XML_ERROR_MSG_BadDigest, "The Content-MD5 you specified did not match what we received.").
+-define(XML_ERROR_MSG_InvalidBucketName, "The specified bucket is not valid.").
 
 %% Macros
 -define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200

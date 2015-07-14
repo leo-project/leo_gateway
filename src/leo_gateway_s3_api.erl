@@ -143,7 +143,12 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                        end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
                   {undefined, _} -> 1000;
-                  {Val_2,     _} -> list_to_integer(binary_to_list(Val_2))
+                  {Val_2,     _} ->
+                      try
+                          list_to_integer(binary_to_list(Val_2))
+                      catch _:_ ->
+                          badarg
+                      end
               end,
 
     case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
@@ -151,6 +156,9 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
+        {error, badarg} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
@@ -195,6 +203,9 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok([?SERVER_HEADER], Req_1);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req_1);
+        {error, invalid_bucket_format} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidBucketName,
+                               ?XML_ERROR_MSG_InvalidBucketName, Key, <<>>, Req_1);
         {error, invalid_access} ->
             ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req_1);
         {error, already_exists} ->
@@ -316,40 +327,45 @@ put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true,
     end;
 
 put_object(?BIN_EMPTY, Req, Key, Params) ->
-    {Size, _} = case cowboy_req:header(?HTTP_HEAD_X_AMZ_DECODED_CONTENT_LENGTH, Req) of
-                    {undefined, _} -> cowboy_req:body_length(Req);
-                    {Val,       _} -> {binary_to_integer(Val), dummy}
-                end,
-
-    case (Size >= Params#req_params.threshold_of_chunk_len) of
-        true when Size >= Params#req_params.max_len_of_obj ->
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
-                               ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
-        true when Params#req_params.is_upload == false ->
-            leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
-        false ->
-            Ret = case cowboy_req:has_body(Req) of
-                      true ->
-                          TransferDecodeFun = Params#req_params.transfer_decode_fun,
-                          TransferDecodeState = Params#req_params.transfer_decode_state,
-                          Timeout4Body = Params#req_params.timeout_for_body,
-                          BodyOpts = case TransferDecodeFun of
-                                        undefined ->
-                                            [{read_timeout, Timeout4Body}];
-                                        _ ->
-                                            [{read_timeout, Timeout4Body},
-                                             {transfer_decode, TransferDecodeFun, TransferDecodeState}]
-                                     end,
-                          case cowboy_req:body(Req, BodyOpts) of
-                              {ok, Bin, Req1} ->
-                                  {ok, {Size, Bin, Req1}};
-                              {error, Cause} ->
-                                  {error, Cause}
-                          end;
-                      false ->
-                          {ok, {0, ?BIN_EMPTY, Req}}
-                  end,
-            leo_gateway_http_commons:put_small_object(Ret, Key, Params)
+    case catch cowboy_req:body_length(Req) of
+        {'EXIT', _} ->
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+        {BodySize, _} ->
+            Size = case cowboy_req:header(?HTTP_HEAD_X_AMZ_DECODED_CONTENT_LENGTH, Req) of
+                       {undefined, _} -> BodySize;
+                       {Val,       _} -> binary_to_integer(Val)
+                   end,
+            case (Size >= Params#req_params.threshold_of_chunk_len) of
+                true when Size >= Params#req_params.max_len_of_obj ->
+                    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
+                                       ?XML_ERROR_MSG_EntityTooLarge, Key, <<>>, Req);
+                true when Params#req_params.is_upload == false ->
+                    leo_gateway_http_commons:put_large_object(Req, Key, Size, Params);
+                false ->
+                    Ret = case cowboy_req:has_body(Req) of
+                              true ->
+                                  TransferDecodeFun = Params#req_params.transfer_decode_fun,
+                                  TransferDecodeState = Params#req_params.transfer_decode_state,
+                                  Timeout4Body = Params#req_params.timeout_for_body,
+                                  BodyOpts = case TransferDecodeFun of
+                                                 undefined ->
+                                                     [{read_timeout, Timeout4Body}];
+                                                 _ ->
+                                                     [{read_timeout, Timeout4Body},
+                                                      {transfer_decode, TransferDecodeFun, TransferDecodeState}]
+                                             end,
+                                  case cowboy_req:body(Req, BodyOpts) of
+                                      {ok, Bin, Req1} ->
+                                          {ok, {Size, Bin, Req1}};
+                                      {error, Cause} ->
+                                          {error, Cause}
+                                  end;
+                              false ->
+                                  {ok, {0, ?BIN_EMPTY, Req}}
+                          end,
+                    leo_gateway_http_commons:put_small_object(Ret, Key, Params)
+            end
     end;
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
@@ -1163,8 +1179,10 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
 %% @doc Get bucket list
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
--spec(get_bucket_1(binary(), binary(), char()|none, string()|none, integer(), binary()|none) ->
+-spec(get_bucket_1(binary(), binary(), char()|none, string()|none, integer()|badarg, binary()|none) ->
              {ok, list(), string()}|{error, any()}).
+get_bucket_1(_AccessKeyId, _Key, _Delimiter, _Marker, badarg, _Prefix) ->
+    {error, badarg};
 get_bucket_1(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
     get_bucket_1(AccessKeyId, ?BIN_SLASH, Delimiter, Marker, MaxKeys, none);
 
