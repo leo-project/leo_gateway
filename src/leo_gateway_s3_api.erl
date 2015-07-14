@@ -37,6 +37,7 @@
          get_object/3, put_object/3, delete_object/3, head_object/3,
          get_object_with_cache/4, range_object/3
         ]).
+-export([aws_chunk_decode/2]).
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
@@ -51,12 +52,11 @@
 -include_lib("xmerl/include/xmerl.hrl").
 
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
-                   handle_multi_upload_1/5, handle_multi_upload_2/4, handle_multi_upload_3/3,
+                   handle_multi_upload_1/7, handle_multi_upload_2/4, handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
                    resp_copy_obj_xml/2, request_params/2, auth/5, auth/7, auth_1/7,
                    get_bucket_1/6, put_bucket_1/3, delete_bucket_1/2, head_bucket_1/2
                   ]}).
-
 
 %%--------------------------------------------------------------------
 %% API
@@ -190,25 +190,32 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false}) ->
     Bucket = formalize_bucket(Key),
     CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
+    %% Consume CreateBucketConfiguration
+    Req_1 = case cowboy_req:has_body(Req) of
+                false   -> Req;
+                true    ->
+                    {ok, _Bin_2, Req_2} = cowboy_req:body(Req),
+                    Req_2
+            end,
     case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
         ok ->
             ?access_log_bucket_put(Bucket, ?HTTP_ST_OK),
-            ?reply_ok([?SERVER_HEADER], Req);
+            ?reply_ok([?SERVER_HEADER], Req_1);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req_1);
         {error, invalid_bucket_format} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidBucketName,
-                               ?XML_ERROR_MSG_InvalidBucketName, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidBucketName, Key, <<>>, Req_1);
         {error, invalid_access} ->
-            ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req);
+            ?reply_forbidden([?SERVER_HEADER], Key, <<>>, Req_1);
         {error, already_exists} ->
             ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyExists,
-                            ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req);
+                            ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req_1);
         {error, already_yours} ->
             ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou,
-                            ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req);
+                            ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req_1);
         {error, timeout} ->
-            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req_1)
     end;
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = true}) ->
@@ -298,8 +305,17 @@ put_object(Req, Key, Params) ->
     put_object(get_x_amz_meta_directive(Req), Req, Key, Params).
 
 %% @doc handle MULTIPLE DELETE request
-put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true} = Params) ->
-    BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
+put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true,
+                                              timeout_for_body = Timeout4Body,
+                                              transfer_decode_fun = TransferDecodeFun,
+                                              transfer_decode_state = TransferDecodeState} = Params) ->
+    BodyOpts = case TransferDecodeFun of
+                  undefined ->
+                      [{read_timeout, Timeout4Body}];
+                  _ ->
+                      [{read_timeout, Timeout4Body},
+                       {transfer_decode, TransferDecodeFun, TransferDecodeState}]
+               end,
     case cowboy_req:body(Req, BodyOpts) of
         {ok, Body, Req1} ->
             %% Check Content-MD5 with body
@@ -315,7 +331,11 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
         {'EXIT', _} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
                                 ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
-        {Size, _} ->
+        {BodySize, _} ->
+            Size = case cowboy_req:header(?HTTP_HEAD_X_AMZ_DECODED_CONTENT_LENGTH, Req) of
+                       {undefined, _} -> BodySize;
+                       {Val,       _} -> binary_to_integer(Val)
+                   end,
             case (Size >= Params#req_params.threshold_of_chunk_len) of
                 true when Size >= Params#req_params.max_len_of_obj ->
                     ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_EntityTooLarge,
@@ -325,7 +345,16 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
                 false ->
                     Ret = case cowboy_req:has_body(Req) of
                               true ->
-                                  BodyOpts = [{read_timeout, Params#req_params.timeout_for_body}],
+                                  TransferDecodeFun = Params#req_params.transfer_decode_fun,
+                                  TransferDecodeState = Params#req_params.transfer_decode_state,
+                                  Timeout4Body = Params#req_params.timeout_for_body,
+                                  BodyOpts = case TransferDecodeFun of
+                                                 undefined ->
+                                                     [{read_timeout, Timeout4Body}];
+                                                 _ ->
+                                                     [{read_timeout, Timeout4Body},
+                                                      {transfer_decode, TransferDecodeFun, TransferDecodeState}]
+                                             end,
                                   case cowboy_req:body(Req, BodyOpts) of
                                       {ok, Bin, Req1} ->
                                           {ok, {Size, Bin, Req1}};
@@ -523,8 +552,160 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                              timeout_for_body        = Props#http_options.timeout_for_body,
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                              threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
+
+%    ?debug("handle_1", "ReqParams: ~p", [ReqParams]),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
-    handle_2(AuthRet, Req_2, HTTPMethod, Path_1, ReqParams, State).
+    AuthRet_2 = case AuthRet of
+                    {error, Reason} ->
+                        {error, Reason};
+                    {ok, AccessKeyId, _} ->
+                        {ok, AccessKeyId}
+                end,
+    ReqParams_2 = case ReqParams#req_params.is_aws_chunked of
+                      true ->
+                          case AuthRet of
+                              {ok, _, SignParams} ->
+                                  {Signature, SignHead, SignKey} = case SignParams of
+                                                                       undefined ->
+                                                                           {undefined, undefined, undefined};
+                                                                       _ ->
+                                                                           SignParams
+                                                                   end,
+                                  AWSChunkSignParams = #aws_chunk_sign_params{sign_head = SignHead,
+                                                                              sign_key  = SignKey,
+                                                                              prev_sign = Signature,
+                                                                              chunk_sign= <<>>},
+                                  AWSChunkDecState = #aws_chunk_decode_state{buffer         = <<>>,
+                                                                             dec_state      = wait_size,
+                                                                             chunk_offset   = 0,
+                                                                             sign_params    = AWSChunkSignParams,
+                                                                             total_len      = 0},
+                                  ReqParams#req_params{transfer_decode_fun = fun leo_gateway_s3_api:aws_chunk_decode/2, 
+                                                       transfer_decode_state = AWSChunkDecState};
+                              _ ->
+                                  ReqParams
+                          end;
+                      _ ->
+                          ReqParams
+                  end,
+
+    handle_2(AuthRet_2, Req_2, HTTPMethod, Path_1, ReqParams_2, State).
+
+aws_chunk_decode(Bin, State) ->
+    Buffer    = State#aws_chunk_decode_state.buffer,
+    DecState  = State#aws_chunk_decode_state.dec_state,
+    Offset    = State#aws_chunk_decode_state.chunk_offset,
+    SignParams= State#aws_chunk_decode_state.sign_params,
+    TotalLen  = State#aws_chunk_decode_state.total_len,
+    Ret = aws_chunk_decode({ok, <<>>}, <<Buffer/binary, Bin/binary>>, DecState, Offset, SignParams),
+    case Ret of
+        {{error, Reason2}, {_, _, _, _}} ->
+            ?error("aws_chunk_decode", "Parse Error: ~p", [Reason2]),
+            erlang:error("aws-chunked decode failed");
+        {{ok, Acc}, {Buffer_2, DecState_2, Offset_2, SignParams_2}} ->
+            {more, Acc, #aws_chunk_decode_state{buffer          = Buffer_2,
+                                                dec_state       = DecState_2,
+                                                chunk_offset    = Offset_2,
+                                                sign_params     = SignParams_2,
+                                                total_len       = TotalLen + byte_size(Acc)}};
+        {{done, Acc}, {Rest, _, _, _}} ->
+            {done, Acc, TotalLen + byte_size(Acc), Rest}
+    end.
+
+aws_chunk_decode({ok, Acc}, Buffer, wait_size, 0, #aws_chunk_sign_params{sign_head = SignHead} = SignParams) ->
+    case byte_size(Buffer) of
+        Len when Len > 10 ->
+            <<Bin:10/binary, _/binary>> = Buffer,
+            case binary:match(Bin, <<";">>) of
+                nomatch ->
+                    {{error, incorrect}, {Buffer, error, 0, SignParams}};
+                {Start, _} ->
+                    <<SizeHexBin:Start/binary, ";", Rest/binary>> = Buffer,
+                    SizeHex = binary_to_list(SizeHexBin),
+                    Size = leo_hex:hex_to_integer(SizeHex),
+%                    ?debug("aws_chunk_decode", "Chunk Size: ~p", [Size]),
+                    SignParams_2 = case SignHead of
+                                       undefined ->
+                                           SignParams#aws_chunk_sign_params{chunk_size = Size};
+                                       _ ->
+                                           Context = crypto:hash_init(sha256),
+                                           SignParams#aws_chunk_sign_params{chunk_size = Size,
+                                                                            hash_context = Context}
+                                   end,
+                    aws_chunk_decode({ok, Acc}, Rest, wait_head, 0, SignParams_2)
+            end;
+        _ ->
+            {{ok, Acc}, {Buffer, wait_size, 0, SignParams}}
+    end;
+aws_chunk_decode({ok, Acc}, Buffer, wait_head, 0, SignParams) ->
+    case byte_size(Buffer) of
+        Len when Len > 80 + 2 ->
+            <<"chunk-signature=", ChunkSign:64/binary, "\r\n", Rest/binary>> = Buffer,
+%            ?debug("aws_chunk_decode", "Chunk Sign: ~p", [ChunkSign]),
+            aws_chunk_decode({ok, Acc}, Rest, read_chunk, 0, SignParams#aws_chunk_sign_params{chunk_sign = ChunkSign});
+        _ ->
+            {{ok, Acc}, {Buffer, wait_head, 0, SignParams}}
+    end;
+aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset, #aws_chunk_sign_params{
+                                                  sign_head  = SignHead, 
+                                                  sign_key   = SignKey, 
+                                                  prev_sign  = PrevSign,
+                                                  chunk_sign = ChunkSign,
+                                                  chunk_size = ChunkSize,
+                                                  hash_context = Context
+                                                 } = SignParams) ->
+    ChunkRemainSize = ChunkSize - Offset,
+    case byte_size(Buffer) of
+        Len when Len >= ChunkRemainSize + 2 ->
+            <<ChunkPart:ChunkRemainSize/binary, "\r\n", Rest/binary>> = Buffer,
+            case SignHead of
+                undefined ->
+                    ?debug("aws_chunk_decode/4", "Output Chunk Size: ~p, No Sign", [ChunkSize]),
+                    case ChunkSize of
+                        0 -> %% Last Chunk
+                            {{done, Acc}, {Rest, done, 0, #aws_chunk_sign_params{}}};
+                        _ ->
+                            aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>}, Rest, wait_size, 0, SignParams)
+                    end;
+                _ ->
+                    Context_2 = crypto:hash_update(Context, ChunkPart),
+                    ChunkHash = crypto:hash_final(Context_2),
+                    ChunkHashBin = leo_hex:binary_to_hexbin(ChunkHash),
+                    BinToSign = <<"AWS4-HMAC-SHA256-PAYLOAD\n",
+                                  SignHead/binary,
+                                  PrevSign/binary,  "\n",
+                                  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
+                                  ChunkHashBin/binary>>,
+                    Signature = crypto:hmac(sha256, SignKey, BinToSign),
+                    Sign = leo_hex:binary_to_hexbin(Signature),
+                    case Sign of
+                        ChunkSign ->
+                            case ChunkSize of
+                                0 -> %% Last Chunk
+                                    {{done, Acc}, {Rest, done, 0, #aws_chunk_sign_params{}}};
+                                _ ->
+                                    ?debug("aws_chunk_decode/4", "Output Chunk Size: ~p, Sign: ~p", [ChunkSize, ChunkSign]),
+                                    aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>}, Rest, wait_size, 0, SignParams#aws_chunk_sign_params{prev_sign = ChunkSign,
+                                                                                                                                                  chunk_sign = <<>>})
+                            end;
+                        WrongSign ->
+                            ?debug("aws_chunk_decode/4", "BinToSign: ~p", [binary_to_list(BinToSign)]),
+                            ?error("aws_chunk_decode/4", "Chunk Signature Not Match: ~p, ~p", [WrongSign, ChunkSign]),
+                            {{error, unmatch}, {Buffer, error, Offset, SignParams}}
+                    end
+            end;
+        Len when ChunkRemainSize >= Len ->
+            SignParams_2 = case SignHead of
+                               undefined ->
+                                   SignParams;
+                               _ ->
+                                   Context_2 = crypto:hash_update(Context, Buffer),
+                                   SignParams#aws_chunk_sign_params{hash_context = Context_2}
+                           end,
+            {{ok, <<Acc/binary, Buffer/binary>>}, {<<>>, read_chunk, Offset + Len, SignParams_2}};
+        _ ->
+            {{ok, Acc}, {Buffer, read_chunk, Offset ,SignParams}}
+    end.
 
 %% @doc Handle a request (sub)
 %% @private
@@ -620,10 +801,13 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _,
                      chunked_obj_len = ChunkedLen,
                      is_upload = false,
                      upload_id = UploadId,
-                     upload_part_num = PartNum}, State) when UploadId /= <<>>,
-                                                             PartNum  == 0 ->
+                     upload_part_num = PartNum,
+                     transfer_decode_fun = TransferDecodeFun,
+                     transfer_decode_state = TransferDecodeState
+                    }, State) when UploadId /= <<>>,
+                                                                         PartNum  == 0 ->
     Res = cowboy_req:has_body(Req),
-    {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId, ChunkedLen),
+    {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId, ChunkedLen, TransferDecodeFun, TransferDecodeState),
     {ok, Req_2, State};
 
 %% For Regular cases
@@ -634,6 +818,10 @@ handle_2({ok, AccessKeyId}, Req, ?HTTP_POST,  Path, Params, State) ->
 handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
     case catch leo_gateway_http_req_handler:handle(
                  HTTPMethod, Req, Path, Params#req_params{access_key_id = AccessKeyId}) of
+        {'EXIT', {"aws-chunked decode failed", _} = Cause} ->
+            ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req),
+            {ok, Req_2, State};
         {'EXIT', Cause} ->
             ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
             {ok, Req_2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req),
@@ -646,21 +834,27 @@ handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
 
 %% @doc Handle multi-upload processing
 %% @private
-handle_multi_upload_1(true, Req, Path, UploadId, ChunkedLen) ->
+handle_multi_upload_1(true, Req, Path, UploadId, ChunkedLen, TransferDecodeFun, TransferDecodeState) ->
     Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
 
     case leo_gateway_rpc_handler:head(Path4Conf) of
         {ok, _} ->
             _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
-            Ret = cowboy_req:body(Req),
+            BodyOpts = case TransferDecodeFun of
+                          undefined ->
+                              [];
+                          _ ->
+                              [{transfer_decode, TransferDecodeFun, TransferDecodeState}]
+                       end,
+            Ret = cowboy_req:body(Req, BodyOpts),
             handle_multi_upload_2(Ret, Req, Path, ChunkedLen);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         _ ->
             ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen) ->
+handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen, _, _) ->
     ?reply_forbidden([?SERVER_HEADER], Path, <<>>, Req).
 
 handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
@@ -803,8 +997,18 @@ request_params(Req, Params) ->
                end,
     Range    = element(1, cowboy_req:header(?HTTP_HEAD_RANGE, Req)),
 
+    IsAwsChunked = case cowboy_req:header(?HTTP_HEAD_X_AMZ_CONTENT_SHA256, Req) of
+                       {<<"STREAMING-AWS4-HMAC-SHA256-PAYLOAD">>, _} ->
+                           true;
+                       _ ->
+                           false
+                   end,
+
+%    ?debug("request_params/2", "Is AWS Chunked: ~p", [IsAwsChunked]),
+
     Params#req_params{is_multi_delete = IsMultiDelete,
                       is_upload       = IsUpload,
+                      is_aws_chunked  = IsAwsChunked,
                       upload_id       = UploadId,
                       upload_part_num = PartNum,
                       range_header    = Range}.
@@ -856,7 +1060,7 @@ auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
 auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, #req_params{is_multi_delete = true} = ReqParams) when TokenLen =< 1 ->
     case is_public_read_write(ACLs) of
         true ->
-            {ok, []};
+            {ok, <<>>, undefined};
         false ->
             auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end;
@@ -868,14 +1072,14 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1
                                                                      HTTPMethod == ?HTTP_DELETE) ->
     case is_public_read_write(ACLs) of
         true ->
-            {ok, []};
+            {ok, <<>>, undefined};
         false ->
             auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end;
 auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1 ->
     case is_public_read(ACLs) of
         true ->
-            {ok, []};
+            {ok, <<>>, undefined};
         false ->
             auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end.
@@ -888,10 +1092,8 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
         {undefined, _} ->
             {error, undefined};
         {AuthorizationBin, _} ->
-            case binary:match(AuthorizationBin, <<":">>) of
-                nomatch ->
-                    {error, nomatch};
-                _Found ->
+            case AuthorizationBin of
+                <<Head:4/binary, _Rest/binary>> when Head =:= <<"AWS ">> ; Head =:= <<"AWS4">> ->
                     IsCreateBucketOp = (TokenLen   == 1 andalso
                                         HTTPMethod == ?HTTP_PUT andalso
                                         not IsACL),
@@ -949,6 +1151,13 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                      list_to_binary(Ret)
                              end,
 
+                    SignVer = case Head of
+                                  <<"AWS4">> ->
+                                      v4;
+                                  _ ->
+                                      v2
+                              end,
+
                     SignParams = #sign_params{http_verb     = HTTPMethod,
                                               content_md5   = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
                                               content_type  = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
@@ -957,8 +1166,12 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                               raw_uri       = RawURI,
                                               requested_uri = Path_1,
                                               query_str     = QStr_3,
+                                              sign_ver      = SignVer,
+                                              headers       = Headers,
                                               amz_headers   = leo_http:get_amz_headers4cow(Headers)},
-                    leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp)
+                    leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp);
+                _->
+                    {error, nomatch}
             end
     end.
 
