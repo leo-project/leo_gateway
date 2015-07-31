@@ -26,4 +26,4 @@ Also, LeoFS Gateway provides built-in support for the object-cache mechanism in 
 
 ## Sponsors
 
-LeoProject/LeoFS is sponsored by [Rakuten, Inc.](http://global.rakuten.com/corp/) and suppoerted by [Rakuten Institute of Technology](http://rit.rakuten.co.jp/).
+LeoProject/LeoFS is sponsored by [Rakuten, Inc.](http://global.rakuten.com/corp/) and supported by [Rakuten Institute of Technology](http://rit.rakuten.co.jp/).
