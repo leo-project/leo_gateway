@@ -338,6 +338,7 @@ after_process_1(Pid, Managers) ->
     CacheDiscThresholdLen = HttpOptions#http_options.cache_disc_threshold_len,
     CacheDiscDirData      = HttpOptions#http_options.cache_disc_dir_data,
     CacheDiscDirJournal   = HttpOptions#http_options.cache_disc_dir_journal,
+    application:ensure_started(leo_cache),
     ok = leo_cache_api:start([{?PROP_RAM_CACHE_NAME,           ?DEF_PROP_RAM_CACHE},
                               {?PROP_RAM_CACHE_WORKERS,        NumOfCacheWorkers},
                               {?PROP_RAM_CACHE_SIZE,           CacheRAMCapacity},
@@ -544,6 +545,9 @@ get_options() ->
     CacheMaxContentLen    = leo_misc:get_value('cache_max_content_len',    CacheProp, ?DEF_CACHE_MAX_CONTENT_LEN),
     CachableContentTypes  = leo_misc:get_value('cachable_content_type',    CacheProp, []),
     CachablePathPatterns  = leo_misc:get_value('cachable_path_pattern',    CacheProp, []),
+    CacheReaderReadSize   = leo_misc:get_value('cache_reader_read_size',   CacheProp, ?DEF_CACHE_READER_READ_SIZE),
+
+    leo_misc:set_env(leo_gateway, 'cache_reader_read_size', CacheReaderReadSize),
 
     CacheMethod = case UserHttpCache of
                       true  -> ?CACHE_HTTP;
@@ -600,6 +604,7 @@ get_options() ->
                                 cache_max_content_len    = CacheMaxContentLen,
                                 cachable_content_type    = CachableContentTypes1,
                                 cachable_path_pattern    = CachablePathPatterns1,
+                                cache_reader_read_size   = CacheReaderReadSize,
                                 max_chunked_objs         = MaxChunkedObjs,
                                 max_len_of_obj           = MaxObjLen,
                                 chunked_obj_len          = ChunkedObjLen,
@@ -626,6 +631,7 @@ get_options() ->
     ?info("start/3", "cache_max_content_len: ~p",    [CacheMaxContentLen]),
     ?info("start/3", "cacheable_content_types: ~p",  [CachableContentTypes]),
     ?info("start/3", "cacheable_path_patterns: ~p",  [CachablePathPatterns]),
+    ?info("start/3", "cache_reader_read_size: ~p",   [CacheReaderReadSize]),
     ?info("start/3", "max_chunked_obj: ~p",          [MaxChunkedObjs]),
     ?info("start/3", "max_len_of_obj: ~p",           [MaxObjLen]),
     ?info("start/3", "chunked_obj_len: ~p",          [ChunkedObjLen]),

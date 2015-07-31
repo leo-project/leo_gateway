@@ -128,6 +128,8 @@ cache.cachable_content_types = [image/png, image/jpg]
 cache.cachable_path_patterns = [/img/.+, /css/.+]
 ## cache.cachable_path_patterns = []
 
+## Read Size of Reader Mode
+cache.cache_reader_read_size = 1048576
 
 ## --------------------------------------------------------------------
 ## GATEWAY - Timeout
