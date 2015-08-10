@@ -780,19 +780,37 @@ get_range_object(Req, Bucket, Key, {error, badarg}) ->
     ?access_log_get(Bucket, Key, 0, ?HTTP_ST_BAD_RANGE),
     ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
 get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
-    Mime = leo_mime:guess_mime(Key),
     case get_body_length(Key, Range) of
         {ok, Length} ->
-            Header = [?SERVER_HEADER,
-                      {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}
-                     ],
-            Req2 = cowboy_req:set_resp_body_fun(
-                     Length,
-                     fun(Socket, Transport) ->
-                             get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
-                     end,
-                     Req),
-            ?reply_partial_content(Header, Req2);
+            case leo_gateway_rpc_handler:head(Key) of
+                {ok, #?METADATA{del = 0} = Meta} ->
+                    Timestamp = leo_http:rfc1123_date(Meta#?METADATA.timestamp),
+                    Header = [?SERVER_HEADER,
+                              {?HTTP_HEAD_RESP_CONTENT_TYPE, leo_mime:guess_mime(Key)},
+                              {?HTTP_HEAD_RESP_LAST_MODIFIED, Timestamp}],
+                    Req2 = cowboy_req:set_resp_body_fun(
+                             Length,
+                             fun(Socket, Transport) ->
+                                     get_range_object_1(Req, Bucket, Key, Range,
+                                                        undefined, Socket, Transport)
+                             end,
+                             Req),
+                    ?reply_partial_content(Header, Req2);
+                {ok, #?METADATA{del = 1}} ->
+                    ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
+                    ?reply_not_found_without_body([?SERVER_HEADER], Req);
+                {error, not_found} ->
+                    ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
+                    ?reply_not_found_without_body([?SERVER_HEADER], Req);
+                {error, unavailable} ->
+                    ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+                    ?access_log_head(Bucket, Key, ?HTTP_ST_INTERNAL_ERROR),
+                    ?reply_internal_error_without_body([?SERVER_HEADER], Req);
+                {error, timeout} ->
+                    ?access_log_head(Bucket, Key, ?HTTP_ST_GATEWAY_TIMEOUT),
+                    ?reply_timeout_without_body([?SERVER_HEADER], Req)
+            end;
         {error, bad_range} ->
             ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
