@@ -496,11 +496,11 @@ put_object(Req, Key, #req_params{bucket = Bucket,
             Ret = case cowboy_req:has_body(Req) of
                       true ->
                           BodyOpts = case TransferDecodeFun of
-                                        undefined ->
-                                            [{read_timeout, Timeout4Body}];
-                                        _ ->
-                                            [{read_timeout, Timeout4Body},
-                                             {transfer_decode, TransferDecodeFun, TransferDecodeState}]
+                                         undefined ->
+                                             [{read_timeout, Timeout4Body}];
+                                         _ ->
+                                             [{read_timeout, Timeout4Body},
+                                              {transfer_decode, TransferDecodeFun, TransferDecodeState}]
                                      end,
                           case cowboy_req:body(Req, BodyOpts) of
                               {ok, Bin0, Req0} ->
@@ -593,10 +593,10 @@ put_large_object(Req, Key, Size, #req_params{bucket = Bucket,
                 {read_length, ReadingChunkedSize}
                ],
     BodyOpts_1 = case TransferDecodeFun of
-                    undefined ->
-                        BodyOpts;
-                    _ ->
-                        [{transfer_decode, TransferDecodeFun, TransferDecodeState} | BodyOpts]
+                     undefined ->
+                         BodyOpts;
+                     _ ->
+                         [{transfer_decode, TransferDecodeFun, TransferDecodeState} | BodyOpts]
                  end,
     Reply = case put_large_object_1(cowboy_req:body(Req, BodyOpts_1),
                                     #req_large_obj{handler = Handler,
@@ -647,10 +647,10 @@ put_large_object_1({more, Data, Req},
                         {read_length, ReadingChunkedSize}
                        ],
             BodyOpts_1 = case TransferDecodeFun of
-                            undefined ->
-                                BodyOpts;
-                            _ ->
-                                [{transfer_decode, TransferDecodeFun, TransferDecodeState} | BodyOpts]
+                             undefined ->
+                                 BodyOpts;
+                             _ ->
+                                 [{transfer_decode, TransferDecodeFun, TransferDecodeState} | BodyOpts]
                          end,
             put_large_object_1(cowboy_req:body(Req, BodyOpts_1), ReqLargeObj);
         {'EXIT', Cause} ->
@@ -775,12 +775,13 @@ range_object(Req, Key, #req_params{bucket = Bucket,
     Range = cowboy_http:range(RangeHeader),
     get_range_object(Req, Bucket, Key, Range).
 
+%% @private
 get_range_object(Req, Bucket, Key, {error, badarg}) ->
     ?access_log_get(Bucket, Key, 0, ?HTTP_ST_BAD_RANGE),
     ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
 get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
-    case get_body_length_1(Key, Range) of
+    case get_body_length(Key, Range) of
         {ok, Length} ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime}
@@ -789,7 +790,7 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
                      Length,
                      fun(Socket, Transport) ->
                              get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
-                     end, 
+                     end,
                      Req),
             ?reply_partial_content(Header, Req2);
         {error, bad_range} ->
@@ -804,40 +805,44 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
             ?reply_not_found_without_body([?SERVER_HEADER], Req)
     end.
 
-get_body_length_1(Key, Range) ->
+%% @private
+get_body_length(Key, Range) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{dsize = ObjectSize}} ->
-            get_body_length(Range, ObjectSize, 0);
+            get_body_length_1(Range, ObjectSize, 0);
         {error, Reason} ->
             {error, Reason}
     end.
 
-get_body_length([], _ObjectSize, Acc) ->
+%% @private
+get_body_length_1([], _ObjectSize, Acc) ->
     {ok, Acc};
-get_body_length([{Start, infinity}|Rest], ObjectSize, Acc) ->
-    get_body_length(Rest, ObjectSize, Acc + ObjectSize - Start);
-get_body_length([{Start, End}|Rest], ObjectSize, Acc) when End < 0 ->
-    get_body_length(Rest, ObjectSize, Acc + ObjectSize - Start);
-get_body_length([{Start, End}|Rest], ObjectSize, Acc) when End < ObjectSize ->
-    get_body_length(Rest, ObjectSize, Acc + End - Start + 1);
-get_body_length([End|Rest], ObjectSize, Acc) when End < 0 ->
-    get_body_length(Rest, ObjectSize, Acc + ObjectSize);
-get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
-    get_body_length(Rest, ObjectSize, Acc + End + 1);
-get_body_length(_, _, _) ->
+get_body_length_1([{Start, infinity}|Rest], ObjectSize, Acc) ->
+    get_body_length_1(Rest, ObjectSize, Acc + ObjectSize - Start);
+get_body_length_1([{Start, End}|Rest], ObjectSize, Acc) when End < 0 ->
+    get_body_length_1(Rest, ObjectSize, Acc + ObjectSize - Start);
+get_body_length_1([{Start, End}|Rest], ObjectSize, Acc) when End < ObjectSize ->
+    get_body_length_1(Rest, ObjectSize, Acc + End - Start + 1);
+get_body_length_1([End|Rest], ObjectSize, Acc) when End < 0 ->
+    get_body_length_1(Rest, ObjectSize, Acc + ObjectSize);
+get_body_length_1([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
+    get_body_length_1(Rest, ObjectSize, Acc + End + 1);
+get_body_length_1(_, _, _) ->
     {error, bad_range}.
 
+%% @private
 get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, Socket, Transport) ->
+    %% @TODO:
+    %%    Transport:close(Socket),
+    %%    case Reason of
+    %%        unavailable ->
+    %%            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+    %%        not_found ->
+    %%            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
+    %%        _ ->
+    %%            ?reply_internal_error_without_body([?SERVER_HEADER], Req)
+    %%    end;
     Transport:close(Socket);
-%    Transport:close(Socket),
-%    case Reason of
-%        unavailable ->
-%            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-%        not_found ->
-%            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
-%        _ ->
-%            ?reply_internal_error_without_body([?SERVER_HEADER], Req)
-%    end;
 get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
     {ok, Req};
 get_range_object_1(Req, Bucket, Key, [{Start, infinity}|Rest], _, Socket, Transport) ->
@@ -850,6 +855,7 @@ get_range_object_1(Req, Bucket, Key, [End|Rest], _, Socket, Transport) ->
     Ret = get_range_object_2(Req, Bucket, Key, 0, End, Socket, Transport),
     get_range_object_1(Req, Bucket, Key, Rest, Ret, Socket, Transport).
 
+%% @private
 get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{del = 0,
@@ -955,11 +961,13 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Sock
 
 %% @doc
 %% @private
-send_chunk(_Req,_,_Key, Start,_End, CurPos, ChunkSize, _Socket, _Transport) when (CurPos + ChunkSize - 1) < Start ->
+send_chunk(_Req,_,_Key, Start,_End, CurPos,
+           ChunkSize, _Socket, _Transport) when (CurPos + ChunkSize - 1) < Start ->
     %% skip proc
     CurPos + ChunkSize;
-send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) when CurPos >= Start andalso
-                                                                 (CurPos + ChunkSize - 1) =< End ->
+send_chunk(_Req,_Bucket, Key, Start, End, CurPos,
+           ChunkSize, Socket, Transport) when CurPos >= Start andalso
+                                              (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->
