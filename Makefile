@@ -51,3 +51,4 @@ gen_rpc: deps
 gen_nfs: gen_rpc
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_proto3.x
 	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nfs_mount3.x
+	./deps/erpcgen/priv/erpcgen -a [svc_callback,xdr,hrl] src/leo_nlm_proto4.x
