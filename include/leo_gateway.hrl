@@ -228,6 +228,8 @@
 -define(DEF_NFSD_PORT,          2049).
 -define(DEF_NFSD_ACCEPTORS,     128).
 -define(DEF_NFSD_MAX_FILE_SIZE, 18446744073709551615). %% max value in 64bit
+-define(DEF_LOCKD_PORT,         22051).
+-define(DEF_LOCKD_ACCEPTORS,    128).
 
 -define(env_nfs_options(),
         case application:get_env(leo_gateway, nfs) of
