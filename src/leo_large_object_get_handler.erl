@@ -120,7 +120,7 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
         {value, WriterRep} ->
             WriterRep;
         {error, ?ERROR_ALREADY_HAS_TRAN} ->
-            {ok, Ref} = leo_cache_api:put_begin_tran(read, Key),
+            {ok, Ref} = put_begin_tran_with_retry(Key),
             TotalSize = Meta#?METADATA.dsize,
             ReaderRep = case catch handle_read_loop(TotalSize, #req_info{key = Key,
                                                                          request = Req,
@@ -279,4 +279,15 @@ handle_read_loop(Offset, TotalSize, #req_info{key = Key,
             handle_read_loop(Offset, TotalSize, ReqInfo);
         _ ->
             handle_read_loop(Offset + ReadSize, TotalSize, ReqInfo)
+    end.
+
+put_begin_tran_with_retry(Key) ->
+    case leo_cache_api:put_begin_tran(read, Key) of
+        {ok, Ref} ->
+            {ok, Ref};
+        not_found ->
+            timer:sleep(100),
+            put_begin_tran_with_retry(Key);
+        Other ->
+            Other
     end.
