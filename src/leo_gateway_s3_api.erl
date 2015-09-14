@@ -785,6 +785,9 @@ handle_2({error, unmatch}, Req,_,Key,_,State) ->
 handle_2({error, not_found}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req_2, State};
+handle_2({error, unmatch}, Req,_,Key,_,State) ->
+    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_SignatureDoesNotMatch, ?XML_ERROR_MSG_SignatureDoesNotMatch, Key, <<>>, Req),
+    {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req),
     {ok, Req_2, State};
@@ -1160,6 +1163,15 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1
 %% @doc bucket operations must be needed to auth
 %%      AND alter object operations as well
 %% @private
+%%%auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams) ->
+%%%    case cowboy_req:header(?HTTP_HEAD_DATE, Req) of
+%%%        {undefined, _} ->
+%%%            {error, undefined};
+%%%        _ ->
+%%%            auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams)
+%%%    end.
+
+%%%auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
 auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
@@ -1276,6 +1288,13 @@ get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
     Key = << Bucket/binary, Prefix_1/binary >>,
     {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
 
+get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
+    Prefix_1 = case Prefix of
+                   none -> <<>>;
+                   _    -> Prefix
+               end,
+    Key = << Bucket/binary, Prefix_1/binary >>,
+    {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none -> <<>>;
