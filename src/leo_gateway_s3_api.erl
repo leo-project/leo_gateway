@@ -785,9 +785,6 @@ handle_2({error, unmatch}, Req,_,Key,_,State) ->
 handle_2({error, not_found}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req_2, State};
-handle_2({error, unmatch}, Req,_,Key,_,State) ->
-    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_SignatureDoesNotMatch, ?XML_ERROR_MSG_SignatureDoesNotMatch, Key, <<>>, Req),
-    {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req),
     {ok, Req_2, State};
@@ -1282,16 +1279,10 @@ get_bucket_1(AccessKeyId, ?BIN_SLASH, _Delimiter, _Marker, _MaxKeys, none) ->
     end;
 get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
     Prefix_1 = case Prefix of
-                   none -> <<>>;
-                   _    -> Prefix
-               end,
-    Key = << Bucket/binary, Prefix_1/binary >>,
-    {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
-
-get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
-    Prefix_1 = case Prefix of
-                   none -> <<>>;
-                   _    -> Prefix
+                   none ->
+                       <<>>;
+                   _ ->
+                       Prefix
                end,
     Key = << Bucket/binary, Prefix_1/binary >>,
     {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};

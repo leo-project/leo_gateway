@@ -18,11 +18,8 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
-%% Leo S3 HTTP
-%% @doc
-%% @end
 %%======================================================================
+
 %% HTTP METHODS
 -define(HTTP_GET,    <<"GET">>).
 -define(HTTP_POST,   <<"POST">>).
@@ -132,13 +129,13 @@
 -define(DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN, 5767168).
 
 %% error codes used in a error response
--define(XML_ERROR_CODE_EntityTooLarge,  "EntityTooLarge").
+-define(XML_ERROR_CODE_EntityTooLarge, "EntityTooLarge").
 -define(XML_ERROR_CODE_InvalidArgument, "InvalidArgument").
--define(XML_ERROR_CODE_InvalidRequest,  "InvalidRequest").
--define(XML_ERROR_CODE_AccessDenied,    "AccessDenied").
--define(XML_ERROR_CODE_NoSuchKey,       "NoSuchKey").
--define(XML_ERROR_CODE_InvalidRange,    "InvalidRange").
--define(XML_ERROR_CODE_InternalError,   "InternalError").
+-define(XML_ERROR_CODE_InvalidRequest, "InvalidRequest").
+-define(XML_ERROR_CODE_AccessDenied, "AccessDenied").
+-define(XML_ERROR_CODE_NoSuchKey, "NoSuchKey").
+-define(XML_ERROR_CODE_InvalidRange, "InvalidRange").
+-define(XML_ERROR_CODE_InternalError, "InternalError").
 -define(XML_ERROR_CODE_ServiceUnavailable, "ServiceUnavailable").
 -define(XML_ERROR_CODE_SlowDown, "SlowDown").
 -define(XML_ERROR_CODE_BucketAlreadyExists, "BucketAlreadyExists").
@@ -146,42 +143,60 @@
 -define(XML_ERROR_CODE_MalformedXML, "MalformedXML").
 -define(XML_ERROR_CODE_BadDigest, "BadDigest").
 -define(XML_ERROR_CODE_InvalidBucketName, "InvalidBucketName").
--define(XML_ERROR_CODE_InvalidRequest,  "InvalidRequest").
 -define(XML_ERROR_CODE_SignatureDoesNotMatch, "SignatureDoesNotMatch").
 -define(XML_ERROR_CODE_RequestTimeTooSkewed, "RequestTimeTooSkewed").
 
 %% error messages used in a error response
--define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
+-define(XML_ERROR_MSG_EntityTooLarge, "Your proposed upload exceeds the maximum allowed object size.").
 -define(XML_ERROR_MSG_InvalidArgument, "Invalid Argument").
 -define(XML_ERROR_MSG_InvalidRequest, "SOAP requests must be made over an HTTPS connection.").
--define(XML_ERROR_MSG_AccessDenied,    "Access Denied").
--define(XML_ERROR_MSG_NoSuchKey,       "The specified key does not exist.").
--define(XML_ERROR_MSG_InvalidRange,    "The requested range cannot be satisfied.").
--define(XML_ERROR_MSG_InternalError,   "We encountered an internal error. Please try again.").
--define(XML_ERROR_MSG_ServiceUnavailable,   "Please reduce your request rate.").
--define(XML_ERROR_MSG_SlowDown,   "Please reduce your request rate.").
--define(XML_ERROR_MSG_BucketAlreadyExists,     "Please select a different name and try again.").
+-define(XML_ERROR_MSG_AccessDenied, "Access Denied").
+-define(XML_ERROR_MSG_NoSuchKey, "The specified key does not exist.").
+-define(XML_ERROR_MSG_InvalidRange, "The requested range cannot be satisfied.").
+-define(XML_ERROR_MSG_InternalError, "We encountered an internal error. Please try again.").
+-define(XML_ERROR_MSG_ServiceUnavailable, "Please reduce your request rate.").
+-define(XML_ERROR_MSG_SlowDown, "Please reduce your request rate.").
+-define(XML_ERROR_MSG_BucketAlreadyExists, "Please select a different name and try again.").
 -define(XML_ERROR_MSG_BucketAlreadyOwnedByYou, "Your previous request to create the named bucket succeeded and you already own it.").
 -define(XML_ERROR_MSG_MalformedXML, "The XML you provided was not well-formed or did not alidate against our published schema").
 -define(XML_ERROR_MSG_BadDigest, "The Content-MD5 you specified did not match what we received.").
 -define(XML_ERROR_MSG_InvalidBucketName, "The specified bucket is not valid.").
--define(XML_ERROR_MSG_InvalidRequest, "SOAP requests must be made over an HTTPS connection.").
 -define(XML_ERROR_MSG_SignatureDoesNotMatch, "The request signature we calculated does not match the signature you provided. Check your AWS secret access key and signing method.").
 -define(XML_ERROR_MSG_RequestTimeTooSkewed, "The difference between the request time and the server's time is too large.").
 
 %% Macros
--define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
--define(reply_ok(_H,_B,_R),              cowboy_req:reply(?HTTP_ST_OK,              _H,_B,_R)). %% 200 with body
--define(reply_no_content(_H,_R),         cowboy_req:reply(?HTTP_ST_NO_CONTENT,      _H,_R)).    %% 204
--define(reply_partial_content(_H,_R),    cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_R)).    %% 206
--define(reply_partial_content(_H,_B,_R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_B,_R)). %% 206 with body
--define(reply_not_modified(_H,_R),       cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,    _H,_R)). %% 304
+%% - code:200
+-define(reply_ok(_H,_R),
+        cowboy_req:reply(?HTTP_ST_OK,_H,_R)).
+%% - code:200 with body
+-define(reply_ok(_H,_B,_R),
+        cowboy_req:reply(?HTTP_ST_OK,_H,_B,_R)).
+%% - code:204
+-define(reply_no_content(_H,_R),
+        cowboy_req:reply(?HTTP_ST_NO_CONTENT,_H,_R)).
+%% - code:206
+-define(reply_partial_content(_H,_R),
+        cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT,_H,_R)).
+%% - code:206 with body
+-define(reply_partial_content(_H,_B,_R),
+        cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT,_H,_B,_R)).
+%% - code:304
+-define(reply_not_modified(_H,_R),
+        cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,_H,_R)).
 
 %% for HEAD(without body)
--define(reply_bad_request_without_body(_H,_R),    cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,_R)).             %% 403
--define(reply_not_found_without_body(_H,_R),      cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,_R)).           %% 404
--define(reply_internal_error_without_body(_H,_R), cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,_R)).      %% 500
--define(reply_timeout_without_body(_H,_R),        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,_R)). %% 503
+%% - code:403
+-define(reply_bad_request_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_BAD_REQ,_H,_R)).
+%% - code:404
+-define(reply_not_found_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,_R)).
+%% - code:500
+-define(reply_internal_error_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,_R)).
+%% - code:503
+-define(reply_timeout_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE,_H,_R)).
 
 %% for GET/PUT/DELETE(with body)
 -define(reply_bad_request(_H, _Code, _Msg, _Key, _ReqId, _R),
@@ -232,23 +247,32 @@
                                                     ?XML_ERROR_MSG_BadDigest,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
--define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
-                                   {undefined, _} -> ?BIN_EMPTY;
-                                   {Bin, _}       -> Bin
-                               end).
--define(http_etag(_E),         lists:append(["\"", leo_hex:integer_to_hex(_E,32), "\""])).
--define(http_date(_D),         leo_http:rfc1123_date(_D)).
--define(httP_cache_ctl(_C),    lists:append(["max-age=",integer_to_list(_C)])).
--define(http_content_type(_H), case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE,1,_H) of
-                                   false     -> ?HTTP_CTYPE_OCTET_STREAM;
-                                   {_, Val} -> Val
-                               end).
+-define(http_header(_R, _K),
+        case cowboy_req:header(_K, _R) of
+            {undefined, _} ->
+                ?BIN_EMPTY;
+            {Bin, _} ->
+                Bin
+        end).
+-define(http_etag(_E),
+        lists:append(["\"", leo_hex:integer_to_hex(_E,32), "\""])).
+-define(http_date(_D),
+        leo_http:rfc1123_date(_D)).
+-define(httP_cache_ctl(_C),
+        lists:append(["max-age=",integer_to_list(_C)])).
+-define(http_content_type(_H),
+        case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE,1,_H) of
+            false     ->
+                ?HTTP_CTYPE_OCTET_STREAM;
+            {_, Val} ->
+                Val
+        end).
 
 %% canned ACLs
--define(acl_read,         "READ").
--define(acl_read_acp,     "READ_ACP").
--define(acl_write,        "WRITE").
--define(acl_write_acp,    "WRITE_ACP").
+-define(acl_read, "READ").
+-define(acl_read_acp, "READ_ACP").
+-define(acl_write, "WRITE").
+-define(acl_write_acp, "WRITE_ACP").
 -define(acl_full_control, "FULL_CONTROL").
 
 %% S3 Response XML
