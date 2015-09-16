@@ -436,13 +436,23 @@ large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
              {ok, #?METADATA{}, binary()}| {error, any()}).
 read(Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #?METADATA{del = 0, cnumber = 0} = _Meta} ->
-            read_small(Key, Start, End);
-        {ok, #?METADATA{del = 0, cnumber = N, dsize = ObjectSize, csize = CS} = Meta} ->
-            {NewStartPos, NewEndPos} = calc_pos(Start, End, ObjectSize),
-            {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
-            {ok, _Pos, Bin} = read_large(Key, NewStartPos, NewEndPos, N, Index, CurPos, <<>>),
-            {ok, Meta, Bin};
+        {ok, #?METADATA{dsize = ObjectSize} = Meta} ->
+            End2 = if ObjectSize - 1 > End ->
+                          End;
+                      true ->
+                          ObjectSize - 1
+                   end,
+            case Meta of
+                #?METADATA{del = 0, cnumber = 0} ->
+                    read_small(Key, Start, End2);
+                #?METADATA{del = 0, cnumber = N, csize = CS} = Meta ->
+                    {NewStartPos, NewEndPos} = calc_pos(Start, End2, ObjectSize),
+                    {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
+                    {ok, _Pos, Bin} = read_large(Key, NewStartPos, NewEndPos, N, Index, CurPos, <<>>),
+                    {ok, Meta, Bin};
+                _ ->
+                    {error, Meta}
+            end;
         Error ->
             Error
     end.
