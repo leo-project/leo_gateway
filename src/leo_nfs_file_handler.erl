@@ -243,7 +243,7 @@ write_small2small(Key, Start, End, Data, SrcMeta, SrcObj) ->
                     case (End + 1) < SrcMeta#?METADATA.dsize of
                         true ->
                             <<Head:Start/binary, _/binary>> = SrcObj,
-                            <<_:End/binary, Tail/binary>> = SrcObj,
+                            <<_:End/binary, _:1/binary, Tail/binary>> = SrcObj,
                             <<Head/binary, Data/binary, Tail/binary>>;
                         false ->
                             <<Head:Start/binary, _/binary>> = SrcObj,
