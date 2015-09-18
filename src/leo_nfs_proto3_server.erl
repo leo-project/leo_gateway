@@ -177,19 +177,30 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
     Path4S3 = filename:join(Dir, Name),
     ?debug("nfsproc3_lookup_3", "path:~p client:~p", [Path4S3, Clnt]),
-    %% A path for directory must be trailing with '/'
-    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
-    case leo_nfs_file_handler:is_file(Path4S3) orelse
-        leo_nfs_file_handler:is_dir(Path4S3Dir) of
-        true ->
+    case leo_gateway_rpc_handler:head(Path4S3) of
+        {ok, Meta} ->
             {ok, FileUID} = leo_nfs_state_ets:add_path(Path4S3),
-            {reply, {?NFS3_OK, {{FileUID},     %% nfs_fh3
-                                {false, void}, %% post_op_attr for obj
-                                {false, void}  %% post_op_attr for dir
+            {reply, {?NFS3_OK, {{FileUID},
+                                {true, meta2fattr3(Meta)},
+                                {false, void}
                                }}, State};
-        false ->
-            {reply, {?NFS3ERR_NOENT, {{false, void}  %% post_op_attr for dir
-                                     }}, State}
+        {error, not_found} ->
+            %% A path for directory must be trailing with '/'
+            Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
+            case leo_nfs_file_handler:is_dir(Path4S3Dir) of
+                true ->
+                    {ok, FileUID} = leo_nfs_state_ets:add_path(Path4S3),
+                    {reply, {?NFS3_OK, {{FileUID},
+                                       {true, s3dir2fattr3(Path4S3Dir)},
+                                       {false, void}
+                                      }}, State};
+                false ->
+                    {reply, {?NFS3ERR_NOENT, {{false, void}}
+                            }, State}
+            end;
+        {error, _Reason} ->
+            {reply, {?NFS3ERR_IO, {{false, void}}
+                    }, State}
     end.
 
 %% @doc
