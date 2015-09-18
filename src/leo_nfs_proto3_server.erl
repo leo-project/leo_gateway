@@ -122,8 +122,10 @@ nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
         true ->
             %% @todo emulate directories
             case leo_gateway_rpc_handler:head(Path) of
-                {ok, Meta} ->
+                {ok, #?METADATA{del = 0} = Meta} ->
                     {reply, {?NFS3_OK, {meta2fattr3(Meta)}}, State};
+                {ok, #?METADATA{del = 1}} ->
+                    {reply, {?NFS3ERR_NOENT, void}, State};
                 {error, not_found} ->
                     Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
                     case leo_nfs_file_handler:is_dir(Path4S3Dir) of
@@ -178,12 +180,15 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
     Path4S3 = filename:join(Dir, Name),
     ?debug("nfsproc3_lookup_3", "path:~p client:~p", [Path4S3, Clnt]),
     case leo_gateway_rpc_handler:head(Path4S3) of
-        {ok, Meta} ->
+        {ok, #?METADATA{del = 0} = Meta} ->
             {ok, FileUID} = leo_nfs_state_ets:add_path(Path4S3),
             {reply, {?NFS3_OK, {{FileUID},
                                 {true, meta2fattr3(Meta)},
                                 {false, void}
                                }}, State};
+        {ok, #?METADATA{del = 1}} ->
+            {reply, {?NFS3ERR_NOENT, {{false, void}}
+                    }, State};
         {error, not_found} ->
             %% A path for directory must be trailing with '/'
             Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
@@ -539,7 +544,7 @@ is_empty_dir(Path) ->
         {ok, MetaList} when is_list(MetaList) ->
             FilteredList = [Meta ||
                                Meta <- MetaList,
-                               filename:basename(Meta#?METADATA.key) =/= ?NFS_DUMMY_FILE4S3DIR],
+                               filename:basename(Meta#?METADATA.key) =/= ?NFS_DUMMY_FILE4S3DIR, Meta#?METADATA.del =:= 0],
             length(FilteredList) =:= 0;
         _Error ->
             false
@@ -617,7 +622,8 @@ readdir_create_resp(Path, CurCookie,
                     #ongoing_readdir{filelist = FileList} = ReadDir,
                     Cookie, EOF, IsPlus, Resp) ->
     Meta = lists:nth(CurCookie, FileList),
-    #?METADATA{key = Key, dsize = Size} = Meta,
+    #?METADATA{key = Key, dsize = Size, del = Del} = Meta,
+    ?debug("readdir_create_resp/7", "Meta ~p", [Meta]),
     NormalizedKey = case Size of
                         -1 ->
                             %% dir to be normalized(means expand .|.. chars)
@@ -626,9 +632,31 @@ readdir_create_resp(Path, CurCookie,
                             %% file
                             Key
                     end,
+    Del2 = case Size =:= -1 andalso
+                is_empty_dir(NormalizedKey) of
+               true ->
+                   DummyKey = filename:join(NormalizedKey, ?NFS_DUMMY_FILE4S3DIR),
+                   case leo_gateway_rpc_handler:head(DummyKey) of 
+                       {ok, #?METADATA{del = 1}} ->
+                           1;
+                       _ ->
+                           Del
+                   end;
+               _ ->
+                   Del
+           end,
+
     FileName = filename:basename(Key),
-    case FileName of
-        ?NFS_DUMMY_FILE4S3DIR ->
+    case {Del2, FileName} of
+        {1, _} ->
+            readdir_create_resp(Path,
+                                CurCookie - 1,
+                                ReadDir,
+                                Cookie,
+                                EOF,
+                                IsPlus,
+                                Resp);
+        {_, ?NFS_DUMMY_FILE4S3DIR} ->
             readdir_create_resp(Path,
                                 CurCookie - 1,
                                 ReadDir,
