@@ -71,6 +71,7 @@
 
 -define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
 -define(NFS_READDIRPLUS_NUM_OF_RESPONSE, 10).
+-define(NFS_READDIR_NUM_OF_RESPONSE, 10).
 
 -define(NFS3_OK,          'NFS3_OK').
 -define(NFS3_NG,          'NFS3_NG').
@@ -357,15 +358,44 @@ nfsproc3_link_3(_1, Clnt, State) ->
             }, State}.
 
 %% @doc
-nfsproc3_readdir_3(_1, Clnt, State) ->
+nfsproc3_readdir_3({{UID}, Cookie, CookieVerf, _MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdir_3", "args:~p client:~p", [_1, Clnt]),
-    {reply, {?NFS3_OK, {{false, void},  %% post_op_attr
-                        <<"12345678">>, %% cookie verfier
-                        {               %% dir_list(empty)
-                          void,         %% pre_op_attr
-                          true          %% eof
-                        }}
-            }, State}.
+    {ok, Path} = leo_nfs_state_ets:get_path(UID),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
+    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
+                                       <<0,0,0,0,0,0,0,0>> ->
+                                           readdir_add_entry(Path4S3Dir);
+                                       CookieVerf ->
+                                           readdir_get_entry(CookieVerf)
+                                   end,
+    case ReadDir of
+        undefined ->
+            %% empty response
+            readdir_del_entry(NewCookieVerf),
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
+                                NewCookieVerf, %% cookie verfier
+                                {              %% dir_list(empty)
+                                  void,        %% pre_op_attr
+                                  true         %% eof
+                                }}}, State};
+        ReadDir ->
+            %% create response
+            %% @TODO
+            %% # of entries should be determinted by _MaxCnt
+            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIR_NUM_OF_RESPONSE, false),
+            %% ?debug("nfsproc3_readdir_3", "eof:~p resp:~p~n", [EOF, Resp]),
+            case EOF of
+                true ->
+                    readdir_del_entry(NewCookieVerf);
+                false ->
+                    void
+            end,
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
+                                NewCookieVerf, %% cookie verfier
+                                {Resp,         %% pre_op_attr
+                                 EOF}
+                               }}, State}
+    end.
 
 %% @doc
 nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
@@ -392,7 +422,7 @@ nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt,
             %% create response
             %% @TODO
             %% # of entries should be determinted by _MaxCnt
-            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIRPLUS_NUM_OF_RESPONSE),
+            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIRPLUS_NUM_OF_RESPONSE, true),
             %% ?debug("nfsproc3_readdirplus_3", "eof:~p resp:~p~n", [EOF, Resp]),
             case EOF of
                 true ->
@@ -511,6 +541,7 @@ is_empty_dir(Path) ->
 -spec(readdir_add_entry(binary()) ->
              {ok, binary(), #ongoing_readdir{}}).
 readdir_add_entry(Path) ->
+    %% @TODO READDIR does not need the attribute
     case leo_nfs_file_handler:list_dir(Path) of
         {ok, FileList}->
             %% gen cookie verfier
@@ -546,10 +577,10 @@ readdir_del_entry(CookieVerf) ->
 
 %% @doc Create a rpc response for a readdir3 request
 %% @private
--spec(readdir_create_resp(binary(), integer(), #ongoing_readdir{}, integer()) ->
+-spec(readdir_create_resp(binary(), integer(), #ongoing_readdir{}, integer(), boolean()) ->
              void | tuple()).
 readdir_create_resp(Path, Cookie,
-                    #ongoing_readdir{filelist = FileList} = ReadDir, NumEntry) ->
+                    #ongoing_readdir{filelist = FileList} = ReadDir, NumEntry, IsPlus) ->
     {StartCookie, EOF} = case length(FileList) =< (Cookie + NumEntry) of
                              true ->
                                  {length(FileList), true};
@@ -561,18 +592,19 @@ readdir_create_resp(Path, Cookie,
                         ReadDir,
                         Cookie,
                         EOF,
+                        IsPlus,
                         void).
 
 readdir_create_resp(_Path, CurCookie,
                     _ReadDir,
-                    Cookie, EOF, Resp)
+                    Cookie, EOF, _IsPlus, Resp)
   when CurCookie =:= Cookie ->
     ?debug("readdir_create_resp", "resp:~p ~n", [Resp]),
     {Resp, EOF};
 
 readdir_create_resp(Path, CurCookie,
                     #ongoing_readdir{filelist = FileList} = ReadDir,
-                    Cookie, EOF, Resp) ->
+                    Cookie, EOF, IsPlus, Resp) ->
     Meta = lists:nth(CurCookie, FileList),
     #?METADATA{key = Key, dsize = Size} = Meta,
     NormalizedKey = case Size of
@@ -591,18 +623,28 @@ readdir_create_resp(Path, CurCookie,
                                 ReadDir,
                                 Cookie,
                                 EOF,
+                                IsPlus,
                                 Resp);
         _ ->
             {ok, UID} = leo_nfs_state_ets:add_path(NormalizedKey),
-            NewResp = {inode(NormalizedKey),
-                       FileName,
-                       CurCookie,
-                       {true, %% post_op_attr
-                        meta2fattr3(Meta#?METADATA{key = NormalizedKey})
-                       },
-                       {true, {UID}}, %% post_op_fh3
-                       Resp
-                      },
+            NewResp = case IsPlus of 
+                          true ->
+                              {inode(NormalizedKey),
+                               FileName,
+                               CurCookie,
+                               {true, %% post_op_attr
+                                meta2fattr3(Meta#?METADATA{key = NormalizedKey})
+                               },
+                               {true, {UID}}, %% post_op_fh3
+                               Resp
+                              };
+                          _ ->
+                              {inode(NormalizedKey),
+                               FileName,
+                               CurCookie,
+                               Resp
+                              }
+                      end,
             ?debug("readdir_create_resp", "key:~p cookie:~p~n",
                    [NormalizedKey, CurCookie]),
             readdir_create_resp(Path,
@@ -610,6 +652,7 @@ readdir_create_resp(Path, CurCookie,
                                 ReadDir,
                                 Cookie,
                                 EOF,
+                                IsPlus, 
                                 NewResp)
     end.
 
