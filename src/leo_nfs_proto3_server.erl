@@ -70,7 +70,6 @@
          }).
 
 -define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
--define(NFS_READDIRPLUS_NUM_OF_RESPONSE, 10).
 -define(NFS_READDIR_NUM_OF_RESPONSE, 10).
 
 -define(NFS3_OK,          'NFS3_OK').
@@ -374,84 +373,16 @@ nfsproc3_link_3(_1, Clnt, State) ->
             }, State}.
 
 %% @doc
-nfsproc3_readdir_3({{UID}, Cookie, CookieVerf, _MaxCnt} = _1, Clnt, State) ->
+nfsproc3_readdir_3({{UID}, Cookie, CookieVerf, MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdir_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
-    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
-    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
-                                       <<0,0,0,0,0,0,0,0>> ->
-                                           readdir_add_entry(Path4S3Dir);
-                                       CookieVerf ->
-                                           readdir_get_entry(CookieVerf)
-                                   end,
-    case ReadDir of
-        undefined ->
-            %% empty response
-            readdir_del_entry(NewCookieVerf),
-            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
-                                NewCookieVerf, %% cookie verfier
-                                {              %% dir_list(empty)
-                                  void,        %% pre_op_attr
-                                  true         %% eof
-                                }}}, State};
-        ReadDir ->
-            %% create response
-            %% @TODO
-            %% # of entries should be determinted by _MaxCnt
-            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIR_NUM_OF_RESPONSE, false),
-            %% ?debug("nfsproc3_readdir_3", "eof:~p resp:~p~n", [EOF, Resp]),
-            case EOF of
-                true ->
-                    readdir_del_entry(NewCookieVerf);
-                false ->
-                    void
-            end,
-            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
-                                NewCookieVerf, %% cookie verfier
-                                {Resp,         %% pre_op_attr
-                                 EOF}
-                               }}, State}
-    end.
+    readdir(Path, Cookie, CookieVerf, MaxCnt, false, State).
 
 %% @doc
-nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
+nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
-    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
-    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
-                                       <<0,0,0,0,0,0,0,0>> ->
-                                           readdir_add_entry(Path4S3Dir);
-                                       CookieVerf ->
-                                           readdir_get_entry(CookieVerf)
-                                   end,
-    case ReadDir of
-        undefined ->
-            %% empty response
-            readdir_del_entry(NewCookieVerf),
-            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
-                                NewCookieVerf, %% cookie verfier
-                                {              %% dir_list(empty)
-                                  void,        %% pre_op_attr
-                                  true         %% eof
-                                }}}, State};
-        ReadDir ->
-            %% create response
-            %% @TODO
-            %% # of entries should be determinted by _MaxCnt
-            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIRPLUS_NUM_OF_RESPONSE, true),
-            %% ?debug("nfsproc3_readdirplus_3", "eof:~p resp:~p~n", [EOF, Resp]),
-            case EOF of
-                true ->
-                    readdir_del_entry(NewCookieVerf);
-                false ->
-                    void
-            end,
-            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
-                                NewCookieVerf, %% cookie verfier
-                                {Resp,         %% pre_op_attr
-                                 EOF}
-                               }}, State}
-    end.
+    readdir(Path, Cookie, CookieVerf, MaxCnt, true, State).
 
 %% @doc
 nfsproc3_fsstat_3(_1, Clnt, State) ->
@@ -535,6 +466,45 @@ sattr_mtime_to_file_info({_, {MTime, _}})         -> MTime.
 %% ---------------------------------------------------------------------
 %% INNER FUNCTIONS
 %% ---------------------------------------------------------------------
+%% @doc
+%%
+readdir(Path, Cookie, CookieVerf, _MaxCnt, IsPlus, State) ->
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
+    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
+                                       <<0,0,0,0,0,0,0,0>> ->
+                                           readdir_add_entry(Path4S3Dir);
+                                       CookieVerf ->
+                                           readdir_get_entry(CookieVerf)
+                                   end,
+    case ReadDir of
+        undefined ->
+            %% empty response
+            readdir_del_entry(NewCookieVerf),
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
+                                NewCookieVerf, %% cookie verfier
+                                {              %% dir_list(empty)
+                                  void,        %% pre_op_attr
+                                  true         %% eof
+                                }}}, State};
+        ReadDir ->
+            %% create response
+            %% @TODO
+            %% # of entries should be determinted by _MaxCnt
+            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIR_NUM_OF_RESPONSE, IsPlus),
+
+            case EOF of
+                true ->
+                    readdir_del_entry(NewCookieVerf);
+                false ->
+                    void
+            end,
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
+                                NewCookieVerf, %% cookie verfier
+                                {Resp,         %% pre_op_attr
+                                 EOF}
+                               }}, State}
+    end.
+
 %% @doc Returns true if Path refers to a directory which have child files,
 %%      and false otherwise.
 %% @private
@@ -542,6 +512,7 @@ sattr_mtime_to_file_info({_, {MTime, _}})         -> MTime.
 is_empty_dir(Path) ->
     case leo_nfs_file_handler:list_dir(Path, false) of
         {ok, MetaList} when is_list(MetaList) ->
+            ?debug("is_empty_dir/1", "List Dir ~p, ~p", [Path, MetaList]),
             FilteredList = [Meta ||
                                Meta <- MetaList,
                                filename:basename(Meta#?METADATA.key) =/= ?NFS_DUMMY_FILE4S3DIR, Meta#?METADATA.del =:= 0],
