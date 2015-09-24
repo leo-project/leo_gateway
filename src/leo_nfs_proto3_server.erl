@@ -116,37 +116,13 @@ nfsproc3_null_3(_Clnt, State) ->
 nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
     ?debug("nfsproc3_getattr_3", "path:~p client:~p", [Path, Clnt]),
-    case leo_nfs_file_handler:binary_is_contained(Path, $/) of
-        %% object
-        true ->
-            %% @todo emulate directories
-            case leo_gateway_rpc_handler:head(Path) of
-                {ok, #?METADATA{del = 0} = Meta} ->
-                    {reply, {?NFS3_OK, {meta2fattr3(Meta)}}, State};
-                {ok, #?METADATA{del = 1}} ->
-                    {reply, {?NFS3ERR_NOENT, void}, State};
-                {error, not_found} ->
-                    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
-                    case leo_nfs_file_handler:is_dir(Path4S3Dir) of
-                        true ->
-                            {reply, {?NFS3_OK, {s3dir2fattr3(Path)}}, State};
-                        false ->
-                            {reply, {?NFS3ERR_NOENT, void}, State}
-                    end;
-                {error, Reason} ->
-                    {reply, {?NFS3ERR_IO, Reason}, State}
-            end;
-        %% bucket
-        false ->
-            case leo_s3_bucket:find_bucket_by_name(Path) of
-                {ok, Bucket} ->
-                    Attr = bucket2fattr3(Bucket),
-                    {reply, {?NFS3_OK, {Attr}}, State};
-                {error, Reason} ->
-                    {reply, {?NFS3ERR_IO, Reason}, State};
-                not_found ->
-                    {reply, {?NFS3ERR_NOENT, void}, State}
-            end
+    case getattr(Path) of
+        {ok, Meta} ->
+            {reply, {?NFS3_OK, {Meta}}, State};
+        not_found ->
+            {reply, {?NFS3ERR_NOENT, void}, State};
+        {error, Reason} ->
+            {reply, {?NFS3ERR_IO, Reason}, State}
     end.
 
 %% @doc
@@ -176,35 +152,19 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
 %% @doc
 nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
-    Path4S3 = filename:join(Dir, Name),
-    ?debug("nfsproc3_lookup_3", "path:~p client:~p", [Path4S3, Clnt]),
-    case leo_gateway_rpc_handler:head(Path4S3) of
-        {ok, #?METADATA{del = 0} = Meta} ->
-            {ok, FileUID} = leo_nfs_state_ets:add_path(Path4S3),
+    Path = leo_nfs_file_handler:path_relative_to_abs(filename:join(Dir, Name)),
+    ?debug("nfsproc3_lookup_3", "path:~p client:~p", [Path, Clnt]),
+    case getattr(Path) of
+        {ok, Meta} ->
+            {ok, FileUID} = leo_nfs_state_ets:add_path(Path),
             {reply, {?NFS3_OK, {{FileUID},
-                                {true, meta2fattr3(Meta)},
+                                {true, Meta},
                                 {false, void}
                                }}, State};
-        {ok, #?METADATA{del = 1}} ->
-            {reply, {?NFS3ERR_NOENT, {{false, void}}
-                    }, State};
-        {error, not_found} ->
-            %% A path for directory must be trailing with '/'
-            Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
-            case leo_nfs_file_handler:is_dir(Path4S3Dir) of
-                true ->
-                    {ok, FileUID} = leo_nfs_state_ets:add_path(Path4S3),
-                    {reply, {?NFS3_OK, {{FileUID},
-                                       {true, s3dir2fattr3(Path4S3Dir)},
-                                       {false, void}
-                                      }}, State};
-                false ->
-                    {reply, {?NFS3ERR_NOENT, {{false, void}}
-                            }, State}
-            end;
+        not_found ->
+            {reply, {?NFS3ERR_NOENT, {{false, void}}}, State};
         {error, _Reason} ->
-            {reply, {?NFS3ERR_IO, {{false, void}}
-                    }, State}
+            {reply, {?NFS3ERR_IO, {{false, void}}}, State}
     end.
 
 %% @doc
@@ -666,6 +626,39 @@ readdir_create_resp(Path, CurCookie,
                                 NewResp)
     end.
 
+getattr(Path) ->
+    case leo_nfs_file_handler:binary_is_contained(Path, $/) of
+        %% object
+        true ->
+            %% @todo emulate directories
+            case leo_gateway_rpc_handler:head(Path) of
+                {ok, #?METADATA{del = 0} = Meta} ->
+                    {ok, meta2fattr3(Meta)};
+                {ok, #?METADATA{del = 1}} ->
+                    not_found;
+                {error, not_found} ->
+                    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
+                    case leo_nfs_file_handler:is_dir(Path4S3Dir) of
+                        true ->
+                            {ok, s3dir2fattr3(Path)};
+                        false ->
+                            not_found
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        %% bucket
+        false ->
+            case leo_s3_bucket:find_bucket_by_name(Path) of
+                {ok, Bucket} ->
+                    Attr = bucket2fattr3(Bucket),
+                    {ok, Attr};
+                not_found ->
+                    not_found;
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end.
 
 %% @doc Return the inode of Path
 %% @private
