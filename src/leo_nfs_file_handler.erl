@@ -548,6 +548,15 @@ trim(Key, Size) ->
                                            LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     IsLarge = Size > ChunkedObjLen,
     case leo_gateway_rpc_handler:get(Key) of
+        %% TODO Handle Truncate Large Object
+        {error, not_found} when IsLarge =:= false ->
+            Obj = <<0:(8* Size)>>,
+            case leo_gateway_rpc_handler:put(Key, Obj) of
+                {ok, _} ->
+                    ok;
+                Error ->
+                    Error
+            end;
         {ok, #?METADATA{cnumber = 0} = _SrcMeta, SrcObj} when IsLarge =:= false ->
             %% small to small
             %% @todo handle expand case
