@@ -30,7 +30,7 @@ build_plt:
 	dialyzer --build_plt --output_plt $(PLT_FILE) --apps $(APPS) $(LIBS)
 dialyzer:
 	@$(REBAR) compile
-	dialyzer --plt $(PLT_FILE) -r ebin/ --dump_callgraph $(DOT_FILE) | fgrep -v -f ./dialyzer.ignore-warnings
+	dialyzer --plt $(PLT_FILE) -r ebin/ --dump_callgraph $(DOT_FILE) -Wrace_conditions | fgrep -v -f ./dialyzer.ignore-warnings
 typer:
 	typer --plt $(PLT_FILE) -I include/ -r src/
 doc: compile

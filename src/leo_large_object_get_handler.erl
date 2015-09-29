@@ -22,12 +22,14 @@
 -module(leo_large_object_get_handler).
 
 -behaviour(gen_server).
+-behaviour(leo_tran_behaviour).
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_dcerl/include/leo_dcerl.hrl").
+-include_lib("leo_tran/include/leo_tran.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% Application APIs
@@ -40,6 +42,9 @@
          handle_info/2,
          terminate/2,
          code_change/3]).
+
+%% Callbacks for leo_tran_behaviour
+-export([run/5, resume/5, wait/5, commit/5, rollback/6]).
 
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
@@ -109,26 +114,26 @@ handle_call(stop, _From, State) ->
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
             #state{key = Key, transport = Transport, socket = Socket} = State) ->
-    Ref_1 = case catch leo_cache_api:put_begin_tran(Key) of
-                {ok, Ref} -> Ref;
-                _ -> undefined
-            end,
-    Reply = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
-                                                      chunk_key = Key,
-                                                      request = Req,
-                                                      metadata = Meta,
-                                                      reference = Ref_1,
-                                                      transport = Transport,
-                                                      socket = Socket}),
-    case Reply of
-        {ok, _Req} ->
-            CacheMeta = #cache_meta{
-                           md5   = Meta#?METADATA.checksum,
-                           mtime = Meta#?METADATA.timestamp,
-                           content_type = leo_mime:guess_mime(Key)},
-            catch leo_cache_api:put_end_tran(Ref_1, Key, CacheMeta, true);
-        _ ->
-            catch leo_cache_api:put_end_tran(Ref_1, Key, undefined, false)
+    Reply = case leo_tran:run(Key, null, null, ?MODULE,
+                              {TotalOfChunkedObjs, Req, Meta, Transport, Socket},
+                              [{?PROP_IS_WAIT_FOR_TRAN, false}]) of
+        {value, WriterRep} ->
+            WriterRep;
+        {error, ?ERROR_ALREADY_HAS_TRAN} ->
+            {ok, Ref} = put_begin_tran_with_retry(Key),
+            TotalSize = Meta#?METADATA.dsize,
+            ReaderRep = case catch handle_read_loop(TotalSize, #req_info{key = Key,
+                                                                         request = Req,
+                                                                         reference = Ref,
+                                                                         transport = Transport,
+                                                                         socket = Socket}) of
+                        {'EXIT', Reason} ->
+                            {error, Reason};
+                        Ret ->
+                            Ret
+                    end,
+            leo_cache_api:put_end_tran(Ref, read, Key, undef, true),
+            ReaderRep
     end,
     {reply, Reply, State}.
 
@@ -144,6 +149,39 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% Callbacks for leo_tran_behaviour
+run(Key, _, _, {TotalOfChunkedObjs, Req, Meta, Transport, Socket}, _) ->
+    Ref = case catch leo_cache_api:put_begin_tran(write, Key) of
+        {ok, R} -> R;
+        _ -> undefined
+    end,
+    Reply = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
+                                                      chunk_key = Key,
+                                                      request = Req,
+                                                      metadata = Meta,
+                                                      reference = Ref,
+                                                      transport = Transport,
+                                                      socket = Socket}),
+    case Reply of
+        {ok, _Req} ->
+            CacheMeta = #cache_meta{
+                           md5   = Meta#?METADATA.checksum,
+                           mtime = Meta#?METADATA.timestamp,
+                           content_type = leo_mime:guess_mime(Key)},
+            catch leo_cache_api:put_end_tran(Ref, write, Key, CacheMeta, true);
+        _ ->
+            catch leo_cache_api:put_end_tran(Ref, write, Key, undefined, false)
+    end,
+    Reply.
+
+wait(_, _, _, _, _) ->
+    ok.
+resume(_, _, _, _, _) ->
+    ok.
+commit(_, _, _, _, _) ->
+    ok.
+rollback(_, _, _, _, _, _) ->
+    ok.
 
 %%====================================================================
 %% INNTERNAL FUNCTION
@@ -179,6 +217,7 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
             case Transport:send(Socket, Bin) of
                 ok ->
                     catch leo_cache_api:put(Ref, AcctualKey, Bin),
+                    leo_tran:notify_all(AcctualKey, null, null),
                     handle_loop(Index + 1, TotalChunkObjs, ReqInfo);
                 {error, Cause} ->
                     ?error("handle_loop/3", "key:~s, index:~p, cause:~p",
@@ -206,4 +245,49 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
             ?error("handle_loop/3", "key:~s, index:~p, cause:~p",
                    [binary_to_list(Key_1), Index, Cause]),
             {error, Cause}
+    end.
+
+%% @doc Read Mode
+%% @private
+-spec(handle_read_loop(TotalSize, ReqInfo) ->
+            {ok, any()} | {error, any()} when TotalSize::non_neg_integer(),
+                                              ReqInfo::#req_info{}).
+handle_read_loop(TotalSize, ReqInfo) ->
+    handle_read_loop(0, TotalSize, ReqInfo).
+
+%% @private
+handle_read_loop(TotalSize, TotalSize, #req_info{request = Req}) ->
+    {ok, Req};
+handle_read_loop(Offset, TotalSize, #req_info{key = Key,
+                                              reference = Ref,
+                                              transport = Transport,
+                                              socket = Socket
+                                             } = ReqInfo) ->
+    ReadSize = case file:read(Ref, 1024 * 1024) of
+                   {ok, Bin} ->
+                       Transport:send(Socket, Bin),
+                       byte_size(Bin);
+                   eof ->
+                       0;
+                   {error, Reason} ->
+                       ?error("handle_read_loop/3", "Ref:~p, Reason:~s", [Ref, Reason]),
+                       erlang:error(Reason)
+               end,
+    case ReadSize of
+        0 ->
+            leo_tran:wait(Key, null, null),
+            handle_read_loop(Offset, TotalSize, ReqInfo);
+        _ ->
+            handle_read_loop(Offset + ReadSize, TotalSize, ReqInfo)
+    end.
+
+put_begin_tran_with_retry(Key) ->
+    case leo_cache_api:put_begin_tran(read, Key) of
+        {ok, Ref} ->
+            {ok, Ref};
+        not_found ->
+            timer:sleep(100),
+            put_begin_tran_with_retry(Key);
+        Other ->
+            Other
     end.

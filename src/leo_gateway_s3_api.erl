@@ -1160,6 +1160,15 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1
 %% @doc bucket operations must be needed to auth
 %%      AND alter object operations as well
 %% @private
+%%%auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams) ->
+%%%    case cowboy_req:header(?HTTP_HEAD_DATE, Req) of
+%%%        {undefined, _} ->
+%%%            {error, undefined};
+%%%        _ ->
+%%%            auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams)
+%%%    end.
+
+%%%auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
 auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
@@ -1270,12 +1279,13 @@ get_bucket_1(AccessKeyId, ?BIN_SLASH, _Delimiter, _Marker, _MaxKeys, none) ->
     end;
 get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
     Prefix_1 = case Prefix of
-                   none -> <<>>;
-                   _    -> Prefix
+                   none ->
+                       <<>>;
+                   _ ->
+                       Prefix
                end,
     Key = << Bucket/binary, Prefix_1/binary >>,
     {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
-
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none -> <<>>;

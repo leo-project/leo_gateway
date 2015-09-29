@@ -239,6 +239,9 @@ after_process_0(Error) ->
 
 %% @private
 after_process_1(Pid, Managers) ->
+    %% Launch leo_tran
+    application:ensure_started(leo_tran),
+
     %% Launch SNMPA
     ok = leo_statistics_api:start_link(leo_gateway),
     ok = leo_statistics_api:create_tables(ram_copies, [node()]),
