@@ -24,7 +24,6 @@
  [
   {description, "LeoFS Gateway Server"},
   {vsn, "1.4.0-pre.1"},
-  {vsn, "1.2.16"},
   {id, "leo_gateway"},
   {registered, []},
   {applications, [kernel, stdlib, crypto, ranch, asn1]},
