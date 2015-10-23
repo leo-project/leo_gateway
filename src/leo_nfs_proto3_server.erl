@@ -473,9 +473,29 @@ is_empty_dir(Path) ->
     case leo_nfs_file_handler:list_dir(Path, false) of
         {ok, MetaList} when is_list(MetaList) ->
             ?debug("is_empty_dir/1", "List Dir ~p, ~p", [Path, MetaList]),
-            FilteredList = [Meta ||
-                               Meta <- MetaList,
-                               filename:basename(Meta#?METADATA.key) =/= ?NFS_DUMMY_FILE4S3DIR, Meta#?METADATA.del =:= 0],
+            FilteredList = lists:foldl(
+                             fun(Meta, Acc) ->
+                                     case Meta of
+                                         #?METADATA{del = 1} ->
+                                             Acc;
+                                         #?METADATA{dsize = -1} ->
+                                             DummyKey = filename:join(Meta#?METADATA.key, ?NFS_DUMMY_FILE4S3DIR),
+                                             case leo_gateway_rpc_handler:head(DummyKey) of
+                                                 {ok, #?METADATA{del = 0}} ->
+                                                     [Meta | Acc];
+                                                 _ ->
+                                                     Acc
+                                             end;
+                                         _ ->
+                                             BaseName = filename:basename(Meta#?METADATA.key),
+                                             case BaseName of
+                                                 ?NFS_DUMMY_FILE4S3DIR ->
+                                                     Acc;
+                                                 _ ->
+                                                     [Meta | Acc]
+                                             end
+                                     end
+                       end, [], MetaList),
             length(FilteredList) =:= 0;
         _Error ->
             false
