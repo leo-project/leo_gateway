@@ -24,6 +24,7 @@
 
 -include("leo_nlm_lock.hrl").
 -include("leo_nlm_proto4.hrl").
+-include("leo_gateway.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -62,6 +63,10 @@
 -define(NLM4_FBIG,                  'NLM4_FBIG').
 -define(NLM4_FAILED,                'NLM4_FAILED').
 
+-record(nlm_state, {
+            handler :: atom()
+         }).
+
 %% ---------------------------------------------------------------------
 %% API
 %% ---------------------------------------------------------------------
@@ -69,8 +74,10 @@
 %%      during starting a leo_storage server.
 -spec(init(any()) -> {ok, any()}).
 init(_Args) ->
-    {ok, _} = leo_nlm_lock_handler_ets:start_link([]),
-    {ok, void}.
+    Options = ?env_nlm_options(),
+    Handler = leo_misc:get_value('handler', Options, ?DEF_NLM_HANDLER),
+    {ok, _} = Handler:start_link([]),
+    {ok, #nlm_state{handler = Handler}}.
 
 handle_call(Req, _From, S) ->
     ?debug("handle_call", "req:~p from:~p", [Req, _From]),
@@ -96,11 +103,11 @@ nlmproc4_null_4(_Clnt, State) ->
     {reply, [], State}.
 
 %% @doc
-nlmproc4_test_4({Cookie, IsExclusive, Lock} = TestArgs, Clnt, State) ->
+nlmproc4_test_4({Cookie, IsExclusive, Lock} = TestArgs, Clnt, #nlm_state{handler = Handler} = State) ->
     ?debug("NLM_TEST", "Args:~p, from:~p", [TestArgs, Clnt]),
     {_CallerName, FileHandler, _Owner, _Svid, _Offset, _Length} = Lock,
     NewLock = convert_lock(Lock, IsExclusive),
-    TestRet = leo_nlm_lock_handler:test(FileHandler, NewLock),
+    TestRet = Handler:test(FileHandler, NewLock),
     LockRet = case TestRet of
                   ok ->
                       {?NLM4_GRANTED};
@@ -113,11 +120,11 @@ nlmproc4_test_4({Cookie, IsExclusive, Lock} = TestArgs, Clnt, State) ->
               end,
     {reply, {Cookie, LockRet}, State}.
 
-nlmproc4_lock_4({Cookie, _IsBlock, IsExclusive, Lock, _IsReclaim, _NSMState} = LockArgs, Clnt, State) ->
+nlmproc4_lock_4({Cookie, _IsBlock, IsExclusive, Lock, _IsReclaim, _NSMState} = LockArgs, Clnt, #nlm_state{handler = Handler} = State) ->
     ?debug("NLM_LOCK", "Args:~p, from:~p", [LockArgs, Clnt]),
     {_CallerName, FileHandler, _Owner, _Svid, _Offset, _Length} = Lock,
     NewLock = convert_lock(Lock, IsExclusive),
-    LockRet = leo_nlm_lock_handler:lock(FileHandler, NewLock),
+    LockRet = Handler:lock(FileHandler, NewLock),
     Stat = case LockRet of
                ok ->
                    ?NLM4_GRANTED;
@@ -130,11 +137,11 @@ nlmproc4_cancel_4({Cookie, _IsBlock, _IsExclusive, _Lock} = CancArgs, Clnt, Stat
     ?debug("NLM_CANCEL", "Args:~p, from:~p", [CancArgs, Clnt]),
     {reply, {Cookie, {?NLM4_DENIED}}, State}.
 
-nlmproc4_unlock_4({Cookie, Lock} = UnlockArgs, Clnt, State) ->
+nlmproc4_unlock_4({Cookie, Lock} = UnlockArgs, Clnt, #nlm_state{handler = Handler} = State) ->
     ?debug("NLM_UNLOCK", "Args:~p, from:~p", [UnlockArgs, Clnt]),
     {_CallerName, FileHandler, Owner, _Svid, Offset, Length} = Lock,
     End = Offset + Length - 1,
-    leo_nlm_lock_handler:unlock(FileHandler, Owner, Offset, End),
+    Handler:unlock(FileHandler, Owner, Offset, End),
     {reply, {Cookie, {?NLM4_GRANTED}}, State}.
 
 nlmproc4_granted_4({Cookie, _, _} = TestArgs, Clnt, State) ->

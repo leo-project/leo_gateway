@@ -24,6 +24,9 @@
 
 -include("leo_nlm_lock.hrl").
 
+-callback(start_link(Args::any()) ->
+                {ok, any()}).
+
 -callback(test(FileHandler::binary(), Lock::#lock_record{}) ->
                 ok | {error, #lock_record{}} | {error, any()}).
 

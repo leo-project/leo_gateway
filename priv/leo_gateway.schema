@@ -740,6 +740,17 @@
 %%            []}]
 %%  end}.
 
+%% --------------------------------------------------------------------
+%% GATEWAY - NLM-related configuration
+%% --------------------------------------------------------------------
+%% @doc Lock Handler
+{mapping,
+ "nlm.handler",
+ "leo_gateway.nlm.handler",
+ [
+  {datatype, atom},
+  {default, leo_nlm_lock_handler_ets}
+ ]}.
 
 %% --------------------------------------------------------------------
 %% GATEWAY - Timeout

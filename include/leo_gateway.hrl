@@ -232,6 +232,14 @@
             _ -> []
         end).
 
+%% NLM related
+-define(DEF_NLM_HANDLER,    leo_nlm_lock_handler_ets).
+-define(env_nlm_options(),
+        case application:get_env(leo_gateway, nlm) of
+            {ok, _NLM_Options} -> _NLM_Options;
+            _ -> []
+        end).
+
 
 %%----------------------------------------------------------------------
 %% FOR QoS
