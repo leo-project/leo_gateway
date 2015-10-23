@@ -20,10 +20,12 @@
 %%
 %%======================================================================
 -module(leo_nlm_proto4_server).
+-author('Wilson Li').
 
 -include("leo_nlm_lock.hrl").
 -include("leo_nlm_proto4.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
@@ -213,3 +215,46 @@ convert_lock({_, _, Owner, Uppid, Offset, Length}, Excl) ->
        uppid = Uppid,
        excl = Excl}.
 
+%% ---------------------------------------------------------------------
+%% UNIT TESTS
+%% ---------------------------------------------------------------------
+-ifdef(EUNIT).
+convert_lock_test() ->
+    ?debugMsg("===== Testing Convert Lock ====="),
+    Lock = {
+      <<"freebsd102">>,         % CallerName
+      <<159,64,92,200,58,233,78,51,175,128,47,36,35,144,134,200>>,
+                                % FileHandler
+      <<"6350@freebsd102">>,    % Owner
+      6350,                     % Svid
+      1,                        % Offset
+      10                        % Length
+     },
+    #lock_record{
+       start    = 1,
+       till     = 10,
+       len      = 10,
+       owner    = <<"6350@freebsd102">>,
+       uppid    = 6350,
+       excl     = true
+      } = convert_lock(Lock, true),
+
+    ?debugMsg("===== Testing Convert Lock with 0 Length (Whole File) ====="),
+    Lock2 = {
+      <<"freebsd102">>,         % CallerName
+      <<159,64,92,200,58,233,78,51,175,128,47,36,35,144,134,200>>,
+                                % FileHandler
+      <<"6350@freebsd102">>,    % Owner
+      6350,                     % Svid
+      1,                        % Offset
+      0                         % Length
+     },
+    #lock_record{
+       start    = 1,
+       till     = -1,
+       len      = 0,
+       owner    = <<"6350@freebsd102">>,
+       uppid    = 6350,
+       excl     = false
+      } = convert_lock(Lock2, false).
+-endif.
