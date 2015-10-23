@@ -69,7 +69,7 @@
 %%      during starting a leo_storage server.
 -spec(init(any()) -> {ok, any()}).
 init(_Args) ->
-    {ok, _} = leo_nlm_lock_handler:start_link([]),
+    {ok, _} = leo_nlm_lock_handler_ets:start_link([]),
     {ok, void}.
 
 handle_call(Req, _From, S) ->
