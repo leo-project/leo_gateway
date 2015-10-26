@@ -495,7 +495,7 @@ is_empty_dir(Path) ->
                                                      [Meta | Acc]
                                              end
                                      end
-                       end, [], MetaList),
+                             end, [], MetaList),
             length(FilteredList) =:= 0;
         _Error ->
             false
@@ -584,10 +584,10 @@ readdir_create_resp(Path, CurCookie,
                             Key
                     end,
     Del2 = case Size =:= -1 andalso
-                is_empty_dir(NormalizedKey) of
+               is_empty_dir(NormalizedKey) of
                true ->
                    DummyKey = filename:join(NormalizedKey, ?NFS_DUMMY_FILE4S3DIR),
-                   case leo_gateway_rpc_handler:head(DummyKey) of 
+                   case leo_gateway_rpc_handler:head(DummyKey) of
                        {ok, #?METADATA{del = 1}} ->
                            1;
                        _ ->
@@ -617,7 +617,7 @@ readdir_create_resp(Path, CurCookie,
                                 Resp);
         _ ->
             {ok, UID} = leo_nfs_state_ets:add_path(NormalizedKey),
-            NewResp = case IsPlus of 
+            NewResp = case IsPlus of
                           true ->
                               {inode(NormalizedKey),
                                FileName,
@@ -642,7 +642,7 @@ readdir_create_resp(Path, CurCookie,
                                 ReadDir,
                                 Cookie,
                                 EOF,
-                                IsPlus, 
+                                IsPlus,
                                 NewResp)
     end.
 
@@ -780,4 +780,3 @@ get_dir_unix_timestamp(Dir) ->
             Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
             leo_date:greg_seconds_to_unixtime(Now)
     end.
-
