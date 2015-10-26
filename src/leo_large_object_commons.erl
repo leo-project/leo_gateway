@@ -56,8 +56,8 @@ delete_chunked_objects(Key) ->
         ok ->
             void;
         {error, Cause} ->
-            ?error("delete_chunked_objects/1", "key:~s, cause:~p",
-                   [binary_to_list(Key), Cause])
+            ?error("delete_chunked_objects/1",
+                   [{key, binary_to_list(Key)}, {cause, Cause}])
     end,
     ok.
 

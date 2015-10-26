@@ -135,11 +135,11 @@ get_chunk_obj({ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin}, Key, Iter) ->
                 {ok, _, Bin2} ->
                     {{ok, Bin2}, Iter_2};
                 {error, Cause} = Error ->
-                    ?error("handle_call/3", "key:~s, cause:~p",
-                           [binary_to_list(Key_1), Cause]),
+                    ?error("handle_call/3",
+                           [{key, binary_to_list(Key_1)}, {cause, Cause}]),
                     {Error, Iter_2}
             end
     end;
 get_chunk_obj({error, Cause} = Ret, Key, Iter) ->
-    ?error("get_chunk_obj/3", "key:~s, cause:~p", [Key, Cause]),
+    ?error("get_chunk_obj/3", [{key, Key}, {cause, Cause}]),
     {Ret, Iter}.

@@ -222,13 +222,13 @@ after_process_0({ok, Pid}) ->
                 {ok, Pid} ->
                     {ok, Pid};
                 {_, Cause} ->
-                    ?error("inspect_cluster_status/1", "cause:~p",
-                           [{"After process failure", Cause}]),
+                    ?error("inspect_cluster_status/1", [{cause, Cause}]),
                     init:stop()
             end;
         false ->
-            ?error("inspect_cluster_status/1", "cause:~s, managers:~p",
-                   ["Not alive managers", Managers_1]),
+            ?error("inspect_cluster_status/1",
+                   [{manager_nodes, Managers_1},
+                    {cause, "Not alive managers"}]),
             init:stop()
     end;
 after_process_0(Error) ->
@@ -439,7 +439,7 @@ get_system_config_from_manager([Manager|T]) ->
                 {badrpc, Why} ->
                     {error, Why};
                 {error, Cause} ->
-                    ?error("get_system_config_from_manager/1", "cause:~p", [Cause]),
+                    ?error("get_system_config_from_manager/1", [{cause, Cause}]),
                     get_system_config_from_manager(T)
             end;
         false ->
@@ -465,8 +465,7 @@ get_members_from_manager([Manager|T]) ->
                 not_found ->
                     void;
                 _ ->
-                    ?error("get_members_from_manager/1",
-                           "cause:~p", [Cause])
+                    ?error("get_members_from_manager/1", [{cause, Cause}])
             end,
             get_members_from_manager(T)
     end.

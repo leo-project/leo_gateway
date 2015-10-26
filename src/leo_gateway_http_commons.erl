@@ -78,7 +78,8 @@ start(#http_options{handler                = Handler,
                                {error, enoent} ->
                                    undefined;
                                {error, Reason} ->
-                                   ?error("start/1", "read http custom header file failed. cause:~p", [Reason]),
+                                   ?error("start/1", [{simple_cause, "reading http custom header file failed"},
+                                                      {cause, Reason}]),
                                    undefined
                            end,
     InternalCache = (CacheMethod == 'inner'),
@@ -427,15 +428,18 @@ move_large_object_1({ok, Data},
               leo_large_object_move_handler:get_chunk_obj(ReadHandler),
               ReqLargeObj, ReadHandler);
         {'EXIT', Cause} ->
-            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("move_large_object_1/3",
+                   [{key, binary_to_list(Key)}, {cause, Cause}]),
             {error, ?ERROR_FAIL_PUT_OBJ};
         {error, Cause} ->
-            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("move_large_object_1/3", [{key, binary_to_list(Key)},
+                                             {cause, Cause}]),
             {error, ?ERROR_FAIL_PUT_OBJ}
     end;
 move_large_object_1({error, Cause},
                     #req_large_obj{key = Key}, _) ->
-    ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    ?error("move_large_object_1/3", [{key, binary_to_list(Key)},
+                                     {cause, Cause}]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                                          bucket = Bucket,
@@ -617,17 +621,20 @@ put_large_object_1({more, Data, Req},
                         {read_length, ReadingChunkedSize}],
             put_large_object_1(cowboy_req:body(Req, BodyOpts), ReqLargeObj);
         {'EXIT', Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}};
         {error, Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
     end;
 
 %% An error occurred while reading the body, connection is gone.
 %% @private
 put_large_object_1({error, Cause}, #req_large_obj{key = Key}) ->
-    ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                    {cause, Cause}]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 
 %% @private
@@ -662,10 +669,12 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                     {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
             end;
         {'EXIT', Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}};
         {error, Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
     end.
 
@@ -751,7 +760,7 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
                      Length,
                      fun(Socket, Transport) ->
                              get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
-                     end, 
+                     end,
                      Req),
             ?reply_partial_content(Header, Req2);
         {error, bad_range} ->

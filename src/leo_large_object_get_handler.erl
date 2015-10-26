@@ -181,8 +181,9 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
                     catch leo_cache_api:put(Ref, AcctualKey, Bin),
                     handle_loop(Index + 1, TotalChunkObjs, ReqInfo);
                 {error, Cause} ->
-                    ?error("handle_loop/3", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key_1), Index, Cause]),
+                    ?error("handle_loop/3",
+                           [{key, binary_to_list(Key_1)},
+                            {index, Index}, {cause, Cause}]),
                     {error, Cause}
             end;
 
@@ -198,12 +199,14 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
                     handle_loop(Index + 1, TotalChunkObjs,
                                 ReqInfo#req_info{request = Req});
                 {error, Cause} ->
-                    ?error("handle_loop/3", "key:~s, index:~p, cause:~p",
-                           [binary_to_list(Key_1), Index, Cause]),
+                    ?error("handle_loop/3",
+                           [{key, binary_to_list(Key_1)},
+                            {index, Index}, {cause, Cause}]),
                     {error, Cause}
             end;
         {error, Cause} ->
-            ?error("handle_loop/3", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key_1), Index, Cause]),
+            ?error("handle_loop/3",
+                   [{key, binary_to_list(Key_1)},
+                    {index, Index}, {cause, Cause}]),
             {error, Cause}
     end.
