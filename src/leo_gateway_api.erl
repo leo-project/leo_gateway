@@ -168,11 +168,11 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
                           true;
                       {error, Cause} ->
                           ?warn("register_in_monitor/3",
-                                "manager:~w, cause:~p", [Node2, Cause]),
+                                [{manager, Node2}, {cause, Cause}]),
                           false;
                       {badrpc, Cause} ->
                           ?warn("register_in_monitor/3",
-                                "manager:~w, cause:~p", [Node2, Cause]),
+                                [{manager, Node2}, {cause, Cause}]),
                           false
                   end;
               false ->

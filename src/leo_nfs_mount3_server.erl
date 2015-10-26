@@ -125,7 +125,7 @@ is_valid_mount_dir(<<$/,Rest/binary>>) ->
         {ok, _Bucket} ->
             true;
         Error ->
-            ?error("is_valid_mount_dir", "err:~p", [Error]),
+            ?error("is_valid_mount_dir", [{cause, Error}]),
             false
     end;
 is_valid_mount_dir(_Path) ->

@@ -815,7 +815,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req);
             {error, Cause} ->
-                ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+                ?error("handle_2/6", [{key, binary_to_list(Path)}, {cause, Cause}]),
                 ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
         end,
     {ok, Req_2, State};
@@ -896,7 +896,7 @@ handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
             {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req),
             {ok, Req_2, State};
         {'EXIT', Cause} ->
-            ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_2/6", [{key, binary_to_list(Path)}, {cause, Cause}]),
             {ok, Req_2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req),
             {ok, Req_2, State};
         {ok, Req_2} ->
@@ -963,23 +963,23 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
                         {error, unavailable} ->
                             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
                         {error, Cause} ->
-                            ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
-                                   [binary_to_list(Path), Cause]),
+                            ?error("handle_multi_upload_2/4",
+                                   [{key, binary_to_list(Path)}, {cause, Cause}]),
                             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
                     end;
                 _ ->
-                    ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
-                           [binary_to_list(Path), invalid_metadata]),
+                    ?error("handle_multi_upload_2/4",
+                           [{key, binary_to_list(Path)}, {cause, invalid_metadata}]),
                     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
             end;
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         {error, Cause} ->
-            ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_multi_upload_2/4", [{key, binary_to_list(Path)}, {cause, Cause}]),
             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
     end;
 handle_multi_upload_2({error, Cause}, Req, Path, _ChunkedLen) ->
-    ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+    ?error("handle_multi_upload_2/4", [{key, binary_to_list(Path)}, {cause, Cause}]),
     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 
 %% @doc Retrieve Metadatas for uploaded objects (Multipart)
@@ -1358,7 +1358,7 @@ delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
         {error, not_found} ->
             not_found;
         {_, Cause} ->
-            ?warn("delete_bucket_2/3", "cause:~p", [Cause]),
+            ?warn("delete_bucket_2/3", [{cause, Cause}]),
             delete_bucket_2(Rest, AccessKeyId, Bucket)
     end.
 
@@ -1522,7 +1522,7 @@ delete_multi_objects_2(Req, Body, MD5, MD5, Params) ->
                                                [{space,normalize}, {acc_fun, Acc}]),
         delete_multi_objects_3(Req, Content, false, [], Params)
     catch _:Cause ->
-            ?error("delete_multi_objects_2/5", "req:~p, cause:~p", [Req, Cause]),
+            ?error("delete_multi_objects_2/5", [{req, Req}, {cause, Cause}]),
             ?reply_malformed_xml([?SERVER_HEADER], Req)
     end;
 delete_multi_objects_2(Req, _Body, _MD5, _, _Params) ->

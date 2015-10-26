@@ -211,11 +211,11 @@ handle_2(Req1, HTTPMethod, Path, Params, State) ->
             {ok, Req2} = ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State};
         {error, Cause} ->
-            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
             {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State};
         {'EXIT', Cause} ->
-            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
             {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State}
     end.
