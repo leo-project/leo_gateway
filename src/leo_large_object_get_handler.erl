@@ -51,6 +51,7 @@
           key = <<>>            :: binary(),
           socket = undefined    :: any(),
           transport = undefined :: undefined | module(),
+          sending_chunk_len     :: pos_integer(),
           iterator              :: leo_large_object_commons:iterator()
          }).
 
@@ -61,7 +62,8 @@
           metadata   :: #?METADATA{},
           reference  :: reference(),
           transport  :: any(),
-          socket     :: any()
+          socket     :: any(),
+          sending_chunk_len :: pos_integer()
          }).
 
 
@@ -70,8 +72,8 @@
 %%====================================================================
 -spec(start_link(Args) ->
              ok | {error, any()} when Args::tuple()).
-start_link({Key, Transport, Socket}) ->
-    gen_server:start_link(?MODULE, [Key, Transport, Socket], []).
+start_link({Key, Transport, Socket, SendChunkLen}) ->
+    gen_server:start_link(?MODULE, [Key, Transport, Socket, SendChunkLen], []).
 
 
 %% @doc Stop this server
@@ -98,17 +100,19 @@ get(Pid, TotalOfChunkedObjs, Req, Meta) ->
 %%====================================================================
 %% GEN_SERVER CALLBACKS
 %%====================================================================
-init([Key, Transport, Socket]) ->
+init([Key, Transport, Socket, SendChunkLen]) ->
     State = #state{key = Key,
                    transport = Transport,
-                   socket = Socket},
+                   socket = Socket,
+                   sending_chunk_len = SendChunkLen
+                  },
     {ok, State}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
-            #state{key = Key, transport = Transport, socket = Socket} = State) ->
+            #state{key = Key, transport = Transport, socket = Socket, sending_chunk_len = SendChunkLen} = State) ->
     Ref_1 = case catch leo_cache_api:put_begin_tran(Key) of
                 {ok, Ref} -> Ref;
                 _ -> undefined
@@ -119,7 +123,8 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
                                                       metadata = Meta,
                                                       reference = Ref_1,
                                                       transport = Transport,
-                                                      socket = Socket}),
+                                                      socket = Socket,
+                                                      sending_chunk_len = SendChunkLen}),
     case Reply of
         {ok, _Req} ->
             CacheMeta = #cache_meta{
@@ -164,7 +169,8 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
                                              chunk_key = ChunkObjKey,
                                              reference = Ref,
                                              socket    = Socket,
-                                             transport = Transport
+                                             transport = Transport,
+                                             sending_chunk_len = SendChunkLen
                                             } = ReqInfo) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key_1 = << ChunkObjKey/binary,
@@ -176,7 +182,7 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
         %% only children
         %%
         {ok, #?METADATA{cnumber = 0}, Bin} ->
-            case Transport:send(Socket, Bin) of
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     catch leo_cache_api:put(Ref, AcctualKey, Bin),
                     handle_loop(Index + 1, TotalChunkObjs, ReqInfo);

@@ -50,6 +50,11 @@
           reading_chunked_size :: pos_integer()
          }).
 
+-record(transport_record, {
+          transport :: module(),
+          socket :: inet:socket(),
+          sending_chunk_len :: pos_integer()
+         }).
 
 %%--------------------------------------------------------------------
 %% API
@@ -239,7 +244,8 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
              {ok, cowboy_req:req()}).
 get_object(Req, Key, #req_params{bucket                 = Bucket,
                                  custom_header_settings = CustomHeaderSettings,
-                                 has_inner_cache        = HasInnerCache}) ->
+                                 has_inner_cache        = HasInnerCache,
+                                 sending_chunk_len      = SendChunkLen}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -276,7 +282,7 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket, SendChunkLen}),
                                try
                                    leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta),
                                    ok
@@ -304,7 +310,8 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
 -spec(get_object_with_cache(cowboy_req:req(), binary(), #cache{}, #req_params{}) ->
              {ok, cowboy_req:req()}).
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = Bucket,
-                                                      custom_header_settings = CustomHeaderSettings}) ->
+                                                      custom_header_settings = CustomHeaderSettings,
+                                                      sending_chunk_len      = SendChunkLen}) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
         {ok, match} when CacheObj#cache.file_path /= [] ->
@@ -364,7 +371,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket, SendChunkLen}),
                                try
                                    leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta)
                                after
@@ -742,14 +749,15 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
 -spec(range_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 range_object(Req, Key, #req_params{bucket = Bucket,
-                                   range_header = RangeHeader}) ->
+                                   range_header = RangeHeader,
+                                   sending_chunk_len = SendChunkLen}) ->
     Range = cowboy_http:range(RangeHeader),
-    get_range_object(Req, Bucket, Key, Range).
+    get_range_object(Req, Bucket, Key, Range, SendChunkLen).
 
-get_range_object(Req, Bucket, Key, {error, badarg}) ->
+get_range_object(Req, Bucket, Key, {error, badarg}, _) ->
     ?access_log_get(Bucket, Key, 0, ?HTTP_ST_BAD_RANGE),
     ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
-get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
+get_range_object(Req, Bucket, Key, {_Unit, Range}, SendChunkLen) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
     case get_body_length_1(Key, Range) of
         {ok, Length} ->
@@ -759,7 +767,10 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
             Req2 = cowboy_req:set_resp_body_fun(
                      Length,
                      fun(Socket, Transport) ->
-                             get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
+                             get_range_object_1(Req, Bucket, Key, Range, undefined, 
+                                                #transport_record{transport = Transport,
+                                                                  socket = Socket,
+                                                                  sending_chunk_len = SendChunkLen})
                      end,
                      Req),
             ?reply_partial_content(Header, Req2);
@@ -798,34 +809,26 @@ get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
 get_body_length(_, _, _) ->
     {error, bad_range}.
 
-get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, Socket, Transport) ->
+get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, #transport_record{socket = Socket, 
+                                                                               transport = Transport}) ->
     Transport:close(Socket);
-%    Transport:close(Socket),
-%    case Reason of
-%        unavailable ->
-%            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-%        not_found ->
-%            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
-%        _ ->
-%            ?reply_internal_error_without_body([?SERVER_HEADER], Req)
-%    end;
-get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
+get_range_object_1(Req,_Bucket,_Key, [], _, _TransportRec) ->
     {ok, Req};
-get_range_object_1(Req, Bucket, Key, [{Start, infinity}|Rest], _, Socket, Transport) ->
-    Ret = get_range_object_2(Req, Bucket, Key, Start, 0, Socket, Transport),
-    get_range_object_1(Req, Bucket, Key, Rest, Ret, Socket, Transport);
-get_range_object_1(Req, Bucket, Key, [{Start, End}|Rest], _, Socket, Transport) ->
-    Ret = get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport),
-    get_range_object_1(Req, Bucket, Key, Rest, Ret, Socket, Transport);
-get_range_object_1(Req, Bucket, Key, [End|Rest], _, Socket, Transport) ->
-    Ret = get_range_object_2(Req, Bucket, Key, 0, End, Socket, Transport),
-    get_range_object_1(Req, Bucket, Key, Rest, Ret, Socket, Transport).
+get_range_object_1(Req, Bucket, Key, [{Start, infinity}|Rest], _, TransportRec) ->
+    Ret = get_range_object_2(Req, Bucket, Key, Start, 0, TransportRec),
+    get_range_object_1(Req, Bucket, Key, Rest, Ret, TransportRec);
+get_range_object_1(Req, Bucket, Key, [{Start, End}|Rest], _, TransportRec) ->
+    Ret = get_range_object_2(Req, Bucket, Key, Start, End, TransportRec),
+    get_range_object_1(Req, Bucket, Key, Rest, Ret, TransportRec);
+get_range_object_1(Req, Bucket, Key, [End|Rest], _, TransportRec) ->
+    Ret = get_range_object_2(Req, Bucket, Key, 0, End, TransportRec),
+    get_range_object_1(Req, Bucket, Key, Rest, Ret, TransportRec).
 
-get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
+get_range_object_2(Req, Bucket, Key, Start, End, TransportRec) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{del = 0,
                         cnumber = 0}} ->
-            get_range_object_small(Req, Bucket, Key, Start, End, Socket, Transport);
+            get_range_object_small(Req, Bucket, Key, Start, End, TransportRec);
         {ok, #?METADATA{del = 0,
                         cnumber = N,
                         dsize = ObjectSize,
@@ -849,7 +852,7 @@ get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
                 end,
             get_range_object_large(Req, Bucket, Key,
                                    NewStartPos, NewEndPos, N, Index_1, CurPos_1,
-                                   Socket, Transport);
+                                   TransportRec);
         Error ->
             Error
     end.
@@ -857,14 +860,16 @@ get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
 
 %% @doc Retrieve the small object
 %% @private
-get_range_object_small(_Req, Bucket, Key, Start, End, Socket, Transport) ->
+get_range_object_small(_Req, Bucket, Key, Start, End, #transport_record{transport = Transport,
+                                                                        socket = Socket,
+                                                                        sending_chunk_len = SendChunkLen}) ->
     case leo_gateway_rpc_handler:get(Key, Start, End) of
         {ok, _Meta, <<>>} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_OK),
             ok;
         {ok, _Meta, Bin} ->
             ?access_log_get(Bucket, Key, byte_size(Bin), ?HTTP_ST_OK),
-            case Transport:send(Socket, Bin) of
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     ok;
                 {error, Cause} ->
@@ -896,13 +901,13 @@ calc_pos(StartPos, EndPos, _ObjectSize) ->
 
 %% @doc Retrieve the large object
 %% @private
-get_range_object_large(_Req,_Bucket,_Key,_Start,_End, _Total, _Index, {error, _} = Error, _Socket, _Transport) ->
+get_range_object_large(_Req,_Bucket,_Key,_Start,_End, _Total, _Index, {error, _} = Error, _TransportRec) ->
     Error;
-get_range_object_large(_Req,_Bucket,_Key,_Start,_End, Total, Total, CurPos, _Socket, _Transport) ->
+get_range_object_large(_Req,_Bucket,_Key,_Start,_End, Total, Total, CurPos, _TransportRec) ->
     {ok, CurPos};
-get_range_object_large(_Req,_Bucket,_Key,_Start, End,_Total,_Index, CurPos, _Socket, _Transport) when CurPos > End ->
+get_range_object_large(_Req,_Bucket,_Key,_Start, End,_Total,_Index, CurPos, _TransportRec) when CurPos > End ->
     {ok, CurPos};
-get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Socket, Transport) ->
+get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, TransportRec) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
@@ -910,13 +915,13 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Sock
         {ok, #?METADATA{cnumber = 0,
                         dsize = CS}} ->
             %% get and chunk an object
-            NewPos = send_chunk(Req, Bucket, Key2, Start, End, CurPos, CS, Socket, Transport),
-            get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, Socket, Transport);
+            NewPos = send_chunk(Req, Bucket, Key2, Start, End, CurPos, CS, TransportRec),
+            get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, TransportRec);
 
         {ok, #?METADATA{cnumber = GrandChildNum}} ->
-            case get_range_object_large(Req, Bucket, Key2, Start, End, GrandChildNum, 0, CurPos, Socket, Transport) of
+            case get_range_object_large(Req, Bucket, Key2, Start, End, GrandChildNum, 0, CurPos, TransportRec) of
                 {ok, NewPos} ->
-                    get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, Socket, Transport);
+                    get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, TransportRec);
                 {error, Cause} ->
                     {error, Cause}
             end;
@@ -926,17 +931,19 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Sock
 
 %% @doc
 %% @private
-send_chunk(_Req,_,_Key, Start,_End, CurPos, ChunkSize, _Socket, _Transport) when (CurPos + ChunkSize - 1) < Start ->
+send_chunk(_Req,_,_Key, Start,_End, CurPos, ChunkSize, _TransportRec) when (CurPos + ChunkSize - 1) < Start ->
     %% skip proc
     CurPos + ChunkSize;
-send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) when CurPos >= Start andalso
-                                                                 (CurPos + ChunkSize - 1) =< End ->
+send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, #transport_record{transport = Transport,
+                                                                               socket = Socket,
+                                                                               sending_chunk_len = SendChunkLen}) when CurPos >= Start andalso
+                                                                                                                       (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand children
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            case Transport:send(Socket, Bin) of
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     CurPos + ChunkSize;
                 {error, Cause} ->
@@ -945,7 +952,9 @@ send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) 
         Error ->
             Error
     end;
-send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) ->
+send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, #transport_record{transport = Transport,
+                                                                                socket = Socket,
+                                                                                sending_chunk_len = SendChunkLen}) ->
     %% partial get
     StartPos = case Start =< CurPos of
                    true -> 0;
@@ -961,7 +970,7 @@ send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport)
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand childs
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            case Transport:send(Socket, Bin) of
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     CurPos + ChunkSize;
                 {error, Cause} ->
