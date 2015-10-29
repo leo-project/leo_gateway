@@ -70,6 +70,7 @@ start(#http_options{handler                = Handler,
                     max_keepalive          = MaxKeepAlive,
                     headers_config_file    = CustomHeaderConf,
                     timeout_for_header     = Timeout4Header,
+                    sending_chunk_len      = SendChunkLen,
                     cache_method           = CacheMethod,
                     cache_expire           = CacheExpire,
                     cache_max_content_len  = CacheMaxContentLen,
@@ -103,7 +104,8 @@ start(#http_options{handler                = Handler,
                      CacheCondition = #cache_condition{expire          = CacheExpire,
                                                        max_content_len = CacheMaxContentLen,
                                                        content_types   = CachableContentTypes,
-                                                       path_patterns   = CachablePathPatterns},
+                                                       path_patterns   = CachablePathPatterns,
+                                                       sending_chunk_len = SendChunkLen},
                      [{env,        [{dispatch, Dispatch}]},
                       {max_keepalive, MaxKeepAlive},
                       {onrequest,     Handler:onrequest(CacheCondition)},
@@ -140,28 +142,29 @@ start(Sup, Options) ->
 %%
 -spec(onrequest(#cache_condition{}, function()) ->
              any()).
-onrequest(#cache_condition{expire = Expire}, FunGenKey) ->
+onrequest(#cache_condition{expire = Expire, sending_chunk_len = SendChunkLen}, FunGenKey) ->
     fun(Req) ->
             Method = cowboy_req:get(method, Req),
-            onrequest_1(Method, Req, Expire, FunGenKey)
+            onrequest_1(Method, Req, Expire, FunGenKey, SendChunkLen)
     end.
 
-onrequest_1(?HTTP_GET, Req, Expire, FunGenKey) ->
+onrequest_1(?HTTP_GET, Req, Expire, FunGenKey, SendChunkLen) ->
     {_Bucket, Key} = FunGenKey(Req),
     Ret = (catch leo_cache_api:get(Key)),
-    onrequest_2(Req, Expire, Key, Ret);
-onrequest_1(_, Req,_,_) ->
+    onrequest_2(Req, Expire, Key, Ret, SendChunkLen);
+onrequest_1(_, Req,_,_,_) ->
     Req.
 
-onrequest_2(Req,_Expire,_Key, not_found) ->
+onrequest_2(Req,_Expire,_Key, not_found, _) ->
     Req;
-onrequest_2(Req,_Expire,_Key, {'EXIT', _Cause}) ->
+onrequest_2(Req,_Expire,_Key, {'EXIT', _Cause}, _) ->
     Req;
-onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
+onrequest_2(Req, Expire, Key, {ok, CachedObj}, SendChunkLen) ->
     #cache{mtime        = MTime,
            content_type = ContentType,
            etag         = Checksum,
-           body         = Body} = binary_to_term(CachedObj),
+           body         = Body,
+           size         = Size} = binary_to_term(CachedObj),
 
     Now = leo_date:now(),
     Diff = Now - MTime,
@@ -190,7 +193,10 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
                     {ok, Req2} = ?reply_not_modified(Header, Req),
                     Req2;
                 _ ->
-                    {ok, Req2} = ?reply_ok([?SERVER_HEADER], Body, Req),
+                    BodyFunc = fun(Socket, Transport) ->
+                                       leo_net:chunked_send(Transport, Socket, Body, SendChunkLen)
+                               end,
+                    {ok, Req2} = ?reply_ok([?SERVER_HEADER], {Size, BodyFunc}, Req),
                     Req2
             end
     end.
@@ -270,7 +276,10 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            ?reply_ok(Headers2, RespObject, Req);
+            BodyFunc = fun(Socket, Transport) ->
+                               leo_net:chunked_send(Transport, Socket, RespObject, SendChunkLen)
+                       end,
+            ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% For a chunked object.
         {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
@@ -324,7 +333,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, _Transport) ->
-                               file:sendfile(CacheObj#cache.file_path, Socket),
+                               file:sendfile(CacheObj#cache.file_path, Socket, 0, 0, [{chunk_size, SendChunkLen}]),
                                ok
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
@@ -339,7 +348,10 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
                        {?HTTP_HEAD_X_FROM_CACHE,       <<"True/via memory">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            ?reply_ok(Headers2, CacheObj#cache.body, Req);
+            BodyFunc = fun(Socket, Transport) ->
+                               leo_net:chunked_send(Transport, Socket, CacheObj#cache.body, SendChunkLen)
+                       end,
+            ?reply_ok(Headers2, {CacheObj#cache.size, BodyFunc}, Req);
 
         %% MISS: get an object from storage (small-size)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -359,7 +371,10 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            ?reply_ok(Headers2, RespObject, Req);
+            BodyFunc = fun(Socket, Transport) ->
+                               leo_net:chunked_send(Transport, Socket, RespObject, SendChunkLen)
+                       end,
+            ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% MISS: get an object from storage (large-size)
         {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->

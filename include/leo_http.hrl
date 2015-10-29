@@ -425,5 +425,6 @@
           expire          = 0  :: integer(),          %% specified per sec
           max_content_len = 0  :: integer(),          %% No cache if Content-Length of a response header was &gt this
           content_types   = [] :: list() | undefined, %% like ["image/png", "image/gif", "image/jpeg"]
-          path_patterns   = [] :: list() | undefined  %% compiled regular expressions
+          path_patterns   = [] :: list() | undefined, %% compiled regular expressions
+          sending_chunk_len = 0:: pos_integer()       %% sending chunk length
          }).
