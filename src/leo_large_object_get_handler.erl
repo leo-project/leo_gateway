@@ -51,7 +51,7 @@
           key = <<>>            :: binary(),
           socket = undefined    :: any(),
           transport = undefined :: undefined | module(),
-          sending_chunk_len     :: pos_integer(),
+          sending_chunked_obj_len :: pos_integer(),
           iterator              :: leo_large_object_commons:iterator()
          }).
 
@@ -63,7 +63,7 @@
           reference  :: reference(),
           transport  :: any(),
           socket     :: any(),
-          sending_chunk_len :: pos_integer()
+          sending_chunked_obj_len :: pos_integer()
          }).
 
 
@@ -103,8 +103,8 @@ get(Pid, TotalOfChunkedObjs, Req, Meta) ->
 init([Key, Transport, Socket, SendChunkLen]) ->
     State = #state{key = Key,
                    transport = Transport,
-                   socket = Socket,
-                   sending_chunk_len = SendChunkLen
+                   socket    = Socket,
+                   sending_chunked_obj_len = SendChunkLen
                   },
     {ok, State}.
 
@@ -112,7 +112,7 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
-            #state{key = Key, transport = Transport, socket = Socket, sending_chunk_len = SendChunkLen} = State) ->
+            #state{key = Key, transport = Transport, socket = Socket, sending_chunked_obj_len = SendChunkLen} = State) ->
     Ref_1 = case catch leo_cache_api:put_begin_tran(Key) of
                 {ok, Ref} -> Ref;
                 _ -> undefined
@@ -124,7 +124,7 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
                                                       reference = Ref_1,
                                                       transport = Transport,
                                                       socket = Socket,
-                                                      sending_chunk_len = SendChunkLen}),
+                                                      sending_chunked_obj_len = SendChunkLen}),
     case Reply of
         {ok, _Req} ->
             CacheMeta = #cache_meta{
@@ -170,7 +170,7 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
                                              reference = Ref,
                                              socket    = Socket,
                                              transport = Transport,
-                                             sending_chunk_len = SendChunkLen
+                                             sending_chunked_obj_len = SendChunkLen
                                             } = ReqInfo) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key_1 = << ChunkObjKey/binary,

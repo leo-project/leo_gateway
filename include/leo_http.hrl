@@ -111,7 +111,7 @@
 -define(DEF_HTTP_CUSTOM_HEADER_CONF,  "./http_custom_header.conf").
 -define(DEF_HTTP_TIMEOUT_FOR_HEADER,  5000).
 -define(DEF_HTTP_TIMEOUT_FOR_BODY,    15000).
--define(DEF_HTTP_SEND_CHUNK_LEN,      131072).
+-define(DEF_HTTP_SEND_CHUNK_LEN,      5242880).
 -define(DEF_HTTP_CACHE,               false).
 -define(DEF_HTTP_MAX_KEEPALIVE,       1024).
 -define(DEF_CACHE_WORKERS,            64).
@@ -359,7 +359,7 @@
           headers_config_file = []     :: string(),       %% HTTP custom header configuration file path
           timeout_for_header           :: pos_integer(),  %% Timeout for reading header
           timeout_for_body             :: pos_integer(),  %% Timeout for reading body
-          sending_chunk_len = 0        :: pos_integer(),  %% sending chunk length
+          sending_chunked_obj_len = 0  :: pos_integer(),  %% sending chunk length
           %% for cache
           cache_method                 :: cache_method(), %% cahce method: [http | inner]
           cache_workers = 0            :: pos_integer(),  %% number of chache-fun's workers
@@ -392,7 +392,7 @@
           custom_header_settings     :: list() | undefined,     %% http custom header settings
           timeout_for_header         :: pos_integer(),          %% Timeout for reading header
           timeout_for_body           :: pos_integer(),          %% Timeout for reading body
-          sending_chunk_len = 0      :: pos_integer(),          %% sending chunk length
+          sending_chunked_obj_len    :: pos_integer(),          %% sending chunk length
           qs_prefix = <<>>           :: binary() | none,        %% query string
           range_header               :: string(),               %% range header
           has_inner_cache = false    :: boolean(),              %% has inner-cache?
@@ -426,5 +426,5 @@
           max_content_len = 0  :: integer(),          %% No cache if Content-Length of a response header was &gt this
           content_types   = [] :: list() | undefined, %% like ["image/png", "image/gif", "image/jpeg"]
           path_patterns   = [] :: list() | undefined, %% compiled regular expressions
-          sending_chunk_len = 0:: pos_integer()       %% sending chunk length
+          sending_chunked_obj_len = 0 :: pos_integer()%% sending chunk length
          }).

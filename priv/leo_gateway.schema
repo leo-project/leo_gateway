@@ -230,11 +230,11 @@
 
 %% @doc Timeout for sending chunk length
 {mapping,
- "http.sending_chunk_len",
- "leo_gateway.http.sending_chunk_len",
+ "http.sending_chunked_obj_len",
+ "leo_gateway.http.sending_chunked_obj_len",
  [
   {datatype, integer},
-  {default, 131072}
+  {default, 5242880}
  ]}.
 
 %% @doc Synchronized time of a bucket property (second)

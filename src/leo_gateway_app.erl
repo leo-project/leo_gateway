@@ -529,7 +529,7 @@ get_options() ->
     CustomHeaderConf     = leo_misc:get_value('headers_config_file', HttpProp, ?DEF_HTTP_CUSTOM_HEADER_CONF),
     Timeout4Header       = leo_misc:get_value('timeout_for_header',  HttpProp, ?DEF_HTTP_TIMEOUT_FOR_HEADER),
     Timeout4Body         = leo_misc:get_value('timeout_for_body',    HttpProp, ?DEF_HTTP_TIMEOUT_FOR_BODY),
-    SendChunkLen         = leo_misc:get_value('sending_chunk_len',   HttpProp, ?DEF_HTTP_SEND_CHUNK_LEN),
+    SendChunkLen         = leo_misc:get_value('sending_chunked_obj_len',   HttpProp, ?DEF_HTTP_SEND_CHUNK_LEN),
 
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
@@ -589,7 +589,7 @@ get_options() ->
                                 headers_config_file      = CustomHeaderConf,
                                 timeout_for_header       = Timeout4Header,
                                 timeout_for_body         = Timeout4Body,
-                                sending_chunk_len        = SendChunkLen,
+                                sending_chunked_obj_len  = SendChunkLen,
                                 cache_method             = CacheMethod,
                                 cache_workers            = CacheWorkers,
                                 cache_ram_capacity       = CacheRAMCapacity,
