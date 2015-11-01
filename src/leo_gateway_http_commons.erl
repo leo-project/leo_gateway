@@ -782,7 +782,7 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}, SendChunkLen) when is_list(Ra
             Req2 = cowboy_req:set_resp_body_fun(
                      Length,
                      fun(Socket, Transport) ->
-                             get_range_object_1(Req, Bucket, Key, Range, undefined, 
+                             get_range_object_1(Req, Bucket, Key, Range, undefined,
                                                 #transport_record{transport = Transport,
                                                                   socket    = Socket,
                                                                   sending_chunked_obj_len = SendChunkLen})
@@ -824,7 +824,7 @@ get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
 get_body_length(_, _, _) ->
     {error, bad_range}.
 
-get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, #transport_record{socket = Socket, 
+get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, #transport_record{socket = Socket,
                                                                                transport = Transport}) ->
     Transport:close(Socket);
 get_range_object_1(Req,_Bucket,_Key, [], _, _TransportRec) ->
@@ -952,7 +952,7 @@ send_chunk(_Req,_,_Key, Start,_End, CurPos, ChunkSize, _TransportRec) when (CurP
 send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, #transport_record{transport = Transport,
                                                                                socket    = Socket,
                                                                                sending_chunked_obj_len = SendChunkLen}) when CurPos >= Start andalso
-                                                                                                                       (CurPos + ChunkSize - 1) =< End ->
+                                                                                                                             (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->

@@ -220,4 +220,3 @@ handle_2(Req1, HTTPMethod, Path, Params, State) ->
             {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State}
     end.
-

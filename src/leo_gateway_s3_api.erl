@@ -147,7 +147,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                       try
                           list_to_integer(binary_to_list(Val_2))
                       catch _:_ ->
-                          badarg
+                              badarg
                       end
               end,
 
@@ -158,7 +158,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok(Header, XML, Req);
         {error, badarg} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
@@ -314,7 +314,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
     case catch cowboy_req:body_length(Req) of
         {'EXIT', _} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {Size, _} ->
             case (Size >= Params#req_params.threshold_of_chunk_len) of
                 true when Size >= Params#req_params.max_len_of_obj ->
@@ -353,9 +353,9 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
           end,
     case Key =:= CS2 of
         true ->
-            % 400
+            %% 400
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidRequest,
-                                ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
         false ->
             case leo_gateway_rpc_handler:get(CS2) of
                 {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
