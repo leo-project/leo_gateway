@@ -85,6 +85,7 @@
 -define(HTTP_QS_BIN_MARKER,      <<"marker">>).
 -define(HTTP_QS_BIN_MAXKEYS,     <<"max-keys">>).
 -define(HTTP_QS_BIN_MULTI_DELETE,<<"delete">>).
+-define(HTTP_QS_BIN_DELIMITER,   <<"delimiter">>).
 
 -define(HTTP_ST_OK,                  200).
 -define(HTTP_ST_NO_CONTENT,          204).

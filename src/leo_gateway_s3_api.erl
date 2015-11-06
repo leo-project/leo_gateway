@@ -214,8 +214,13 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                           badarg
                       end
               end,
+    Delimiter = case cowboy_req:qs_val(?HTTP_QS_BIN_DELIMITER, Req) of
+                    {undefined, _} -> none;
+                    {Val, _} ->
+                        Val
+                end,
 
-    case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
+    case get_bucket_1(AccessKeyId, Key, Delimiter, NormalizedMarker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
@@ -1286,6 +1291,34 @@ get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
                end,
     Key = << Bucket/binary, Prefix_1/binary >>,
     {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
+get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
+    ?debug("get_bucket_1/6", "Bucket: ~p, Marker: ~p, MaxKeys: ~p", [Bucket, Marker, MaxKeys]),
+    Prefix_1 = case Prefix of
+                   none -> <<>>;
+                   _    -> Prefix
+               end,
+
+    {ok, #redundancies{nodes = Redundancies}} =
+        leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
+    Key = << Bucket/binary, Prefix_1/binary >>,
+
+    case leo_gateway_rpc_handler:invoke(Redundancies,
+                                        leo_storage_handler_directory,
+                                        find_by_parent_dir,
+                                        [Key, ?BIN_SLASH, Marker, MaxKeys],
+                                        []) of
+        {ok, Meta} when is_list(Meta) =:= true ->
+            case recursive_find(Bucket, Redundancies, Meta, Marker, MaxKeys) of
+                {ok, Ret} ->
+                    {ok, Ret, generate_bucket_xml(Key, Prefix_1, Ret, MaxKeys)};
+                Error ->
+                    Error
+            end;
+        {ok, _} ->
+            {error, invalid_format};
+        Error ->
+            Error
+    end;
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none -> <<>>;
@@ -1584,3 +1617,29 @@ formalize_bucket(Bucket) ->
         false ->
             Bucket
     end.
+
+recursive_find(Bucket, Redundancies, MetadataList, Marker, MaxKeys) ->
+    recursive_find(Bucket, Redundancies, [], [], MetadataList, Marker, MaxKeys).
+
+recursive_find(_Bucket, _Redundancies, MetadataList, [], [], _, _) ->
+    {ok, lists:reverse(MetadataList)};
+recursive_find(_Bucket, _Redundancies, MetadataList, _, _, _, 0) ->
+    {ok, lists:reverse(MetadataList)};
+recursive_find(Bucket, Redundancies, MetadataList, [Head|Rest], [], Marker, MaxKeys) ->
+    recursive_find(Bucket, Redundancies, MetadataList, Rest, Head, Marker, MaxKeys);
+recursive_find(Bucket, Redundancies, MetadataList, Acc, 
+               [#?METADATA{dsize = -1, key = Key}|Rest], Marker, MaxKeys) ->
+    case leo_gateway_rpc_handler:invoke(Redundancies,
+                                        leo_storage_handler_directory,
+                                        find_by_parent_dir,
+                                        [Key, ?BIN_SLASH, Marker, MaxKeys],
+                                        []) of
+        {ok, Meta} when is_list(Meta) =:= true ->
+            recursive_find(Bucket, Redundancies, MetadataList, [Meta | Acc], Rest, Marker, MaxKeys);
+        {ok, _} ->
+            {error, invalid_format};
+        Error ->
+            Error
+    end;
+recursive_find(Bucket, Redundancies, MetadataList, Acc, [Head|Rest], Marker, MaxKeys) ->
+    recursive_find(Bucket, Redundancies, [Head|MetadataList], Acc, Rest, Marker, MaxKeys - 1).
