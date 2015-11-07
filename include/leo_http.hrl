@@ -100,6 +100,8 @@
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).
 
+-define(HTTP_MAXKEYS_LIMIT,          1000).
+
 -define(CACHE_HTTP,  'http').
 -define(CACHE_INNER, 'inner').
 -type(cache_method() :: ?CACHE_HTTP | ?CACHE_INNER).

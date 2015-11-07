@@ -206,10 +206,15 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                end
                        end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
-                  {undefined, _} -> 1000;
+                  {undefined, _} -> ?HTTP_MAXKEYS_LIMIT;
                   {Val_2,     _} ->
                       try
-                          list_to_integer(binary_to_list(Val_2))
+                          case list_to_integer(binary_to_list(Val_2)) of
+                              MaxKeys1 when MaxKeys1 > ?HTTP_MAXKEYS_LIMIT ->
+                                  ?HTTP_MAXKEYS_LIMIT;
+                              MaxKeys1 ->
+                                  MaxKeys1
+                          end
                       catch _:_ ->
                           badarg
                       end
