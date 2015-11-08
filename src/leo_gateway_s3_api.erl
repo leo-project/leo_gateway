@@ -191,6 +191,7 @@ onresponse(CacheCondition) ->
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false,
                                  qs_prefix     = Prefix}) ->
+    _Start = leo_date:clock(),
     NormalizedMarker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
                            {undefined, _} ->
                                <<>>;
@@ -217,6 +218,8 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
 
     case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
+            _End = leo_date:clock(),
+            ?debugVal({Key, (_End - _Start) / 1000}),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
@@ -256,8 +259,9 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
     CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
     %% Consume CreateBucketConfiguration
     Req_1 = case cowboy_req:has_body(Req) of
-                false   -> Req;
-                true    ->
+                false ->
+                    Req;
+                true ->
                     {ok, _Bin_2, Req_2} = cowboy_req:body(Req),
                     Req_2
             end,
@@ -356,8 +360,10 @@ get_x_amz_meta_directive(Req) ->
 get_x_amz_meta_directive(Req, ?BIN_EMPTY) ->
     CS = ?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE),
     case CS of
-        ?BIN_EMPTY -> ?BIN_EMPTY;
-        _ -> ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY %% default copy
+        ?BIN_EMPTY ->
+            ?BIN_EMPTY;
+        _ ->
+            ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY %% default copy
     end;
 get_x_amz_meta_directive(_Req, Other) ->
     Other.
@@ -397,8 +403,10 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
                                 ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {BodySize, _} ->
             Size = case cowboy_req:header(?HTTP_HEAD_X_AMZ_DECODED_CONTENT_LENGTH, Req) of
-                       {undefined, _} -> BodySize;
-                       {Val,       _} -> binary_to_integer(Val)
+                       {undefined,_} ->
+                           BodySize;
+                       {Val,_} ->
+                           binary_to_integer(Val)
                    end,
             case (Size >= Params#req_params.threshold_of_chunk_len) of
                 true when Size >= Params#req_params.max_len_of_obj ->
@@ -489,8 +497,10 @@ put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket = Bucket} = Para
 %% @private
 put_object_2(Req, Key, Meta, Params) ->
     case Key == Meta#?METADATA.key of
-        true  -> resp_copy_obj_xml(Req, Meta);
-        false -> put_object_3(Req, Meta, Params)
+        true ->
+            resp_copy_obj_xml(Req, Meta);
+        false ->
+            put_object_3(Req, Meta, Params)
     end.
 
 put_object_3(Req, #?METADATA{key = Key, dsize = Size} = Meta, #req_params{bucket = Bucket}) ->
@@ -526,8 +536,10 @@ put_large_object_1(Directive, Req, Key, Meta, Params) ->
 %% @private
 put_large_object_2(Req, Key, Meta) ->
     case Key == Meta#?METADATA.key of
-        true  -> resp_copy_obj_xml(Req, Meta);
-        false -> put_large_object_3(Req, Meta)
+        true ->
+            resp_copy_obj_xml(Req, Meta);
+        false ->
+            put_large_object_3(Req, Meta)
     end.
 
 put_large_object_3(Req, Meta) ->
@@ -590,15 +602,19 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                 {none, (TokenLen == 1 orelse ?BIN_SLASH == BinPart), Path, Req_1};
             {BinParam, Req_1} ->
                 NewPath = case BinPart of
-                              ?BIN_SLASH -> Path;
-                              _Else      -> <<Path/binary, ?BIN_SLASH/binary>>
+                              ?BIN_SLASH ->
+                                  Path;
+                              _ ->
+                                  <<Path/binary, ?BIN_SLASH/binary>>
                           end,
                 {BinParam, true, NewPath, Req_1}
         end,
 
     IsACL = case cowboy_req:qs_val(?HTTP_QS_BIN_ACL, Req_2) of
-                {undefined, _} -> false;
-                _ -> true
+                {undefined, _} ->
+                    false;
+                _ ->
+                    true
             end,
 
     ReqParams =
@@ -635,12 +651,13 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                       true ->
                           case AuthRet of
                               {ok, _, SignParams} ->
-                                  {Signature, SignHead, SignKey} = case SignParams of
-                                                                       undefined ->
-                                                                           {undefined, undefined, undefined};
-                                                                       _ ->
-                                                                           SignParams
-                                                                   end,
+                                  {Signature, SignHead, SignKey} =
+                                      case SignParams of
+                                          undefined ->
+                                              {undefined, undefined, undefined};
+                                          _ ->
+                                              SignParams
+                                      end,
                                   AWSChunkSignParams = #aws_chunk_sign_params{sign_head = SignHead,
                                                                               sign_key  = SignKey,
                                                                               prev_sign = Signature,
@@ -650,7 +667,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                                                                              chunk_offset   = 0,
                                                                              sign_params    = AWSChunkSignParams,
                                                                              total_len      = 0},
-                                  ReqParams#req_params{transfer_decode_fun = fun leo_gateway_s3_api:aws_chunk_decode/2, 
+                                  ReqParams#req_params{transfer_decode_fun = fun leo_gateway_s3_api:aws_chunk_decode/2,
                                                        transfer_decode_state = AWSChunkDecState};
                               _ ->
                                   ReqParams
@@ -711,14 +728,14 @@ aws_chunk_decode({ok, Acc}, Buffer, wait_head, 0, SignParams) ->
     case byte_size(Buffer) of
         Len when Len > 80 + 2 ->
             <<"chunk-signature=", ChunkSign:64/binary, "\r\n", Rest/binary>> = Buffer,
-%            ?debug("aws_chunk_decode", "Chunk Sign: ~p", [ChunkSign]),
+            %% ?debug("aws_chunk_decode", "Chunk Sign: ~p", [ChunkSign]),
             aws_chunk_decode({ok, Acc}, Rest, read_chunk, 0, SignParams#aws_chunk_sign_params{chunk_sign = ChunkSign});
         _ ->
             {{ok, Acc}, {Buffer, wait_head, 0, SignParams}}
     end;
 aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset, #aws_chunk_sign_params{
-                                                  sign_head  = SignHead, 
-                                                  sign_key   = SignKey, 
+                                                  sign_head  = SignHead,
+                                                  sign_key   = SignKey,
                                                   prev_sign  = PrevSign,
                                                   chunk_sign = ChunkSign,
                                                   chunk_size = ChunkSize,
@@ -732,7 +749,8 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset, #aws_chunk_sign_params{
                 undefined ->
                     ?debug("aws_chunk_decode/4", "Output Chunk Size: ~p, No Sign", [ChunkSize]),
                     case ChunkSize of
-                        0 -> %% Last Chunk
+                        %% Last Chunk
+                        0 ->
                             {{done, Acc}, {Rest, done, 0, #aws_chunk_sign_params{}}};
                         _ ->
                             aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>}, Rest, wait_size, 0, SignParams)
@@ -1092,8 +1110,8 @@ is_public_read([]) ->
     false;
 is_public_read([H|Rest]) ->
     #bucket_acl_info{user_id = UserId, permissions = Permissions} = H,
-    case UserId == ?GRANTEE_ALL_USER andalso
-        (Permissions == [read] orelse Permissions == [read, write]) of
+    case (UserId == ?GRANTEE_ALL_USER
+          andalso (Permissions == [read] orelse Permissions == [read, write])) of
         true ->
             true;
         false ->
@@ -1104,8 +1122,8 @@ is_public_read_write([]) ->
     false;
 is_public_read_write([H|Rest]) ->
     #bucket_acl_info{user_id = UserId, permissions = Permissions} = H,
-    case UserId == ?GRANTEE_ALL_USER andalso
-        (Permissions == [read, write]) of
+    case (UserId == ?GRANTEE_ALL_USER
+          andalso (Permissions == [read, write])) of
         true ->
             true;
         false ->
@@ -1117,9 +1135,12 @@ is_public_read_write([H|Rest]) ->
 %% @private
 auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
     Bucket = case (TokenLen >= 1) of
-                 true  -> hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
-                 false -> ?BIN_EMPTY
+                 true ->
+                     hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
+                 false ->
+                     ?BIN_EMPTY
              end,
+
     case leo_s3_bucket:get_acls(Bucket) of
         {ok, ACLs} ->
             auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
@@ -1157,18 +1178,7 @@ auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1
             auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
     end.
 
-%% @doc bucket operations must be needed to auth
-%%      AND alter object operations as well
 %% @private
-%%%auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams) ->
-%%%    case cowboy_req:header(?HTTP_HEAD_DATE, Req) of
-%%%        {undefined, _} ->
-%%%            {error, undefined};
-%%%        _ ->
-%%%            auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, ReqParams)
-%%%    end.
-
-%%%auth_2(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
 auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
@@ -1288,13 +1298,16 @@ get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
     {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
-                   none -> <<>>;
-                   _    -> Prefix
+                   none ->
+                       <<>>;
+                   _ ->
+                       Prefix
                end,
 
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
     Key = << Bucket/binary, Prefix_1/binary >>,
+    _Start = leo_date:clock(),
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
@@ -1302,6 +1315,8 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
                                         [Key, Delimiter, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
+            _End = leo_date:clock(),
+            ?debugVal({Key, (_End - _Start) / 1000}),
             {ok, Meta, generate_bucket_xml(Key, Prefix_1, Meta, MaxKeys)};
         {ok, _} ->
             {error, invalid_format};
@@ -1379,15 +1394,17 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
     Key    = binary_to_list(KeyBin),
     Prefix = binary_to_list(PrefixBin),
     TruncatedStr = case length(MetadataList) =:= MaxKeys andalso MaxKeys =/= 0 of
-                       true -> "true";
-                       false -> "false"
+                       true ->
+                           "true";
+                       false ->
+                           "false"
                    end,
 
-    Fun = fun(#?METADATA{key       = EntryKeyBin,
-                         dsize     = Length,
+    Fun = fun(#?METADATA{key = EntryKeyBin,
+                         dsize = Length,
                          timestamp = TS,
                          checksum  = CS,
-                         del       = 0} , {Acc, _NextMarker}) ->
+                         del = 0} , {Acc, _NextMarker}) ->
                   EntryKey = binary_to_list(EntryKeyBin),
 
                   case string:equal(Key, EntryKey) of
@@ -1395,17 +1412,17 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
                           {Acc, _NextMarker};
                       false ->
                           Entry = string:sub_string(EntryKey, Len + 1),
-                          case Length of
-                              -1 ->
-                                  %% directory.
+                          case (Length == -1) of
+                              %% directory
+                              true ->
                                   {lists:append([Acc,
                                                  "<CommonPrefixes><Prefix>",
                                                  xmerl_lib:export_text(Prefix),
                                                  xmerl_lib:export_text(Entry),
                                                  "</Prefix></CommonPrefixes>"]),
                                    EntryKeyBin};
-                              _ ->
-                                  %% file.
+                              %% object
+                              false ->
                                   {lists:append([Acc,
                                                  "<Contents>",
                                                  "<Key>",
@@ -1486,7 +1503,7 @@ generate_delete_multi_xml(IsQuiet, DeletedKeys, ErrorKeys) ->
     DeletedElems = generate_delete_multi_xml_deleted_elem(DeletedKeys, []),
     ErrorElems = case IsQuiet of
                      true ->
-                         "";
+                         [];
                      false ->
                          generate_delete_multi_xml_error_elem(ErrorKeys, [])
                  end,
