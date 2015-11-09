@@ -111,8 +111,8 @@ terminate(_Reason, _Req, _State) ->
 %%
 check_request(Req) ->
     CheckList = [
-        fun check_bad_date/1
-    ],
+                 fun check_bad_date/1
+                ],
     check_request(Req, CheckList).
 
 check_request(_Req, []) ->
@@ -191,7 +191,6 @@ onresponse(CacheCondition) ->
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl        = false,
                                  qs_prefix     = Prefix}) ->
-    _Start = leo_date:clock(),
     NormalizedMarker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
                            {undefined, _} ->
                                <<>>;
@@ -212,20 +211,18 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                       try
                           list_to_integer(binary_to_list(Val_2))
                       catch _:_ ->
-                          badarg
+                              badarg
                       end
               end,
 
     case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
         {ok, Meta, XML} when is_list(Meta) == true ->
-            _End = leo_date:clock(),
-            ?debugVal({Key, (_End - _Start) / 1000}),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XML, Req);
         {error, badarg} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
@@ -380,11 +377,11 @@ put_object(?BIN_EMPTY, Req, _Key, #req_params{is_multi_delete = true,
                                               transfer_decode_fun = TransferDecodeFun,
                                               transfer_decode_state = TransferDecodeState} = Params) ->
     BodyOpts = case TransferDecodeFun of
-                  undefined ->
-                      [{read_timeout, Timeout4Body}];
-                  _ ->
-                      [{read_timeout, Timeout4Body},
-                       {transfer_decode, TransferDecodeFun, TransferDecodeState}]
+                   undefined ->
+                       [{read_timeout, Timeout4Body}];
+                   _ ->
+                       [{read_timeout, Timeout4Body},
+                        {transfer_decode, TransferDecodeFun, TransferDecodeState}]
                end,
     case cowboy_req:body(Req, BodyOpts) of
         {ok, Body, Req1} ->
@@ -400,7 +397,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
     case catch cowboy_req:body_length(Req) of
         {'EXIT', _} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {BodySize, _} ->
             Size = case cowboy_req:header(?HTTP_HEAD_X_AMZ_DECODED_CONTENT_LENGTH, Req) of
                        {undefined,_} ->
@@ -454,9 +451,9 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
           end,
     case Key =:= CS2 of
         true ->
-            % 400
+            %% 400
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidRequest,
-                                ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
         false ->
             case leo_gateway_rpc_handler:get(CS2) of
                 {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -638,8 +635,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                              timeout_for_body        = Props#http_options.timeout_for_body,
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                              threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
-
-%    ?debug("handle_1", "ReqParams: ~p", [ReqParams]),
+    %%  ?debug("handle_1", "ReqParams: ~p", [ReqParams]),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
     AuthRet_2 = case AuthRet of
                     {error, Reason} ->
@@ -710,7 +706,7 @@ aws_chunk_decode({ok, Acc}, Buffer, wait_size, 0, #aws_chunk_sign_params{sign_he
                     <<SizeHexBin:Start/binary, ";", Rest/binary>> = Buffer,
                     SizeHex = binary_to_list(SizeHexBin),
                     Size = leo_hex:hex_to_integer(SizeHex),
-%                    ?debug("aws_chunk_decode", "Chunk Size: ~p", [Size]),
+                    %% ?debug("aws_chunk_decode", "Chunk Size: ~p", [Size]),
                     SignParams_2 = case SignHead of
                                        undefined ->
                                            SignParams#aws_chunk_sign_params{chunk_size = Size};
@@ -734,13 +730,13 @@ aws_chunk_decode({ok, Acc}, Buffer, wait_head, 0, SignParams) ->
             {{ok, Acc}, {Buffer, wait_head, 0, SignParams}}
     end;
 aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset, #aws_chunk_sign_params{
-                                                  sign_head  = SignHead,
-                                                  sign_key   = SignKey,
-                                                  prev_sign  = PrevSign,
-                                                  chunk_sign = ChunkSign,
-                                                  chunk_size = ChunkSize,
-                                                  hash_context = Context
-                                                 } = SignParams) ->
+                                                           sign_head  = SignHead,
+                                                           sign_key   = SignKey,
+                                                           prev_sign  = PrevSign,
+                                                           chunk_sign = ChunkSign,
+                                                           chunk_size = ChunkSize,
+                                                           hash_context = Context
+                                                          } = SignParams) ->
     ChunkRemainSize = ChunkSize - Offset,
     case byte_size(Buffer) of
         Len when Len >= ChunkRemainSize + 2 ->
@@ -896,7 +892,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _,
                      transfer_decode_fun = TransferDecodeFun,
                      transfer_decode_state = TransferDecodeState
                     }, State) when UploadId /= <<>>,
-                                                                         PartNum  == 0 ->
+                                   PartNum  == 0 ->
     Res = cowboy_req:has_body(Req),
     {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId, ChunkedLen, TransferDecodeFun, TransferDecodeState),
     {ok, Req_2, State};
@@ -933,10 +929,10 @@ handle_multi_upload_1(true, Req, Path, UploadId, ChunkedLen, TransferDecodeFun, 
             _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
             BodyOpts = case TransferDecodeFun of
-                          undefined ->
-                              [];
-                          _ ->
-                              [{transfer_decode, TransferDecodeFun, TransferDecodeState}]
+                           undefined ->
+                               [];
+                           _ ->
+                               [{transfer_decode, TransferDecodeFun, TransferDecodeState}]
                        end,
             Ret = cowboy_req:body(Req, BodyOpts),
             handle_multi_upload_2(Ret, Req, Path, ChunkedLen);
@@ -1094,9 +1090,7 @@ request_params(Req, Params) ->
                        _ ->
                            false
                    end,
-
-%    ?debug("request_params/2", "Is AWS Chunked: ~p", [IsAwsChunked]),
-
+    %% ?debug("request_params/2", "Is AWS Chunked: ~p", [IsAwsChunked]),
     Params#req_params{is_multi_delete = IsMultiDelete,
                       is_upload       = IsUpload,
                       is_aws_chunked  = IsAwsChunked,
@@ -1307,7 +1301,6 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
     Key = << Bucket/binary, Prefix_1/binary >>,
-    _Start = leo_date:clock(),
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
@@ -1315,8 +1308,6 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
                                         [Key, Delimiter, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            _End = leo_date:clock(),
-            ?debugVal({Key, (_End - _Start) / 1000}),
             {ok, Meta, generate_bucket_xml(Key, Prefix_1, Meta, MaxKeys)};
         {ok, _} ->
             {error, invalid_format};
