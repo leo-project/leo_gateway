@@ -1706,7 +1706,7 @@ generate_bucket_xml_1(MetadataL, Index, Ref, PathLen, Path, Prefix, MaxKeys) ->
 generate_bucket_xml_loop(_Ref, 0, CallbackFun, Acc) ->
     {XMLList_1, NextMarker_1} =
         lists:foldl(fun({_Index, XMLList, NextMarker}, {SoFar,_}) ->
-                            {lists:append([XMLList, SoFar]), NextMarker}
+                            {lists:append([SoFar, XMLList]), NextMarker}
                     end, {[], []}, lists:sort(Acc)),
     CallbackFun(XMLList_1, NextMarker_1);
 generate_bucket_xml_loop(Ref, TotalDivs, CallbackFun, Acc) ->
