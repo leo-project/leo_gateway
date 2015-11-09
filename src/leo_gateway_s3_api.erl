@@ -1313,12 +1313,14 @@ get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
                                         [Key, ?BIN_SLASH, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            case recursive_find(Bucket, Redundancies, Meta, Marker, MaxKeys) of
-                {ok, Ret} ->
-                    {ok, Ret, generate_bucket_xml(Key, Prefix_1, Ret, MaxKeys)};
-                Error ->
-                    Error
-            end;
+            BodyFunc = fun(Socket, Transport) ->
+                               HeadBin = generate_list_head_xml(Prefix_1, MaxKeys, <<>>),
+                               ok = Transport:send(Socket, HeadBin),
+                               {ok, IsTruncated, NextMarker} = recursive_find(Bucket, Redundancies, Meta, Marker, MaxKeys, Transport, Socket),
+                               FootBin = generate_list_foot_xml(IsTruncated, NextMarker),
+                               ok = Transport:send(Socket, FootBin)
+                       end,
+            {ok, [], BodyFunc};
         {ok, _} ->
             {error, invalid_format};
         Error ->
@@ -1623,28 +1625,86 @@ formalize_bucket(Bucket) ->
             Bucket
     end.
 
-recursive_find(Bucket, Redundancies, MetadataList, Marker, MaxKeys) ->
-    recursive_find(Bucket, Redundancies, [], [], MetadataList, Marker, MaxKeys).
+generate_list_head_xml(Prefix, MaxKeys, Delimiter) ->
+    MaxKeysStr = list_to_binary(integer_to_list(MaxKeys)),
+    <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+      "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+      "<Name>standalone</Name>",
+      "<Prefix>",Prefix/binary,"</Prefix>",
+      "<Marker></Marker>",
+      "<MaxKeys>",MaxKeysStr/binary,"</MaxKeys>",
+      "<Delimiter>",Delimiter/binary,"</Delimiter>">>.
 
-recursive_find(_Bucket, _Redundancies, MetadataList, [], [], _, _) ->
-    {ok, lists:reverse(MetadataList)};
-recursive_find(_Bucket, _Redundancies, MetadataList, _, _, _, 0) ->
-    {ok, lists:reverse(MetadataList)};
-recursive_find(Bucket, Redundancies, MetadataList, [Head|Rest], [], Marker, MaxKeys) ->
-    recursive_find(Bucket, Redundancies, MetadataList, Rest, Head, Marker, MaxKeys);
-recursive_find(Bucket, Redundancies, MetadataList, Acc, 
-               [#?METADATA{dsize = -1, key = Key}|Rest], Marker, MaxKeys) ->
+generate_list_foot_xml(IsTruncated, NextMarker) ->
+    TruncatedStr = case IsTruncated of
+                       true ->
+                           <<"true">>;
+                       false ->
+                           <<"false">>
+                   end,
+    <<"<IsTruncated>",TruncatedStr/binary,"</IsTruncated>",
+      "<NextMarker>",NextMarker/binary,"</NextMarker>",
+      "</ListBucketResult>">>.
+
+generate_list_file_xml(Bucket, #?METADATA{key       = Key, 
+                                          dsize     = Length,
+                                          timestamp = TS,
+                                          checksum  = CS,
+                                          del       = 0}) ->
+
+    BucketLen = byte_size(Bucket),
+    <<_:BucketLen/binary, Key_1/binary>> = Key,
+    XMLKeyStr = list_to_binary(xmerl_lib:export_text(Key_1)),
+    TSStr = list_to_binary(leo_http:web_date(TS)),
+    ETag = list_to_binary(leo_hex:integer_to_hex(CS, 32)),
+    SizeStr = list_to_binary(integer_to_list(Length)),
+    <<"<Contents>",
+      "<Key>",XMLKeyStr/binary,"</Key>",
+      "<LastModified>",TSStr/binary,"</LastModified>",
+      "<ETag>",ETag/binary,"</ETag>",
+      "<Size>",SizeStr/binary,"</Size>",
+      "<StorageClass>STANDARD</StorageClass>",
+      "<Owner>",
+      "<ID>leofs</ID>",
+      "<DisplayName>leofs</DisplayName>",
+      "</Owner>",
+      "</Contents>">>;
+generate_list_file_xml(_, _) ->
+    error.
+
+recursive_find(Bucket, Redundancies, MetadataList, Marker, MaxKeys, Transport, Socket) ->
+    recursive_find(Bucket, Redundancies, [], MetadataList, Marker, MaxKeys, <<>>, Transport, Socket).
+
+recursive_find(_Bucket, _Redundancies, _, _, _, 0, LastKey, _, _) ->
+    {ok, true, LastKey};
+recursive_find(_Bucket, _Redundancies, [], [], _, _, _, _, _) ->
+    {ok, false, <<>>};
+recursive_find(Bucket, Redundancies, [Head|Rest], [], Marker, MaxKeys, LastKey, Transport, Socket) ->
+    recursive_find(Bucket, Redundancies, Rest, Head, Marker, MaxKeys, LastKey, Transport, Socket);
+recursive_find(Bucket, Redundancies, Acc, 
+               [#?METADATA{dsize = -1, key = Key}|Rest], Marker, MaxKeys, LastKey, Transport, Socket) ->
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
                                         [Key, ?BIN_SLASH, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            recursive_find(Bucket, Redundancies, MetadataList, [Meta | Acc], Rest, Marker, MaxKeys);
+            recursive_find(Bucket, Redundancies, [Meta | Acc], Rest, Marker, MaxKeys, LastKey, Transport, Socket);
         {ok, _} ->
             {error, invalid_format};
         Error ->
             Error
     end;
-recursive_find(Bucket, Redundancies, MetadataList, Acc, [Head|Rest], Marker, MaxKeys) ->
-    recursive_find(Bucket, Redundancies, [Head|MetadataList], Acc, Rest, Marker, MaxKeys - 1).
+recursive_find(Bucket, Redundancies, Acc, 
+               [#?METADATA{key = Key} = Head|Rest], Marker, MaxKeys, LastKey, Transport, Socket) ->
+    case generate_list_file_xml(Bucket, Head) of
+        Bin when is_binary(Bin) ->
+            case Transport:send(Socket, Bin) of
+                ok ->
+                    recursive_find(Bucket, Redundancies, Acc, Rest, Marker, MaxKeys - 1, Key, Transport, Socket);
+                Error ->
+                    Error
+            end;
+        false ->
+            recursive_find(Bucket, Redundancies, Acc, Rest, MaxKeys, MaxKeys, LastKey, Transport, Socket)
+    end.
