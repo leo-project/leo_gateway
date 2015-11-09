@@ -133,6 +133,7 @@
 -define(DEF_LOBJ_READING_CHUNK_OBJ_LEN,  5242880). %% since v0.16.8
 -define(DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN, 5767168).
 -define(DEF_S3API_MAX_KEYS, 1000).
+-define(DEF_MAX_NUM_OF_METADATAS, 50).
 
 %% error codes used in a error response
 -define(XML_ERROR_CODE_EntityTooLarge, "EntityTooLarge").

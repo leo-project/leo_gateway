@@ -274,20 +274,19 @@ get_bucket_list_error_([_TermFun, _Node0, Node1]) ->
 get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
     fun() ->
             timer:sleep(150),
-
             ok = rpc:call(Node1, meck, new,
                           [leo_storage_handler_directory, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_directory, find_by_parent_dir, 4, {ok, []}]),
-
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
                 {ok, {SC, Body}} =
                     httpc:request(get, {lists:append(["http://",
-                                                      ?TARGET_HOST,
-                                                      ":8080/a/b?prefix=pre"]), [{"Date", Date}]},
+                                                      ?TARGET_HOST, ":8080/a/b?prefix=pre"]), [{"Date", Date}]},
                                   [], [{full_result, false}]),
-                ?assertEqual(404, SC)
+                ?assertEqual(200, SC),
+                Xml = io_lib:format(?XML_OBJ_LIST, ["pre", "", "1000", "false" "", ""]),
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body))
             catch
                 throw:Reason ->
                     throw(Reason)
@@ -300,7 +299,6 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
 get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             timer:sleep(150),
-
             ok = rpc:call(Node1, meck, new,
                           [leo_storage_handler_directory, [no_link, non_strict]]),
             ok = rpc:call(Node1, meck, expect,
@@ -852,7 +850,7 @@ compute_chunk(PrevSign, SignHead, SignKey, Bin) ->
     Signature = crypto:hmac(sha256, SignKey, BinToSign),
     Sign = leo_hex:binary_to_hexbin(Signature),
     SizeHexBin = list_to_binary(SizeHex),
-    Chunk = <<SizeHexBin/binary, ";", "chunk-signature=", Sign/binary, "\r\n", 
+    Chunk = <<SizeHexBin/binary, ";", "chunk-signature=", Sign/binary, "\r\n",
               Bin/binary, "\r\n">>,
     {Chunk, Sign}.
 

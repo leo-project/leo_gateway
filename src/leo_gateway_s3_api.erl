@@ -1454,9 +1454,9 @@ get_bucket_1(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
 get_bucket_1(AccessKeyId, ?BIN_SLASH, _Delimiter, _Marker, _MaxKeys, none) ->
     case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
         not_found ->
-            {error, not_found};
+            {ok, generate_bucket_xml([])};
         {ok, []} ->
-            {error, not_found};
+            {ok, generate_bucket_xml([])};
         {ok, MetadataL} ->
             {ok, generate_bucket_xml(MetadataL)};
         Error ->
@@ -1469,8 +1469,8 @@ get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
                    _ ->
                        Prefix
                end,
-    Key = << Bucket/binary, Prefix_1/binary >>,
-    {ok, generate_bucket_xml(Key, Prefix_1, [], 0)};
+    Path = << Bucket/binary, Prefix_1/binary >>,
+    {ok, generate_bucket_xml(Path, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none ->
@@ -1481,19 +1481,19 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
 
     {ok, #redundancies{nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
-    Key = << Bucket/binary, Prefix_1/binary >>,
+    Path = << Bucket/binary, Prefix_1/binary >>,
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
-                                        [Key, Delimiter, Marker, MaxKeys],
+                                        [Path, Delimiter, Marker, MaxKeys],
                                         []) of
         not_found ->
-            {error, not_found};
+            {ok, generate_bucket_xml(Path, Prefix_1, [], MaxKeys)};
         {ok, []} ->
-            {error, not_found};
+            {ok, generate_bucket_xml(Path, Prefix_1, [], MaxKeys)};
         {ok, MetadataL} ->
-            {ok, generate_bucket_xml(Key, Prefix_1, MetadataL, MaxKeys)};
+            {ok, generate_bucket_xml(Path, Prefix_1, MetadataL, MaxKeys)};
         Error ->
             Error
     end.
@@ -1584,79 +1584,41 @@ head_bucket_1(AccessKeyId, Bucket) ->
 
 %% @doc Generate XML from matadata-list
 %% @private
--spec(generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
-             XMLRet when KeyBin::binary(),
+-spec(generate_bucket_xml(PathBin, PrefixBin, MetadataL, MaxKeys) ->
+             XMLRet when PathBin::binary(),
                          PrefixBin::binary(),
-                         MetadataList::[#?METADATA{}],
+                         MetadataL::[#?METADATA{}],
                          MaxKeys::binary(),
                          XMLRet::string()).
-generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
-    Len = byte_size(KeyBin),
-    Key = binary_to_list(KeyBin),
+generate_bucket_xml(PathBin, PrefixBin, MetadataL, MaxKeys) ->
+    PathLen = byte_size(PathBin),
+    Path = binary_to_list(PathBin),
     Prefix = binary_to_list(PrefixBin),
-    TruncatedStr = case length(MetadataList) =:= MaxKeys andalso MaxKeys =/= 0 of
-                       true ->
-                           "true";
-                       false ->
-                           "false"
-                   end,
 
-    Fun = fun(#?METADATA{key = EntryKeyBin,
-                         dsize = Length,
-                         timestamp = TS,
-                         checksum  = CS,
-                         del = 0} , {Acc, _NextMarker}) ->
-                  EntryKey = binary_to_list(EntryKeyBin),
+    Ref = make_ref(),
+    ok = generate_bucket_xml_1(MetadataL, 1, Ref, PathLen, Path, Prefix, MaxKeys),
 
-                  case string:equal(Key, EntryKey) of
-                      true ->
-                          {Acc, _NextMarker};
-                      false ->
-                          Entry = string:sub_string(EntryKey, Len + 1),
-                          case (Length == -1) of
-                              %% directory
-                              true ->
-                                  {lists:append([Acc,
-                                                 "<CommonPrefixes><Prefix>",
-                                                 xmerl_lib:export_text(Prefix),
-                                                 xmerl_lib:export_text(Entry),
-                                                 "</Prefix></CommonPrefixes>"]),
-                                   EntryKeyBin};
-                              %% object
-                              false ->
-                                  {lists:append([Acc,
-                                                 "<Contents>",
-                                                 "<Key>",
-                                                 xmerl_lib:export_text(Prefix),
-                                                 xmerl_lib:export_text(Entry),
-                                                 "</Key>",
-                                                 "<LastModified>", leo_http:web_date(TS),
-                                                 "</LastModified>",
-                                                 "<ETag>", leo_hex:integer_to_hex(CS, 32),
-                                                 "</ETag>",
-                                                 "<Size>", integer_to_list(Length),
-                                                 "</Size>",
-                                                 "<StorageClass>STANDARD</StorageClass>",
-                                                 "<Owner>",
-                                                 "<ID>leofs</ID>",
-                                                 "<DisplayName>leofs</DisplayName>",
-                                                 "</Owner>",
-                                                 "</Contents>"]),
-                                   EntryKeyBin}
-                          end
-                  end
-          end,
-    {List, NextMarker} = lists:foldl(Fun, {[], <<>>}, MetadataList),
-    io_lib:format(?XML_OBJ_LIST,
-                  [xmerl_lib:export_text(Prefix),
-                   xmerl_lib:export_text(NextMarker),
-                   integer_to_list(MaxKeys), TruncatedStr, List]).
+    TotalDivs = leo_math:ceiling(length(MetadataL) / ?DEF_MAX_NUM_OF_METADATAS),
+    CallbackFun = fun(XMLList, NextMarker) ->
+                          TruncatedStr = case length(MetadataL) =:= MaxKeys andalso MaxKeys =/= 0 of
+                                             true ->
+                                                 "true";
+                                             false ->
+                                                 "false"
+                                         end,
+                          Ret = io_lib:format(?XML_OBJ_LIST,
+                                              [xmerl_lib:export_text(Prefix),
+                                               xmerl_lib:export_text(NextMarker),
+                                               integer_to_list(MaxKeys), TruncatedStr, XMLList]),
+                          Ret
+                  end,
+    generate_bucket_xml_loop(Ref, TotalDivs, CallbackFun, []).
 
 %% @private
--spec(generate_bucket_xml(MetadataList) ->
-             XMLRet when MetadataList::[#?METADATA{}],
+-spec(generate_bucket_xml(MetadataL) ->
+             XMLRet when MetadataL::[#?METADATA{}],
                          XMLRet::string()).
-generate_bucket_xml(MetadataList) ->
+generate_bucket_xml(MetadataL) ->
     Fun = fun(#?BUCKET{name = BucketBin,
                        created_at = CreatedAt} , Acc) ->
                   Bucket = binary_to_list(BucketBin),
@@ -1672,7 +1634,93 @@ generate_bucket_xml(MetadataList) ->
                                         "</CreationDate></Bucket>"])
                   end
           end,
-    io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataList)]).
+    io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataL)]).
+
+
+%% @private
+generate_bucket_xml_1([],_Index,_Ref,_PathLen,_Path,_Prefix,_MaxKeys) ->
+    ok;
+generate_bucket_xml_1(MetadataL, Index, Ref, PathLen, Path, Prefix, MaxKeys) ->
+    {MetadataL_1, Rest} =
+        case (length(MetadataL) >= ?DEF_MAX_NUM_OF_METADATAS) of
+            true ->
+                lists:split(?DEF_MAX_NUM_OF_METADATAS, MetadataL);
+            false ->
+                {MetadataL, []}
+        end,
+
+    PId = self(),
+    spawn(fun() ->
+                  Fun = fun(#?METADATA{key = EntryKeyBin,
+                                       dsize = DSize,
+                                       timestamp = Timestamp,
+                                       checksum = Checksum,
+                                       del = 0}, {Acc,_NextMarker}) ->
+                                EntryKey = binary_to_list(EntryKeyBin),
+
+                                case string:equal(Path, EntryKey) of
+                                    true ->
+                                        {Acc,_NextMarker};
+                                    false ->
+                                        Entry = string:sub_string(EntryKey, PathLen + 1),
+                                        case (DSize == -1) of
+                                            %% directory
+                                            true ->
+                                                {lists:append([Acc,
+                                                               "<CommonPrefixes><Prefix>",
+                                                               xmerl_lib:export_text(Prefix),
+                                                               xmerl_lib:export_text(Entry),
+                                                               "</Prefix></CommonPrefixes>"]),
+                                                 EntryKeyBin};
+                                            %% object
+                                            false ->
+                                                {lists:append([Acc,
+                                                               "<Contents>",
+                                                               "<Key>",
+                                                               xmerl_lib:export_text(Prefix),
+                                                               xmerl_lib:export_text(Entry),
+                                                               "</Key>",
+                                                               "<LastModified>", leo_http:web_date(Timestamp),
+                                                               "</LastModified>",
+                                                               "<ETag>", leo_hex:integer_to_hex(Checksum, 32),
+                                                               "</ETag>",
+                                                               "<Size>", integer_to_list(DSize),
+                                                               "</Size>",
+                                                               "<StorageClass>STANDARD</StorageClass>",
+                                                               "<Owner>",
+                                                               "<ID>leofs</ID>",
+                                                               "<DisplayName>leofs</DisplayName>",
+                                                               "</Owner>",
+                                                               "</Contents>"]),
+                                                 EntryKeyBin}
+                                        end
+                                end
+                        end,
+                  {XMLList, NextMarker} = lists:foldl(Fun, {[], <<>>}, MetadataL_1),
+                  erlang:send(PId, {append, Ref, {Index, XMLList, NextMarker}})
+          end),
+    generate_bucket_xml_1(Rest, Index + 1, Ref, PathLen, Path, Prefix, MaxKeys).
+
+
+%% @private
+generate_bucket_xml_loop(_Ref, 0, CallbackFun, Acc) ->
+    {XMLList_1, NextMarker_1} =
+        lists:foldl(fun({_Index, XMLList, NextMarker}, {SoFar,_}) ->
+                            {lists:append([XMLList, SoFar]), NextMarker}
+                    end, {[], []}, lists:sort(Acc)),
+    CallbackFun(XMLList_1, NextMarker_1);
+generate_bucket_xml_loop(Ref, TotalDivs, CallbackFun, Acc) ->
+    receive
+        {append, Ref, {Index, XMLList, NextMarker}} ->
+            generate_bucket_xml_loop(Ref, TotalDivs - 1,
+                                     CallbackFun, [{Index, XMLList, NextMarker}|Acc]);
+        _ ->
+            generate_bucket_xml_loop(Ref, TotalDivs, CallbackFun, Acc)
+    after
+        ?DEF_REQ_TIMEOUT ->
+            {error, timeout}
+    end.
+
 
 
 %% @doc Generate XML from ACL
