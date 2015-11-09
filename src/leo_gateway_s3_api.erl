@@ -220,9 +220,9 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl = false,
                                  qs_prefix = Prefix}) ->
     NormalizedMarker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
-                           {undefined, _} ->
+                           {undefined,_} ->
                                <<>>;
-                           {Marker, _} ->
+                           {Marker,_} ->
                                %% Normalize Marker
                                %% Append $BucketName/ at the beginning of Marker as necessary
                                KeySize = size(Key),
@@ -234,7 +234,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                end
                        end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
-                  {undefined, _} ->
+                  {undefined,_} ->
                       ?DEF_S3API_MAX_KEYS;
                   {Val_2,_} ->
                       try
@@ -246,10 +246,10 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
               end,
 
     case get_bucket_1(AccessKeyId, Key, none, NormalizedMarker, MaxKeys, Prefix) of
-        {ok, Meta, XML} when is_list(Meta) == true ->
+        {ok, XMLRet} ->
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
-            ?reply_ok(Header, XML, Req);
+            ?reply_ok(Header, XMLRet, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
@@ -1441,25 +1441,24 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
 -spec(get_bucket_1(AccessKeyId, Key, Delimiter, Marker, MaxKeys, Prefix) ->
-             {ok, MetadataL, XMLRet} | {error, Cause} when AccessKeyId::binary(),
-                                                           Key::binary(),
-                                                           Delimiter::binary(),
-                                                           Marker::binary(),
-                                                           MaxKeys::non_neg_integer(),
-                                                           Prefix::binary()|none,
-                                                           MetadataL::[#?METADATA{}],
-                                                           XMLRet::binary(),
-                                                           Cause::any()).
+             {ok, XMLRet} | {error, Cause} when AccessKeyId::binary(),
+                                                Key::binary(),
+                                                Delimiter::binary(),
+                                                Marker::binary(),
+                                                MaxKeys::non_neg_integer(),
+                                                Prefix::binary()|none,
+                                                XMLRet::binary(),
+                                                Cause::any()).
 get_bucket_1(AccessKeyId, <<>>, Delimiter, Marker, MaxKeys, none) ->
     get_bucket_1(AccessKeyId, ?BIN_SLASH, Delimiter, Marker, MaxKeys, none);
 get_bucket_1(AccessKeyId, ?BIN_SLASH, _Delimiter, _Marker, _MaxKeys, none) ->
     case leo_s3_bucket:find_buckets_by_id(AccessKeyId) of
-        {ok, []} ->
-            {ok, [], generate_bucket_xml([])};
-        {ok, MetadataL} ->
-            {ok, MetadataL, generate_bucket_xml(MetadataL)};
         not_found ->
-            {ok, [], generate_bucket_xml([])};
+            {error, not_found};
+        {ok, []} ->
+            {error, not_found};
+        {ok, MetadataL} ->
+            {ok, generate_bucket_xml(MetadataL)};
         Error ->
             Error
     end;
@@ -1471,7 +1470,7 @@ get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
                        Prefix
                end,
     Key = << Bucket/binary, Prefix_1/binary >>,
-    {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
+    {ok, generate_bucket_xml(Key, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none ->
@@ -1489,10 +1488,12 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
                                         find_by_parent_dir,
                                         [Key, Delimiter, Marker, MaxKeys],
                                         []) of
-        {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, generate_bucket_xml(Key, Prefix_1, Meta, MaxKeys)};
-        {ok, _} ->
-            {error, invalid_format};
+        not_found ->
+            {error, not_found};
+        {ok, []} ->
+            {error, not_found};
+        {ok, MetadataL} ->
+            {ok, generate_bucket_xml(Key, Prefix_1, MetadataL, MaxKeys)};
         Error ->
             Error
     end.
@@ -1590,8 +1591,8 @@ head_bucket_1(AccessKeyId, Bucket) ->
                          MaxKeys::binary(),
                          XMLRet::string()).
 generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
-    Len    = byte_size(KeyBin),
-    Key    = binary_to_list(KeyBin),
+    Len = byte_size(KeyBin),
+    Key = binary_to_list(KeyBin),
     Prefix = binary_to_list(PrefixBin),
     TruncatedStr = case length(MetadataList) =:= MaxKeys andalso MaxKeys =/= 0 of
                        true ->
