@@ -25,8 +25,6 @@
 %%====================================================================
 -module(leo_gateway_web_prop).
 
--author('Yoshiyuki Kanno').
-
 -export([test/0, test/1]).
 -export([prop_http_req/0]).
 

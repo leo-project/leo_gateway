@@ -25,9 +25,6 @@
 %%======================================================================
 -module(leo_gateway_rpc_handler).
 
--author('Yosuke Hara').
--author('Yoshiyuki Kanno').
-
 -export([head/1,
          get/1,
          get/2,

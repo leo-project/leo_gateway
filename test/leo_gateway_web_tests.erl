@@ -24,7 +24,6 @@
 %% @end
 %%====================================================================
 -module(leo_gateway_web_tests).
--author('Yoshiyuki Kanno').
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").

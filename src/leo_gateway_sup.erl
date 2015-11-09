@@ -26,8 +26,6 @@
 %%======================================================================
 -module(leo_gateway_sup).
 
--author('Yosuke Hara').
-
 -behaviour(supervisor).
 
 -include("leo_gateway.hrl").

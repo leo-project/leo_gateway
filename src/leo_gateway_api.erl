@@ -24,7 +24,6 @@
 %% @end
 %%====================================================================
 -module(leo_gateway_api).
--author('Yosuke Hara').
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").

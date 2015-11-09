@@ -25,8 +25,6 @@
 %%======================================================================
 -module(leo_gateway_rest_api).
 
--author('Yosuke Hara').
-
 -behaviour(leo_gateway_http_behaviour).
 
 -export([start/2, stop/0,

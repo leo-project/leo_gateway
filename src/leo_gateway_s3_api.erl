@@ -25,9 +25,6 @@
 %%======================================================================
 -module(leo_gateway_s3_api).
 
--author('Yosuke Hara').
--author('Yoshiyuki Kanno').
-
 -behaviour(leo_gateway_http_behaviour).
 
 -export([start/2, stop/0,
