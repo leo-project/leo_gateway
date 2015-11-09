@@ -1600,17 +1600,11 @@ generate_bucket_xml(PathBin, PrefixBin, MetadataL, MaxKeys) ->
 
     TotalDivs = leo_math:ceiling(length(MetadataL) / ?DEF_MAX_NUM_OF_METADATAS),
     CallbackFun = fun(XMLList, NextMarker) ->
-                          TruncatedStr = case length(MetadataL) =:= MaxKeys andalso MaxKeys =/= 0 of
-                                             true ->
-                                                 "true";
-                                             false ->
-                                                 "false"
-                                         end,
-                          Ret = io_lib:format(?XML_OBJ_LIST,
-                                              [xmerl_lib:export_text(Prefix),
-                                               xmerl_lib:export_text(NextMarker),
-                                               integer_to_list(MaxKeys), TruncatedStr, XMLList]),
-                          Ret
+                          TruncatedStr = atom_to_list(length(MetadataL) =:= MaxKeys andalso MaxKeys =/= 0),
+                          io_lib:format(?XML_OBJ_LIST,
+                                        [xmerl_lib:export_text(Prefix),
+                                         xmerl_lib:export_text(NextMarker),
+                                         integer_to_list(MaxKeys), TruncatedStr, XMLList])
                   end,
     generate_bucket_xml_loop(Ref, TotalDivs, CallbackFun, []).
 
