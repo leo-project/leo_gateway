@@ -53,20 +53,18 @@
 -define(DEF_TIMEOUT, 30000).
 
 -record(state, {
-          key = <<>>            :: binary(),
-          socket = undefined    :: any(),
-          transport = undefined :: undefined | module(),
-          iterator              :: leo_large_object_commons:iterator()
+          key = <<>>    :: binary(),
+          transport_rec :: #transport_record{},
+          iterator      :: leo_large_object_commons:iterator()
          }).
 
 -record(req_info, {
-          key = <<>> :: binary(),
-          chunk_key = <<>>      :: binary(),
-          request    :: any(),
-          metadata   :: #?METADATA{},
-          reference  :: reference(),
-          transport  :: any(),
-          socket     :: any()
+          key = <<>>        :: binary(),
+          chunk_key = <<>>  :: binary(),
+          request           :: any(),
+          metadata          :: #?METADATA{},
+          reference         :: reference(),
+          transport_rec     :: #transport_record{}
          }).
 
 
@@ -75,8 +73,8 @@
 %%====================================================================
 -spec(start_link(Args) ->
              ok | {error, any()} when Args::tuple()).
-start_link({Key, Transport, Socket}) ->
-    gen_server:start_link(?MODULE, [Key, Transport, Socket], []).
+start_link({Key, TransportRec}) ->
+    gen_server:start_link(?MODULE, [Key, TransportRec], []).
 
 
 %% @doc Stop this server
@@ -103,20 +101,19 @@ get(Pid, TotalOfChunkedObjs, Req, Meta) ->
 %%====================================================================
 %% GEN_SERVER CALLBACKS
 %%====================================================================
-init([Key, Transport, Socket]) ->
+init([Key, TransportRec]) ->
     State = #state{key = Key,
-                   transport = Transport,
-                   socket = Socket},
+                   transport_rec = TransportRec},
     {ok, State}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
-            #state{key = Key, transport = Transport, socket = Socket} = State) ->
-    Reply = case leo_tran:run(Key, null, null, ?MODULE,
-                              {TotalOfChunkedObjs, Req, Meta, Transport, Socket},
-                              [{?PROP_IS_WAIT_FOR_TRAN, false}]) of
+            #state{key = Key, transport_rec = TransportRec} = State) ->
+    Reply = case leo_tran_serializable_cntnr:run(Key, null, null, ?MODULE,
+                                                 {TotalOfChunkedObjs, Req, Meta, TransportRec},
+                                                 [{?PROP_IS_WAIT_FOR_TRAN, false}], infinity) of
         {value, WriterRep} ->
             WriterRep;
         {error, ?ERROR_ALREADY_HAS_TRAN} ->
@@ -125,8 +122,7 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
             ReaderRep = case catch handle_read_loop(TotalSize, #req_info{key = Key,
                                                                          request = Req,
                                                                          reference = Ref,
-                                                                         transport = Transport,
-                                                                         socket = Socket}) of
+                                                                         transport_rec = TransportRec}) of
                         {'EXIT', Reason} ->
                             {error, Reason};
                         Ret ->
@@ -150,7 +146,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% Callbacks for leo_tran_behaviour
-run(Key, _, _, {TotalOfChunkedObjs, Req, Meta, Transport, Socket}, _) ->
+run(Key, _, _, {TotalOfChunkedObjs, Req, Meta, TransportRec}, _) ->
     Ref = case catch leo_cache_api:put_begin_tran(write, Key) of
         {ok, R} -> R;
         _ -> undefined
@@ -160,8 +156,7 @@ run(Key, _, _, {TotalOfChunkedObjs, Req, Meta, Transport, Socket}, _) ->
                                                       request = Req,
                                                       metadata = Meta,
                                                       reference = Ref,
-                                                      transport = Transport,
-                                                      socket = Socket}),
+                                                      transport_rec = TransportRec}),
     case Reply of
         {ok, _Req} ->
             CacheMeta = #cache_meta{
@@ -201,20 +196,22 @@ handle_loop(TotalChunkObjs, TotalChunkObjs, #req_info{request = Req}) ->
 handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
                                              chunk_key = ChunkObjKey,
                                              reference = Ref,
-                                             socket    = Socket,
-                                             transport = Transport
-                                            } = ReqInfo) ->
+                                             transport_rec = TransportRec} = ReqInfo) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key_1 = << ChunkObjKey/binary,
                ?DEF_SEPARATOR/binary,
                IndexBin/binary >>,
 
+    ?debug("handle_loop/3", "Transport Record: ~p", [TransportRec]),
     case leo_gateway_rpc_handler:get(Key_1) of
         %%
         %% only children
         %%
         {ok, #?METADATA{cnumber = 0}, Bin} ->
-            case Transport:send(Socket, Bin) of
+            #transport_record{transport = Transport,
+                              socket    = Socket,
+                              sending_chunked_obj_len = SendChunkLen} = TransportRec,
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     catch leo_cache_api:put(Ref, AcctualKey, Bin),
                     leo_tran:notify_all(AcctualKey, null, null),
@@ -263,12 +260,13 @@ handle_read_loop(TotalSize, TotalSize, #req_info{request = Req}) ->
     {ok, Req};
 handle_read_loop(Offset, TotalSize, #req_info{key = Key,
                                               reference = Ref,
-                                              transport = Transport,
-                                              socket = Socket
-                                             } = ReqInfo) ->
+                                              transport_rec = TransportRec} = ReqInfo) ->
     ReadSize = case file:read(Ref, 1024 * 1024) of
                    {ok, Bin} ->
-                       Transport:send(Socket, Bin),
+                       #transport_record{transport = Transport,
+                                         socket    = Socket,
+                                         sending_chunked_obj_len = SendChunkLen} = TransportRec,
+                       leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen),
                        byte_size(Bin);
                    eof ->
                        0;
