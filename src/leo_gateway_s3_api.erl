@@ -209,12 +209,8 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                   {undefined, _} -> ?HTTP_MAXKEYS_LIMIT;
                   {Val_2,     _} ->
                       try
-                          case list_to_integer(binary_to_list(Val_2)) of
-                              MaxKeys1 when MaxKeys1 > ?HTTP_MAXKEYS_LIMIT ->
-                                  ?HTTP_MAXKEYS_LIMIT;
-                              MaxKeys1 ->
-                                  MaxKeys1
-                          end
+                          MaxKeys1 = binary_to_integer(Val_2),
+                          erlang:min(MaxKeys1, ?HTTP_MAXKEYS_LIMIT
                       catch _:_ ->
                           badarg
                       end
