@@ -75,6 +75,11 @@
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_X_FROM_CACHE,                 <<"x-from-cache">>).
 
+-define(HTTP_HEAD_X_VAL_AWS4_SHA256, <<"STREAMING-AWS4-HMAC-SHA256-PAYLOAD">>).
+-define(HTTP_HEAD_X_AWS_SIGNATURE_V2, <<"AWS ">>).
+-define(HTTP_HEAD_X_AWS_SIGNATURE_V4, <<"AWS4">>).
+
+
 -define(HTTP_CTYPE_OCTET_STREAM, <<"application/octet-stream">>).
 -define(HTTP_CTYPE_XML,          <<"application/xml">>).
 
@@ -130,6 +135,8 @@
 -define(DEF_LOBJ_CHUNK_OBJ_LEN,          5242880).
 -define(DEF_LOBJ_READING_CHUNK_OBJ_LEN,  5242880). %% since v0.16.8
 -define(DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN, 5767168).
+-define(DEF_S3API_MAX_KEYS, 1000).
+-define(DEF_MAX_NUM_OF_METADATAS, 50).
 
 %% error codes used in a error response
 -define(XML_ERROR_CODE_EntityTooLarge, "EntityTooLarge").
@@ -296,11 +303,38 @@
                       "<Name>standalone</Name>",
                       "<Prefix>~s</Prefix>",
                       "<Marker></Marker>",
-                      "<NextMarker>~s</NextMarker>",
                       "<MaxKeys>~s</MaxKeys>",
                       "<Delimiter>/</Delimiter>",
-                      "<IsTruncated>~s</IsTruncated>",
                       "~s",
+                      "<IsTruncated>~s</IsTruncated>",
+                      "<NextMarker>~s</NextMarker>",
+                      "</ListBucketResult>"])).
+
+-define(XML_OBJ_LIST_HEAD,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "<Name>standalone</Name>",
+                      "<Prefix>~s</Prefix>",
+                      "<Marker></Marker>",
+                      "<MaxKeys>~s</MaxKeys>",
+                      "<Delimiter>~s</Delimiter>"])).
+
+-define(XML_OBJ_LIST_FILE,
+        lists:append(["<Contents>",
+                      "<Key>~s</Key>",
+                      "<LastModified>~s</LastModified>",
+                      "<ETag>~s</ETag>",
+                      "<Size>~s</Size>",
+                      "<StorageClass>STANDARD</StorageClass>",
+                      "<Owner>",
+                      "<ID>leofs</ID>",
+                      "<DisplayName>leofs</DisplayName>",
+                      "</Owner>",
+                      "</Contents>"])).
+
+-define(XML_OBJ_LIST_FOOT,
+        lists:append(["<IsTruncated>~s</IsTruncated>",
+                      "<NextMarker>~s</NextMarker>",
                       "</ListBucketResult>"])).
 
 -define(XML_COPY_OBJ_RESULT,

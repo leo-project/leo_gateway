@@ -63,7 +63,6 @@
 -define(PROTO_HANDLER_REST,  'leo_gateway_rest_api').
 -define(PROTO_HANDLER_EMBED, 'leo_gateway_embed').
 -define(PROTO_HANDLER_NFS,   'nfs').
-%% -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
 -define(DEF_PROTOCOL_HANDLER, ?PROTO_HANDLER_S3).
 
 -type(protocol_handler() :: ?PROTO_HANDLER_S3 |

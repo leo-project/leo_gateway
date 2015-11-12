@@ -25,8 +25,6 @@
 %%======================================================================
 -module(leo_gateway_cache_statistics).
 
--author('Yosuke Hara').
-
 -behaviour(leo_statistics_behaviour).
 
 -include_lib("leo_statistics/include/leo_statistics.hrl").

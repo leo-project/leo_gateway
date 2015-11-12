@@ -25,8 +25,6 @@
 %%======================================================================
 -module(leo_gateway_app).
 
--author('Yosuke Hara').
-
 -include("leo_gateway.hrl").
 -include("leo_nfs_mount3.hrl").
 -include("leo_nfs_proto3.hrl").

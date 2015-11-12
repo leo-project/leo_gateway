@@ -24,7 +24,6 @@
 %% @end
 %%====================================================================
 -module(leo_gateway_qos_stat).
--author('Yosuke Hara').
 
 -behaviour(gen_server).
 

@@ -20,7 +20,6 @@
 %%
 %%====================================================================
 -module(leofs).
--author('Yosuke Hara').
 
 -include("leo_http.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
