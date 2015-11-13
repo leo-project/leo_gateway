@@ -90,6 +90,7 @@
 -define(HTTP_QS_BIN_MARKER,      <<"marker">>).
 -define(HTTP_QS_BIN_MAXKEYS,     <<"max-keys">>).
 -define(HTTP_QS_BIN_MULTI_DELETE,<<"delete">>).
+-define(HTTP_QS_BIN_DELIMITER,   <<"delimiter">>).
 
 -define(HTTP_ST_OK,                  200).
 -define(HTTP_ST_NO_CONTENT,          204).
@@ -103,6 +104,8 @@
 -define(HTTP_ST_INTERNAL_ERROR,      500).
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).
+
+-define(HTTP_MAXKEYS_LIMIT,          1000).
 
 -define(CACHE_HTTP,  'http').
 -define(CACHE_INNER, 'inner').
@@ -300,11 +303,38 @@
                       "<Name>standalone</Name>",
                       "<Prefix>~s</Prefix>",
                       "<Marker></Marker>",
-                      "<NextMarker>~s</NextMarker>",
                       "<MaxKeys>~s</MaxKeys>",
                       "<Delimiter>/</Delimiter>",
-                      "<IsTruncated>~s</IsTruncated>",
                       "~s",
+                      "<IsTruncated>~s</IsTruncated>",
+                      "<NextMarker>~s</NextMarker>",
+                      "</ListBucketResult>"])).
+
+-define(XML_OBJ_LIST_HEAD,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "<Name>standalone</Name>",
+                      "<Prefix>~s</Prefix>",
+                      "<Marker></Marker>",
+                      "<MaxKeys>~s</MaxKeys>",
+                      "<Delimiter>~s</Delimiter>"])).
+
+-define(XML_OBJ_LIST_FILE,
+        lists:append(["<Contents>",
+                      "<Key>~s</Key>",
+                      "<LastModified>~s</LastModified>",
+                      "<ETag>~s</ETag>",
+                      "<Size>~s</Size>",
+                      "<StorageClass>STANDARD</StorageClass>",
+                      "<Owner>",
+                      "<ID>leofs</ID>",
+                      "<DisplayName>leofs</DisplayName>",
+                      "</Owner>",
+                      "</Contents>"])).
+
+-define(XML_OBJ_LIST_FOOT,
+        lists:append(["<IsTruncated>~s</IsTruncated>",
+                      "<NextMarker>~s</NextMarker>",
                       "</ListBucketResult>"])).
 
 -define(XML_COPY_OBJ_RESULT,
