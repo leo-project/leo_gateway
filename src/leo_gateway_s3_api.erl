@@ -761,6 +761,9 @@ handle_2({error, unmatch}, Req,_,Key,_,State) ->
 handle_2({error, not_found}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req_2, State};
+handle_2({error, already_yours}, Req,_,Key,_,State) ->
+    {ok, Req_2} = ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou, ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req),
+    {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req),
     {ok, Req_2, State};
