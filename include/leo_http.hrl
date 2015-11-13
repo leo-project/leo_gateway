@@ -75,9 +75,15 @@
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_X_FROM_CACHE,                 <<"x-from-cache">>).
 
+
+%% @see: http://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 -define(HTTP_HEAD_X_VAL_AWS4_SHA256, <<"STREAMING-AWS4-HMAC-SHA256-PAYLOAD">>).
 -define(HTTP_HEAD_X_AWS_SIGNATURE_V2, <<"AWS ">>).
 -define(HTTP_HEAD_X_AWS_SIGNATURE_V4, <<"AWS4">>).
+
+-define(AWS_SIGNATURE_V4_SHA256_KEY,  <<"AWS4-HMAC-SHA256-PAYLOAD">>).
+-define(AWS_SIGNATURE_V4_SHA256_HASH, <<"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855">>).
+%% leo_hex:binary_to_hex(crypto:hash(sha256, <<"">>))
 
 
 -define(HTTP_CTYPE_OCTET_STREAM, <<"application/octet-stream">>).
@@ -319,9 +325,23 @@
                       "<MaxKeys>~s</MaxKeys>",
                       "<Delimiter>~s</Delimiter>"])).
 
--define(XML_OBJ_LIST_FILE,
+-define(XML_OBJ_LIST_FILE_1,
+
         lists:append(["<Contents>",
                       "<Key>~s</Key>",
+                      "<LastModified>~s</LastModified>",
+                      "<ETag>~s</ETag>",
+                      "<Size>~s</Size>",
+                      "<StorageClass>STANDARD</StorageClass>",
+                      "<Owner>",
+                      "<ID>leofs</ID>",
+                      "<DisplayName>leofs</DisplayName>",
+                      "</Owner>",
+                      "</Contents>"])).
+
+-define(XML_OBJ_LIST_FILE_2,
+        lists:append(["<Contents>",
+                      "<Key>~s~s</Key>",
                       "<LastModified>~s</LastModified>",
                       "<ETag>~s</ETag>",
                       "<Size>~s</Size>",
@@ -336,6 +356,16 @@
         lists:append(["<IsTruncated>~s</IsTruncated>",
                       "<NextMarker>~s</NextMarker>",
                       "</ListBucketResult>"])).
+
+-define(XML_BUCKET,
+        lists:append(["<Bucket><Name>~s</Name>",
+                      "<CreationDate>~s</CreationDate></Bucket>"])).
+
+-define(XML_DIR_PREFIX,
+        lists:append(["<CommonPrefixes><Prefix>",
+                      "~s",
+                      "~s",
+                      "</Prefix></CommonPrefixes>"])).
 
 -define(XML_COPY_OBJ_RESULT,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",

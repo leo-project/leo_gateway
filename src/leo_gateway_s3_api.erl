@@ -234,14 +234,14 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                end
                        end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
-                  {undefined, _} -> 
+                  {undefined, _} ->
                       ?DEF_S3API_MAX_KEYS;
                   {Val_2,     _} ->
                       try
                           MaxKeys1 = binary_to_integer(Val_2),
                           erlang:min(MaxKeys1, ?HTTP_MAXKEYS_LIMIT)
                       catch _:_ ->
-                                ?DEF_S3API_MAX_KEYS
+                              ?DEF_S3API_MAX_KEYS
                       end
               end,
     Delimiter = case cowboy_req:qs_val(?HTTP_QS_BIN_DELIMITER, Req) of
@@ -307,7 +307,8 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidBucketName,
                                ?XML_ERROR_MSG_InvalidBucketName, Key, <<>>, Req_1);
         {error, invalid_access} ->
-            ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req);
+            ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
+                             ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req);
         {error, already_exists} ->
             ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyExists,
                             ?XML_ERROR_MSG_BucketAlreadyExists, Key, <<>>, Req_1);
@@ -688,28 +689,27 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
             end,
 
     ReqParams =
-        request_params(
-          Req_2, #req_params{handler           = ?MODULE,
-                             path              = Path_1,
-                             bucket            = Bucket,
-                             token_length      = TokenLen,
-                             min_layers        = NumOfMinLayers,
-                             max_layers        = NumOfMaxLayers,
-                             qs_prefix         = Prefix,
-                             has_inner_cache   = HasInnerCache,
-                             is_cached         = true,
-                             is_dir            = IsDir,
-                             is_acl            = IsACL,
-                             max_chunked_objs  = Props#http_options.max_chunked_objs,
-                             max_len_of_obj    = Props#http_options.max_len_of_obj,
-                             chunked_obj_len   = Props#http_options.chunked_obj_len,
-                             custom_header_settings  = CustomHeaderSettings,
-                             timeout_for_header      = Props#http_options.timeout_for_header,
-                             timeout_for_body        = Props#http_options.timeout_for_body,
-                             reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                             threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
+        request_params(Req_2,
+                       #req_params{handler = ?MODULE,
+                                   path = Path_1,
+                                   bucket = Bucket,
+                                   token_length = TokenLen,
+                                   min_layers = NumOfMinLayers,
+                                   max_layers = NumOfMaxLayers,
+                                   qs_prefix = Prefix,
+                                   has_inner_cache = HasInnerCache,
+                                   is_cached = true,
+                                   is_dir = IsDir,
+                                   is_acl = IsACL,
+                                   max_chunked_objs = Props#http_options.max_chunked_objs,
+                                   max_len_of_obj = Props#http_options.max_len_of_obj,
+                                   chunked_obj_len = Props#http_options.chunked_obj_len,
+                                   custom_header_settings = CustomHeaderSettings,
+                                   timeout_for_header = Props#http_options.timeout_for_header,
+                                   timeout_for_body = Props#http_options.timeout_for_body,
+                                   reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                                   threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len}),
 
-    %% ?debug("handle_1", "ReqParams: ~p", [ReqParams]),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
     AuthRet_2 = case AuthRet of
                     {error, Reason} ->
@@ -761,13 +761,17 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                                    Bucket::binary(),
                                    Path::binary()).
 handle_2({error, unmatch}, Req,_,Key,_,State) ->
-    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_SignatureDoesNotMatch, ?XML_ERROR_MSG_SignatureDoesNotMatch, Key, <<>>, Req),
+    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER],
+                                   ?XML_ERROR_CODE_SignatureDoesNotMatch,
+                                   ?XML_ERROR_MSG_SignatureDoesNotMatch, Key, <<>>, Req),
     {ok, Req_2, State};
 handle_2({error, not_found}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
-    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied, ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req),
+    {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER],
+                                   ?XML_ERROR_CODE_AccessDenied,
+                                   ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req),
     {ok, Req_2, State};
 
 %% For Multipart Upload - Initiation
@@ -778,7 +782,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
     _ = (catch leo_cache_api:delete(Path)),
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
-    UploadId    = leo_hex:binary_to_hex(crypto:hash(md5, << Path/binary, NowBin/binary >>)),
+    UploadId = leo_hex:binary_to_hex(
+                 crypto:hash(md5, << Path/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
 
     {ok, Req_2} =
@@ -818,8 +823,10 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, _,
                      upload_part_num = PartNum1} = Params, State) when UploadId /= <<>>,
                                                                        PartNum1 /= 0 ->
     PartNum2 = list_to_binary(integer_to_list(PartNum1)),
-    Key1 = << Path/binary, ?STR_NEWLINE, UploadId/binary >>, %% for confirmation
-    Key2 = << Path/binary, ?STR_NEWLINE, PartNum2/binary >>, %% for put a part of an object
+    %% for confirmation
+    Key1 = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
+    %% for put a part of an object
+    Key2 = << Path/binary, ?STR_NEWLINE, PartNum2/binary >>,
 
     {ok, Req_2} =
         case leo_gateway_rpc_handler:head(Key1) of
@@ -828,7 +835,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, _,
             {error, not_found} ->
                 ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);
             {error, unavailable} ->
-                ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
+                ?reply_service_unavailable_error(
+                   [?SERVER_HEADER], Path, <<>>, Req);
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req);
             {error, ?ERR_TYPE_INTERNAL_ERROR} ->
@@ -856,8 +864,9 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _,
                     }, State) when UploadId /= <<>>,
                                    PartNum  == 0 ->
     Res = cowboy_req:has_body(Req),
-    {ok, Req_2} = handle_multi_upload_1(Res, Req, Path, UploadId,
-                                        ChunkedLen, TransferDecodeFun, TransferDecodeState),
+    {ok, Req_2} = handle_multi_upload_1(
+                    Res, Req, Path, UploadId,
+                    ChunkedLen, TransferDecodeFun, TransferDecodeState),
     {ok, Req_2, State};
 
 %% For Regular cases
@@ -866,11 +875,13 @@ handle_2({ok, AccessKeyId}, Req, ?HTTP_POST,  Path, Params, State) ->
 
 handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
     case catch leo_gateway_http_req_handler:handle(
-                 HTTPMethod, Req, Path, Params#req_params{access_key_id = AccessKeyId}) of
+                 HTTPMethod, Req,
+                 Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', {"aws-chunked decode failed", _} = Cause} ->
             ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
-            {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
-                                           ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req),
+            {ok, Req_2} = ?reply_forbidden(
+                             [?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
+                             ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req),
             {ok, Req_2, State};
         {'EXIT', Cause} ->
             ?error("handle_2/6", [{key, binary_to_list(Path)}, {cause, Cause}]),
@@ -888,11 +899,11 @@ handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
                                           State::#aws_chunk_decode_state{},
                                           Acc::binary()).
 aws_chunk_decode(Bin, State) ->
-    Buffer    = State#aws_chunk_decode_state.buffer,
-    DecState  = State#aws_chunk_decode_state.dec_state,
-    Offset    = State#aws_chunk_decode_state.chunk_offset,
-    SignParams= State#aws_chunk_decode_state.sign_params,
-    TotalLen  = State#aws_chunk_decode_state.total_len,
+    Buffer = State#aws_chunk_decode_state.buffer,
+    DecState = State#aws_chunk_decode_state.dec_state,
+    Offset = State#aws_chunk_decode_state.chunk_offset,
+    SignParams = State#aws_chunk_decode_state.sign_params,
+    TotalLen = State#aws_chunk_decode_state.total_len,
     Ret = aws_chunk_decode({ok, <<>>}, << Buffer/binary, Bin/binary >>,
                            DecState, Offset, SignParams),
     case Ret of
@@ -910,7 +921,8 @@ aws_chunk_decode(Bin, State) ->
     end.
 
 %% @private
-aws_chunk_decode({ok, Acc}, Buffer, wait_size, 0, #aws_chunk_sign_params{sign_head = SignHead} = SignParams) ->
+aws_chunk_decode({ok, Acc}, Buffer, wait_size, 0,
+                 #aws_chunk_sign_params{sign_head = SignHead} = SignParams) ->
     case byte_size(Buffer) of
         Len when Len > 10 ->
             <<Bin:10/binary, _/binary>> = Buffer,
@@ -921,15 +933,15 @@ aws_chunk_decode({ok, Acc}, Buffer, wait_size, 0, #aws_chunk_sign_params{sign_he
                     <<SizeHexBin:Start/binary, ";", Rest/binary>> = Buffer,
                     SizeHex = binary_to_list(SizeHexBin),
                     Size = leo_hex:hex_to_integer(SizeHex),
-                    %% ?debug("aws_chunk_decode", "Chunk Size: ~p", [Size]),
-                    SignParams_2 = case SignHead of
-                                       undefined ->
-                                           SignParams#aws_chunk_sign_params{chunk_size = Size};
-                                       _ ->
-                                           Context = crypto:hash_init(sha256),
-                                           SignParams#aws_chunk_sign_params{chunk_size = Size,
-                                                                            hash_context = Context}
-                                   end,
+                    SignParams_2 =
+                        case SignHead of
+                            undefined ->
+                                SignParams#aws_chunk_sign_params{chunk_size = Size};
+                            _ ->
+                                Context = crypto:hash_init(sha256),
+                                SignParams#aws_chunk_sign_params{chunk_size = Size,
+                                                                 hash_context = Context}
+                        end,
                     aws_chunk_decode({ok, Acc}, Rest, wait_head, 0, SignParams_2)
             end;
         _ ->
@@ -938,8 +950,9 @@ aws_chunk_decode({ok, Acc}, Buffer, wait_size, 0, #aws_chunk_sign_params{sign_he
 aws_chunk_decode({ok, Acc}, Buffer, wait_head, 0, SignParams) ->
     case byte_size(Buffer) of
         Len when Len > 80 + 2 ->
-            <<"chunk-signature=", ChunkSign:64/binary, "\r\n", Rest/binary>> = Buffer,
-            %% ?debug("aws_chunk_decode", "Chunk Sign: ~p", [ChunkSign]),
+            << "chunk-signature=", ChunkSign:64/binary,
+               "\r\n", Rest/binary >> = Buffer,
+
             aws_chunk_decode({ok, Acc}, Rest, read_chunk, 0,
                              SignParams#aws_chunk_sign_params{chunk_sign = ChunkSign});
         _ ->
@@ -964,34 +977,41 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
                         0 ->
                             {{done, Acc}, {Rest, done, 0, #aws_chunk_sign_params{}}};
                         _ ->
-                            aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>}, Rest, wait_size, 0, SignParams)
+                            aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>},
+                                             Rest, wait_size, 0, SignParams)
                     end;
                 _ ->
                     Context_2 = crypto:hash_update(Context, ChunkPart),
                     ChunkHash = crypto:hash_final(Context_2),
                     ChunkHashBin = leo_hex:binary_to_hexbin(ChunkHash),
-                    BinToSign = <<"AWS4-HMAC-SHA256-PAYLOAD\n",
-                                  SignHead/binary,
-                                  PrevSign/binary,
-                                  "\n",
-                                  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
-                                  ChunkHashBin/binary>>,
-                    Signature = crypto:hmac(sha256, SignKey, BinToSign),
-                    Sign = leo_hex:binary_to_hexbin(Signature),
-                    case Sign of
+                    BinToSign = << ?AWS_SIGNATURE_V4_SHA256_KEY/binary,
+                                   "\n",
+                                   SignHead/binary,
+                                   PrevSign/binary,
+                                   "\n",
+                                   ?AWS_SIGNATURE_V4_SHA256_HASH/binary,
+                                   "\n",
+                                   ChunkHashBin/binary >>,
+
+                    case (leo_hex:binary_to_hexbin(
+                            crypto:hmac(sha256, SignKey, BinToSign))) of
                         ChunkSign ->
-                            case ChunkSize of
-                                0 -> %% Last Chunk
+                            case (ChunkSize == 0) of
+                                %% Last Chunk
+                                true ->
                                     {{done, Acc}, {Rest, done, 0, #aws_chunk_sign_params{}}};
-                                _ ->
-                                    ?debug("aws_chunk_decode/4", "Output Chunk Size: ~p, Sign: ~p", [ChunkSize, ChunkSign]),
-                                    aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>}, Rest,
-                                                     wait_size, 0, SignParams#aws_chunk_sign_params{prev_sign = ChunkSign,
-                                                                                                    chunk_sign = <<>>})
+                                false ->
+                                    ?debug("aws_chunk_decode/4",
+                                           "Output Chunk Size: ~p, Sign: ~p", [ChunkSize, ChunkSign]),
+                                    aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>},
+                                                     Rest, wait_size, 0,
+                                                     SignParams#aws_chunk_sign_params{prev_sign = ChunkSign,
+                                                                                      chunk_sign = <<>>})
                             end;
                         WrongSign ->
-                            ?debug("aws_chunk_decode/4", "BinToSign: ~p", [binary_to_list(BinToSign)]),
-                            ?error("aws_chunk_decode/4", "Chunk Signature Not Match: ~p, ~p", [WrongSign, ChunkSign]),
+                            ?error("aws_chunk_decode/4",
+                                   "Chunk Signature Not Match: ~p, ~p, ~p",
+                                   [WrongSign, ChunkSign, binary_to_list(BinToSign)]),
                             {{error, unmatch}, {Buffer, error, Offset, SignParams}}
                     end
             end;
@@ -1003,9 +1023,11 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
                                    Context_2 = crypto:hash_update(Context, Buffer),
                                    SignParams#aws_chunk_sign_params{hash_context = Context_2}
                            end,
-            {{ok, <<Acc/binary, Buffer/binary>>}, {<<>>, read_chunk, Offset + Len, SignParams_2}};
+            {{ok, <<Acc/binary, Buffer/binary>>},
+             {<<>>, read_chunk, Offset + Len, SignParams_2}};
         _ ->
-            {{ok, Acc}, {Buffer, read_chunk, Offset ,SignParams}}
+            {{ok, Acc},
+             {Buffer, read_chunk, Offset ,SignParams}}
     end.
 
 
@@ -1079,10 +1101,11 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
                                 dsize = ChildObjSize}} ->
                     case leo_gateway_rpc_handler:put(Path, <<>>, Len, ChildObjSize,
                                                      TotalUploadedObjs, ETag1) of
-                        {ok, _} ->
+                        {ok,_} ->
                             [Bucket|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
                             ETag2 = leo_hex:integer_to_hex(ETag1, 32),
-                            XML   = gen_upload_completion_xml(Bucket, Path_1, ETag2, TotalUploadedObjs),
+                            XML = gen_upload_completion_xml(
+                                    Bucket, Path_1, ETag2, TotalUploadedObjs),
                             ?reply_ok([?SERVER_HEADER], XML, Req);
                         {error, unavailable} ->
                             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
@@ -1477,10 +1500,13 @@ get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
     Path = << Bucket/binary, Prefix_1/binary >>,
     {ok, generate_bucket_xml(Path, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
-    ?debug("get_bucket_1/6", "Bucket: ~p, Marker: ~p, MaxKeys: ~p", [Bucket, Marker, MaxKeys]),
+    ?debug("get_bucket_1/6", "Bucket: ~p, Marker: ~p, MaxKeys: ~p",
+           [Bucket, Marker, MaxKeys]),
     Prefix_1 = case Prefix of
-                   none -> <<>>;
-                   _    -> Prefix
+                   none ->
+                       <<>>;
+                   _ ->
+                       Prefix
                end,
 
     {ok, #redundancies{nodes = Redundancies}} =
@@ -1492,11 +1518,13 @@ get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
                                         find_by_parent_dir,
                                         [Key, ?BIN_SLASH, Marker, MaxKeys],
                                         []) of
-        {ok, Meta} when is_list(Meta) =:= true ->
+        {ok, Metadata} when is_list(Metadata) =:= true ->
             BodyFunc = fun(Socket, Transport) ->
                                HeadBin = generate_list_head_xml(Prefix_1, MaxKeys, <<>>),
                                ok = Transport:send(Socket, HeadBin),
-                               {ok, IsTruncated, NextMarker} = recursive_find(Bucket, Redundancies, Meta, Marker, MaxKeys, Transport, Socket),
+                               {ok, IsTruncated, NextMarker} =
+                                   recursive_find(Bucket, Redundancies, Metadata,
+                                                  Marker, MaxKeys, Transport, Socket),
                                FootBin = generate_list_foot_xml(IsTruncated, NextMarker),
                                ok = Transport:send(Socket, FootBin)
                        end,
@@ -1638,7 +1666,7 @@ generate_bucket_xml(PathBin, PrefixBin, MetadataL, MaxKeys) ->
                           TruncatedStr = atom_to_list(length(MetadataL) =:= MaxKeys andalso MaxKeys =/= 0),
                           io_lib:format(?XML_OBJ_LIST,
                                         [xmerl_lib:export_text(Prefix),
-                                         integer_to_list(MaxKeys), 
+                                         integer_to_list(MaxKeys),
                                          XMLList,
                                          TruncatedStr,
                                          xmerl_lib:export_text(NextMarker)])
@@ -1658,11 +1686,9 @@ generate_bucket_xml(MetadataL) ->
                           Acc;
                       false ->
                           lists:append([Acc,
-                                        "<Bucket><Name>",
-                                        xmerl_lib:export_text(Bucket),
-                                        "</Name>",
-                                        "<CreationDate>", leo_http:web_date(CreatedAt),
-                                        "</CreationDate></Bucket>"])
+                                        io_lib:format(?XML_BUCKET,
+                                                      [xmerl_lib:export_text(Bucket),
+                                                       leo_http:web_date(CreatedAt)])])
                   end
           end,
     io_lib:format(?XML_BUCKET_LIST, [lists:foldl(Fun, [], MetadataL)]).
@@ -1697,32 +1723,22 @@ generate_bucket_xml_1(MetadataL, Index, Ref, PathLen, Path, Prefix, MaxKeys) ->
                                         case (DSize == -1) of
                                             %% directory
                                             true ->
-                                                {lists:append([Acc,
-                                                               "<CommonPrefixes><Prefix>",
-                                                               xmerl_lib:export_text(Prefix),
-                                                               xmerl_lib:export_text(Entry),
-                                                               "</Prefix></CommonPrefixes>"]),
+                                                {lists:append(
+                                                   [Acc,
+                                                    io_lib:format(?XML_DIR_PREFIX,
+                                                                  [xmerl_lib:export_text(Prefix),
+                                                                   xmerl_lib:export_text(Entry)])]),
                                                  EntryKeyBin};
                                             %% object
                                             false ->
-                                                {lists:append([Acc,
-                                                               "<Contents>",
-                                                               "<Key>",
-                                                               xmerl_lib:export_text(Prefix),
-                                                               xmerl_lib:export_text(Entry),
-                                                               "</Key>",
-                                                               "<LastModified>", leo_http:web_date(Timestamp),
-                                                               "</LastModified>",
-                                                               "<ETag>", leo_hex:integer_to_hex(Checksum, 32),
-                                                               "</ETag>",
-                                                               "<Size>", integer_to_list(DSize),
-                                                               "</Size>",
-                                                               "<StorageClass>STANDARD</StorageClass>",
-                                                               "<Owner>",
-                                                               "<ID>leofs</ID>",
-                                                               "<DisplayName>leofs</DisplayName>",
-                                                               "</Owner>",
-                                                               "</Contents>"]),
+                                                {lists:append(
+                                                   [Acc,
+                                                    io_lib:format(?XML_OBJ_LIST_FILE_2,
+                                                                  [xmerl_lib:export_text(Prefix),
+                                                                   xmerl_lib:export_text(Entry),
+                                                                   leo_http:web_date(Timestamp),
+                                                                   leo_hex:integer_to_hex(Checksum, 32),
+                                                                   integer_to_list(DSize)])]),
                                                  EntryKeyBin}
                                         end
                                 end
@@ -1832,9 +1848,9 @@ delete_multi_objects_2(Req, Body, MD5, MD5, Params) ->
                   {[X|Acc], S}
           end,
     try
-        {#xmlElement{content = Content},_} = xmerl_scan:string(
-                                               binary_to_list(Body),
-                                               [{space,normalize}, {acc_fun, Acc}]),
+        {#xmlElement{content = Content},_} =
+            xmerl_scan:string(binary_to_list(Body),
+                              [{space,normalize}, {acc_fun, Acc}]),
         delete_multi_objects_3(Req, Content, false, [], Params)
     catch _:Cause ->
             ?error("delete_multi_objects_2/5", [{req, Req}, {cause, Cause}]),
@@ -1871,14 +1887,18 @@ delete_multi_objects_4(Req, IsQuiet, [Key|Rest], DeletedKeys, ErrorKeys,
             case leo_gateway_rpc_handler:delete(Path) of
                 ok ->
                     ?access_log_delete(Bucket, Path, Meta#?METADATA.dsize, ?HTTP_ST_NO_CONTENT),
-                    delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
+                    delete_multi_objects_4(Req, IsQuiet, Rest,
+                                           [Key|DeletedKeys], ErrorKeys, Params);
                 {error, not_found} ->
-                    delete_multi_objects_4(Req, IsQuiet, Rest, [Key|DeletedKeys], ErrorKeys, Params);
+                    delete_multi_objects_4(Req, IsQuiet, Rest,
+                                           [Key|DeletedKeys], ErrorKeys, Params);
                 {error, _} ->
-                    delete_multi_objects_4(Req, IsQuiet, Rest, DeletedKeys, [Key|ErrorKeys], Params)
+                    delete_multi_objects_4(Req, IsQuiet, Rest,
+                                           DeletedKeys, [Key|ErrorKeys], Params)
             end;
         _ ->
-            delete_multi_objects_4(Req, IsQuiet, Rest, DeletedKeys, [Key|ErrorKeys], Params)
+            delete_multi_objects_4(Req, IsQuiet, Rest,
+                                   DeletedKeys, [Key|ErrorKeys], Params)
     end.
 
 %% @doc Make response XML based on the result of delete requests (ignore version related elements)
@@ -1903,7 +1923,7 @@ formalize_bucket(Bucket) ->
     end.
 
 generate_list_head_xml(Prefix, MaxKeys, Delimiter) ->
-    io_lib:format(?XML_OBJ_LIST_HEAD, 
+    io_lib:format(?XML_OBJ_LIST_HEAD,
                   [xmerl_lib:export_text(Prefix),
                    integer_to_list(MaxKeys),
                    xmerl_lib:export_text(Delimiter)]).
@@ -1919,15 +1939,14 @@ generate_list_foot_xml(IsTruncated, NextMarker) ->
                   [TruncatedStr,
                    xmerl_lib:export_text(NextMarker)]).
 
-generate_list_file_xml(Bucket, #?METADATA{key       = Key, 
-                                          dsize     = Length,
+generate_list_file_xml(Bucket, #?METADATA{key = Key,
+                                          dsize = Length,
                                           timestamp = TS,
-                                          checksum  = CS,
-                                          del       = 0}) ->
-
+                                          checksum = CS,
+                                          del = 0}) ->
     BucketLen = byte_size(Bucket),
     <<_:BucketLen/binary, Key_1/binary>> = Key,
-    io_lib:format(?XML_OBJ_LIST_FILE, 
+    io_lib:format(?XML_OBJ_LIST_FILE_1,
                   [xmerl_lib:export_text(Key_1),
                    leo_http:web_date(TS),
                    leo_hex:integer_to_hex(CS, 32),
@@ -1935,38 +1954,61 @@ generate_list_file_xml(Bucket, #?METADATA{key       = Key,
 generate_list_file_xml(_, _) ->
     error.
 
-recursive_find(Bucket, Redundancies, MetadataList, Marker, MaxKeys, Transport, Socket) ->
-    recursive_find(Bucket, Redundancies, [], MetadataList, Marker, MaxKeys, <<>>, Transport, Socket).
+
+%% @doc Recursively find a key in the bucket
+%% @private
+-spec(recursive_find(Bucket, Redundancies, MetadataList,
+                     Marker, MaxKeys, Transport, Socket) ->
+             {ok, CanFindKey, LastKey} | {error, any()} when Bucket::binary(),
+                                                             Redundancies::[#redundancies{}],
+                                                             MetadataList::[#?METADATA{}],
+                                                             Marker::binary(),
+                                                             MaxKeys::non_neg_integer(),
+                                                             Transport::atom(),
+                                                             Socket::port(),
+                                                             CanFindKey::boolean(),
+                                                             LastKey::binary()).
+recursive_find(Bucket, Redundancies, MetadataList,
+               Marker, MaxKeys, Transport, Socket) ->
+    recursive_find(Bucket, Redundancies, [], MetadataList,
+                   Marker, MaxKeys, <<>>, Transport, Socket).
 
 recursive_find(_Bucket, _Redundancies, _, _, _, 0, LastKey, _, _) ->
     {ok, true, LastKey};
 recursive_find(_Bucket, _Redundancies, [], [], _, _, _, _, _) ->
     {ok, false, <<>>};
-recursive_find(Bucket, Redundancies, [Head|Rest], [], Marker, MaxKeys, LastKey, Transport, Socket) ->
-    recursive_find(Bucket, Redundancies, Rest, Head, Marker, MaxKeys, LastKey, Transport, Socket);
-recursive_find(Bucket, Redundancies, Acc, 
-               [#?METADATA{dsize = -1, key = Key}|Rest], Marker, MaxKeys, LastKey, Transport, Socket) ->
+recursive_find(Bucket, Redundancies, [Head|Rest], [],
+               Marker, MaxKeys, LastKey, Transport, Socket) ->
+    recursive_find(Bucket, Redundancies, Rest, Head,
+                   Marker, MaxKeys, LastKey, Transport, Socket);
+recursive_find(Bucket, Redundancies, Acc,
+               [#?METADATA{dsize = -1, key = Key}|Rest],
+               Marker, MaxKeys, LastKey, Transport, Socket) ->
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
                                         find_by_parent_dir,
                                         [Key, ?BIN_SLASH, Marker, MaxKeys],
                                         []) of
-        {ok, Meta} when is_list(Meta) =:= true ->
-            recursive_find(Bucket, Redundancies, [Meta | Acc], Rest, Marker, MaxKeys, LastKey, Transport, Socket);
-        {ok, _} ->
+        {ok, Metadata} when is_list(Metadata) ->
+            recursive_find(Bucket, Redundancies, [Metadata | Acc], Rest,
+                           Marker, MaxKeys, LastKey, Transport, Socket);
+        {ok,_} ->
             {error, invalid_format};
         Error ->
             Error
     end;
-recursive_find(Bucket, Redundancies, Acc, 
-               [#?METADATA{key = Key} = Head|Rest], Marker, MaxKeys, LastKey, Transport, Socket) ->
+recursive_find(Bucket, Redundancies, Acc,
+               [#?METADATA{key = Key} = Head|Rest],
+               Marker, MaxKeys, LastKey, Transport, Socket) ->
     case generate_list_file_xml(Bucket, Head) of
         error ->
-            recursive_find(Bucket, Redundancies, Acc, Rest, MaxKeys, MaxKeys, LastKey, Transport, Socket);
+            recursive_find(Bucket, Redundancies, Acc, Rest,
+                           MaxKeys, MaxKeys, LastKey, Transport, Socket);
         Bin ->
             case Transport:send(Socket, Bin) of
                 ok ->
-                    recursive_find(Bucket, Redundancies, Acc, Rest, Marker, MaxKeys - 1, Key, Transport, Socket);
+                    recursive_find(Bucket, Redundancies, Acc, Rest,
+                                   Marker, MaxKeys - 1, Key, Transport, Socket);
                 Error ->
                     Error
             end
