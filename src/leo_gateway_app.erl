@@ -28,6 +28,7 @@
 -include("leo_gateway.hrl").
 -include("leo_nfs_mount3.hrl").
 -include("leo_nfs_proto3.hrl").
+-include("leo_nlm_proto4.hrl").
 -include("leo_http.hrl").
 -include_lib("leo_cache/include/leo_cache.hrl").
 -undef(error).
@@ -290,6 +291,8 @@ after_process_1(Pid, Managers) ->
             MntdAcceptors = leo_misc:get_value('mountd_acceptors', NFS_Options, ?DEF_MOUNTD_ACCEPTORS),
             NFSdPort = leo_misc:get_value('nfsd_port', NFS_Options, ?DEF_NFSD_PORT),
             NFSdAcceptors = leo_misc:get_value('nfsd_acceptors', NFS_Options, ?DEF_NFSD_ACCEPTORS),
+            LockdPort = leo_misc:get_value('lockd_port', NFS_Options, ?DEF_LOCKD_PORT),
+            LockdAcceptors = leo_misc:get_value('lockd_acceptors', NFS_Options, ?DEF_LOCKD_ACCEPTORS),
 
             %% NFS:Argments for mountd
             MountdArgs = #nfs_rpc_app_arg{
@@ -322,7 +325,24 @@ after_process_1(Pid, Managers) ->
                             init_args    = [],
                             state        = []
                            },
-            ok = application:set_env(nfs_rpc_server, args, [MountdArgs, NFS_D_Args]),
+
+            %% NLM:Arguments for lockd
+            LockdArgs = #nfs_rpc_app_arg{
+                            ref          = lockd4,
+                            acceptor_num = LockdAcceptors,
+                            trans_opts   = [{port, LockdPort}],
+                            prg_num      = ?NLM_PROG,
+                            prg_name     = nlm_prog,
+                            prg_vsns     = [],
+                            vsn_lo       = ?NLM4_VERS,
+                            vsn_hi       = ?NLM4_VERS,
+                            use_pmap     = true,
+                            mod          = leo_nlm_proto4_svc,
+                            init_args    = [],
+                            state        = []
+                           },
+
+            ok = application:set_env(nfs_rpc_server, args, [MountdArgs, NFS_D_Args, LockdArgs]),
             ok = application:ensure_started(nfs_rpc_server);
         _ ->
             void
