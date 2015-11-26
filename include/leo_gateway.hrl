@@ -18,7 +18,6 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%====================================================================
-
 %%----------------------------------------------------------------------
 %% DEFAULT VALUES
 %%----------------------------------------------------------------------
@@ -95,6 +94,8 @@
                          num_of_chunks = 0  :: non_neg_integer(),
                          md5_context = <<>> :: binary()
                         }).
+
+
 
 
 %%----------------------------------------------------------------------
@@ -232,12 +233,23 @@
         end).
 
 %% NLM related
--define(DEF_NLM_HANDLER,    leo_nlm_lock_handler_ets).
+-define(DEF_NLM_HANDLER, leo_nlm_lock_handler_ets).
 -define(env_nlm_options(),
         case application:get_env(leo_gateway, nlm) of
             {ok, _NLM_Options} -> _NLM_Options;
             _ -> []
         end).
+
+-record(lock_record,{
+          start :: non_neg_integer(),
+          till  :: integer(),
+          len   :: non_neg_integer(),
+          owner :: binary(),
+          uppid :: integer(),
+          excl  :: boolean()
+         }).
+
+-define(NLM_LOCK_ETS, nlm_lock_ets).
 
 
 %%----------------------------------------------------------------------

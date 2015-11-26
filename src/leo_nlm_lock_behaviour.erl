@@ -20,9 +20,8 @@
 %%
 %%======================================================================
 -module(leo_nlm_lock_behaviour).
--author('Wilson Li').
 
--include("leo_nlm_lock.hrl").
+-include("leo_gateway.hrl").
 
 -callback(start_link(Args::any()) ->
                 {ok, any()}).

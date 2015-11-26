@@ -20,12 +20,11 @@
 %%
 %%======================================================================
 -module(leo_nlm_lock_handler_ets).
--author('Wilson Li').
 
 -behaviour(leo_nlm_lock_behaviour).
 -behaviour(gen_server).
 
--include("leo_nlm_lock.hrl").
+-include("leo_gateway.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 
 -export([start_link/1]).
