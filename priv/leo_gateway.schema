@@ -228,6 +228,15 @@
   {default, 15000}
  ]}.
 
+%% @doc Sending chunk length
+{mapping,
+ "http.sending_chunked_obj_len",
+ "leo_gateway.http.sending_chunked_obj_len",
+ [
+  {datatype, integer},
+  {default, 5242880}
+ ]}.
+
 %% @doc Synchronized time of a bucket property (second)
 {mapping,
  "bucket_prop_sync_interval",
