@@ -282,10 +282,10 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
                 Date = leo_http:rfc1123_date(leo_date:now()),
                 {ok, {SC, Body}} =
                     httpc:request(get, {lists:append(["http://",
-                                                      ?TARGET_HOST, ":8080/a/b?prefix=pre"]), [{"Date", Date}]},
+                                                      ?TARGET_HOST, ":8080/a/b?prefix=pre&delimiter=/"]), [{"Date", Date}]},
                                   [], [{full_result, false}]),
                 ?assertEqual(200, SC),
-                Xml = io_lib:format(?XML_OBJ_LIST, ["pre", "", "1000", "false", ""]),
+                Xml = io_lib:format(?XML_OBJ_LIST, ["pre", "1000", "", "false", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body))
             catch
                 throw:Reason ->
@@ -332,10 +332,9 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
                 Date = leo_http:rfc1123_date(leo_date:now()),
                 {ok, {SC,Body}} =
                     httpc:request(get, {lists:append(["http://",
-                                                      ?TARGET_HOST, ":8080/a/b?prefix=pre"]), [{"Date", Date}]},
+                                                      ?TARGET_HOST, ":8080/a/b/?prefix=pre&delimiter=/"]), [{"Date", Date}]},
                                   [], [{full_result, false}]),
                 ?assertEqual(200, SC),
-
                 {_XmlDoc, Rest} = xmerl_scan:string(Body),
                 ?assertEqual([], Rest)
             catch
