@@ -53,18 +53,18 @@
 -define(DEF_TIMEOUT, 30000).
 
 -record(state, {
-          key = <<>>    :: binary(),
+          key = <<>> :: binary(),
           transport_rec :: #transport_record{},
-          iterator      :: leo_large_object_commons:iterator()
+          iterator :: leo_large_object_commons:iterator()
          }).
 
 -record(req_info, {
-          key = <<>>        :: binary(),
+          key = <<>> :: binary(),
           chunk_key = <<>>  :: binary(),
-          request           :: any(),
-          metadata          :: #?METADATA{},
-          reference         :: reference(),
-          transport_rec     :: #transport_record{}
+          request :: any(),
+          metadata :: #?METADATA{},
+          reference :: reference(),
+          transport_rec :: #transport_record{}
          }).
 
 
@@ -119,10 +119,11 @@ handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
         {error, ?ERROR_ALREADY_HAS_TRAN} ->
             {ok, Ref} = put_begin_tran_with_retry(Key),
             TotalSize = Meta#?METADATA.dsize,
-            ReaderRep = case catch handle_read_loop(TotalSize, #req_info{key = Key,
-                                                                         request = Req,
-                                                                         reference = Ref,
-                                                                         transport_rec = TransportRec}) of
+            ReaderRep = case catch handle_read_loop(
+                                     TotalSize, #req_info{key = Key,
+                                                          request = Req,
+                                                          reference = Ref,
+                                                          transport_rec = TransportRec}) of
                         {'EXIT', Reason} ->
                             {error, Reason};
                         Ret ->
@@ -151,12 +152,13 @@ run(Key, _, _, {TotalOfChunkedObjs, Req, Meta, TransportRec}, _) ->
         {ok, R} -> R;
         _ -> undefined
     end,
-    Reply = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
-                                                      chunk_key = Key,
-                                                      request = Req,
-                                                      metadata = Meta,
-                                                      reference = Ref,
-                                                      transport_rec = TransportRec}),
+    Reply = handle_loop(TotalOfChunkedObjs,
+                        #req_info{key = Key,
+                                  chunk_key = Key,
+                                  request = Req,
+                                  metadata = Meta,
+                                  reference = Ref,
+                                  transport_rec = TransportRec}),
     case Reply of
         {ok, _Req} ->
             CacheMeta = #cache_meta{
@@ -169,14 +171,15 @@ run(Key, _, _, {TotalOfChunkedObjs, Req, Meta, TransportRec}, _) ->
     end,
     Reply.
 
-wait(_, _, _, _, _) ->
+wait(_,_,_,_,_) ->
     ok.
-resume(_, _, _, _, _) ->
+resume(_,_,_,_,_) ->
     ok.
-commit(_, _, _, _, _) ->
+commit(_,_,_,_,_) ->
     ok.
-rollback(_, _, _, _, _, _) ->
+rollback(_,_,_,_,_,_) ->
     ok.
+
 
 %%====================================================================
 %% INNTERNAL FUNCTION
@@ -247,6 +250,7 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
             {error, Cause}
     end.
 
+
 %% @doc Read Mode
 %% @private
 -spec(handle_read_loop(TotalSize, ReqInfo) ->
@@ -264,7 +268,7 @@ handle_read_loop(Offset, TotalSize, #req_info{key = Key,
     ReadSize = case file:read(Ref, 1024 * 1024) of
                    {ok, Bin} ->
                        #transport_record{transport = Transport,
-                                         socket    = Socket,
+                                         socket = Socket,
                                          sending_chunked_obj_len = SendChunkLen} = TransportRec,
                        leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen),
                        byte_size(Bin);

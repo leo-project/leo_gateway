@@ -690,26 +690,26 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
 
     ReqParams =
         request_params(
-          Req_2, #req_params{handler           = ?MODULE,
-                             path              = Path_1,
-                             bucket            = Bucket,
-                             token_length      = TokenLen,
-                             min_layers        = NumOfMinLayers,
-                             max_layers        = NumOfMaxLayers,
-                             qs_prefix         = Prefix,
-                             has_inner_cache   = HasInnerCache,
-                             is_cached         = true,
-                             is_dir            = IsDir,
-                             is_acl            = IsACL,
-                             max_chunked_objs  = Props#http_options.max_chunked_objs,
-                             max_len_of_obj    = Props#http_options.max_len_of_obj,
-                             chunked_obj_len   = Props#http_options.chunked_obj_len,
-                             custom_header_settings  = CustomHeaderSettings,
-                             timeout_for_header      = Props#http_options.timeout_for_header,
-                             timeout_for_body        = Props#http_options.timeout_for_body,
+          Req_2, #req_params{handler = ?MODULE,
+                             path = Path_1,
+                             bucket = Bucket,
+                             token_length = TokenLen,
+                             min_layers = NumOfMinLayers,
+                             max_layers = NumOfMaxLayers,
+                             qs_prefix = Prefix,
+                             has_inner_cache = HasInnerCache,
+                             is_cached = true,
+                             is_dir = IsDir,
+                             is_acl = IsACL,
+                             max_chunked_objs = Props#http_options.max_chunked_objs,
+                             max_len_of_obj = Props#http_options.max_len_of_obj,
+                             chunked_obj_len = Props#http_options.chunked_obj_len,
+                             custom_header_settings = CustomHeaderSettings,
+                             timeout_for_header = Props#http_options.timeout_for_header,
+                             timeout_for_body = Props#http_options.timeout_for_body,
                              sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                             threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
+                             threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len}),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
     AuthRet_2 = case AuthRet of
                     {error, Reason} ->
@@ -729,7 +729,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                                               SignParams
                                       end,
                                   AWSChunkSignParams = #aws_chunk_sign_params{sign_head = SignHead,
-                                                                              sign_key  = SignKey,
+                                                                              sign_key = SignKey,
                                                                               prev_sign = Signature,
                                                                               chunk_sign= <<>>},
                                   AWSChunkDecState = #aws_chunk_decode_state{buffer = <<>>,
@@ -1067,7 +1067,6 @@ handle_multi_upload_1(true, Req, Path, UploadId,
 handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen,_,_) ->
     ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
                      ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req).
-
 
 %% @private
 -spec(handle_multi_upload_2({ok, Bin, Req}|{error, Cause}, Req, Path, ChunkedLen) ->
@@ -1951,7 +1950,7 @@ generate_list_file_xml(Bucket, #?METADATA{key = Key,
                    leo_http:web_date(TS),
                    leo_hex:integer_to_hex(CS, 32),
                    integer_to_list(Length)]);
-generate_list_file_xml(_, _) ->
+generate_list_file_xml(_,_) ->
     error.
 
 
@@ -1973,9 +1972,9 @@ recursive_find(Bucket, Redundancies, MetadataList,
     recursive_find(Bucket, Redundancies, [], MetadataList,
                    Marker, MaxKeys, <<>>, Transport, Socket).
 
-recursive_find(_Bucket, _Redundancies, _, _, _, 0, LastKey, _, _) ->
+recursive_find(_Bucket, _Redundancies,_,_,_, 0, LastKey,_,_) ->
     {ok, true, LastKey};
-recursive_find(_Bucket, _Redundancies, [], [], _, _, _, _, _) ->
+recursive_find(_Bucket, _Redundancies,[],[],_,_,_,_,_) ->
     {ok, false, <<>>};
 recursive_find(Bucket, Redundancies, [Head|Rest], [],
                Marker, MaxKeys, LastKey, Transport, Socket) ->

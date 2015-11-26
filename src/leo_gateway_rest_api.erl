@@ -41,6 +41,7 @@
 
 -compile({inline, [handle/2, handle_1/3]}).
 
+
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
@@ -90,17 +91,20 @@ onresponse(CacheCondition) ->
 %%--------------------------------------------------------------------
 %% @doc GET buckets and dirs
 get_bucket(Req, Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                       ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 
 %% @doc PUT buckets and dirs
 put_bucket(Req, Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                       ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 
 %% @doc DELETE buckets and dirs
 delete_bucket(Req, Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                       ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 %% @doc HEAD buckets and dirs
 head_bucket(Req,_Key,_Params) ->
@@ -149,7 +153,8 @@ head_object(Req, Key, Params) ->
 -spec(range_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 range_object(Req, Key,_Params) ->
-    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
+    ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                       ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req).
 
 
 %%--------------------------------------------------------------------
@@ -171,34 +176,35 @@ gen_key(Req) ->
 %% @doc Hande an http-request
 %% @private
 handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, _CustomHeaderSettings, Props] = State, Path) ->
-    TokenLen   = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
+    TokenLen = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod = cowboy_req:get(method, Req),
 
     case (TokenLen >= NumOfMinLayers) of
         true ->
-            ReqParams  = #req_params{handler           = ?MODULE,
-                                     path              = Path,
-                                     token_length      = TokenLen,
-                                     min_layers        = NumOfMinLayers,
-                                     max_layers        = NumOfMaxLayers,
-                                     has_inner_cache   = HasInnerCache,
-                                     is_cached         = true,
-                                     max_chunked_objs  = Props#http_options.max_chunked_objs,
-                                     max_len_of_obj    = Props#http_options.max_len_of_obj,
-                                     chunked_obj_len   = Props#http_options.chunked_obj_len,
-                                     timeout_for_header      = Props#http_options.timeout_for_header,
-                                     timeout_for_body        = Props#http_options.timeout_for_body,
+            ReqParams  = #req_params{handler = ?MODULE,
+                                     path = Path,
+                                     token_length = TokenLen,
+                                     min_layers = NumOfMinLayers,
+                                     max_layers = NumOfMaxLayers,
+                                     has_inner_cache = HasInnerCache,
+                                     is_cached = true,
+                                     max_chunked_objs = Props#http_options.max_chunked_objs,
+                                     max_len_of_obj = Props#http_options.max_len_of_obj,
+                                     chunked_obj_len = Props#http_options.chunked_obj_len,
+                                     timeout_for_header = Props#http_options.timeout_for_header,
+                                     timeout_for_body = Props#http_options.timeout_for_body,
                                      sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
                                      reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                                     threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len},
+                                     threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len},
             handle_2(Req, HTTPMethod, Path, ReqParams, State);
         false when HTTPMethod == ?HTTP_GET ->
             ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);
         false  ->
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument, ?XML_ERROR_MSG_InvalidArgument, Path, <<>>, Req)
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                               ?XML_ERROR_MSG_InvalidArgument, Path, <<>>, Req)
     end.
 
-
+%% @private
 handle_2(Req, ?HTTP_POST, Path, Params, State) ->
     handle_2(Req, ?HTTP_PUT, Path, Params, State);
 handle_2(Req1, HTTPMethod, Path, Params, State) ->
@@ -218,4 +224,3 @@ handle_2(Req1, HTTPMethod, Path, Params, State) ->
             {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State}
     end.
-
