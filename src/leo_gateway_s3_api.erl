@@ -731,7 +731,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                                   AWSChunkSignParams = #aws_chunk_sign_params{sign_head = SignHead,
                                                                               sign_key = SignKey,
                                                                               prev_sign = Signature,
-                                                                              chunk_sign= <<>>},
+                                                                              chunk_sign = <<>>},
                                   AWSChunkDecState = #aws_chunk_decode_state{buffer = <<>>,
                                                                              dec_state = wait_size,
                                                                              chunk_offset = 0,
@@ -769,7 +769,8 @@ handle_2({error, not_found}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req_2, State};
 handle_2({error, already_yours}, Req,_,Key,_,State) ->
-    {ok, Req_2} = ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou, ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req),
+    {ok, Req_2} = ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou,
+                                  ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req),
     {ok, Req_2, State};
 handle_2({error, _Cause}, Req,_,Key,_,State) ->
     {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER],
