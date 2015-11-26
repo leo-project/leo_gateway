@@ -18,7 +18,6 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%====================================================================
-
 %%----------------------------------------------------------------------
 %% DEFAULT VALUES
 %%----------------------------------------------------------------------
@@ -95,6 +94,8 @@
                          num_of_chunks = 0  :: non_neg_integer(),
                          md5_context = <<>> :: binary()
                         }).
+
+
 
 
 %%----------------------------------------------------------------------
@@ -222,12 +223,33 @@
 -define(DEF_NFSD_PORT,          2049).
 -define(DEF_NFSD_ACCEPTORS,     128).
 -define(DEF_NFSD_MAX_FILE_SIZE, 18446744073709551615). %% max value in 64bit
+-define(DEF_LOCKD_PORT,         22051).
+-define(DEF_LOCKD_ACCEPTORS,    128).
 
 -define(env_nfs_options(),
         case application:get_env(leo_gateway, nfs) of
             {ok, _NFS_Options} -> _NFS_Options;
             _ -> []
         end).
+
+%% NLM related
+-define(DEF_NLM_HANDLER, leo_nlm_lock_handler_ets).
+-define(env_nlm_options(),
+        case application:get_env(leo_gateway, nlm) of
+            {ok, _NLM_Options} -> _NLM_Options;
+            _ -> []
+        end).
+
+-record(lock_record,{
+          start :: non_neg_integer(),
+          till  :: integer(),
+          len   :: non_neg_integer(),
+          owner :: binary(),
+          uppid :: integer(),
+          excl  :: boolean()
+         }).
+
+-define(NLM_LOCK_ETS, nlm_lock_ets).
 
 
 %%----------------------------------------------------------------------
