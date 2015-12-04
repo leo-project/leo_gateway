@@ -501,6 +501,9 @@
           handler                    :: atom(),                 %% http-handler
           path = <<>>                :: binary(),               %% path (uri)
           bucket = <<>>              :: binary(),               %% bucket (for s3-api)
+          redundancy_method          :: atom(),                 %% redundancy method
+          ec_method                  :: atom(),                 %% erasure-coding method
+          ec_params                  :: {pos_integer(), pos_integer()}|undefined, %% erasure-coding params
           access_key_id = <<>>       :: binary(),               %% s3's access-key-id
           token_length = 0           :: non_neg_integer(),      %% length of tokened path
           min_layers = 0             :: non_neg_integer(),      %% acceptable # of min layers
