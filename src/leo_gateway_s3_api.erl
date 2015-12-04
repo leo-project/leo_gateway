@@ -688,28 +688,28 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                     true
             end,
 
-    ReqParams =
-        request_params(
-          Req_2, #req_params{handler = ?MODULE,
-                             path = Path_1,
-                             bucket = Bucket,
-                             token_length = TokenLen,
-                             min_layers = NumOfMinLayers,
-                             max_layers = NumOfMaxLayers,
-                             qs_prefix = Prefix,
-                             has_inner_cache = HasInnerCache,
-                             is_cached = true,
-                             is_dir = IsDir,
-                             is_acl = IsACL,
-                             max_chunked_objs = Props#http_options.max_chunked_objs,
-                             max_len_of_obj = Props#http_options.max_len_of_obj,
-                             chunked_obj_len = Props#http_options.chunked_obj_len,
-                             custom_header_settings = CustomHeaderSettings,
-                             timeout_for_header = Props#http_options.timeout_for_header,
-                             timeout_for_body = Props#http_options.timeout_for_body,
-                             sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
-                             reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                             threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len}),
+    ReqParams = request_params(Req_2,
+                               #req_params{
+                                  handler = ?MODULE,
+                                  path = Path_1,
+                                  bucket = Bucket,
+                                  token_length = TokenLen,
+                                  min_layers = NumOfMinLayers,
+                                  max_layers = NumOfMaxLayers,
+                                  qs_prefix = Prefix,
+                                  has_inner_cache = HasInnerCache,
+                                  is_cached = true,
+                                  is_dir = IsDir,
+                                  is_acl = IsACL,
+                                  max_chunked_objs = Props#http_options.max_chunked_objs,
+                                  max_len_of_obj = Props#http_options.max_len_of_obj,
+                                  chunked_obj_len = Props#http_options.chunked_obj_len,
+                                  custom_header_settings = CustomHeaderSettings,
+                                  timeout_for_header = Props#http_options.timeout_for_header,
+                                  timeout_for_body = Props#http_options.timeout_for_body,
+                                  sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
+                                  reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                                  threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len}),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
     AuthRet_2 = case AuthRet of
                     {error, Reason} ->
@@ -745,42 +745,41 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                       _ ->
                           ReqParams
                   end,
-
     handle_2(AuthRet_2, Req_2, HTTPMethod, Path_1, ReqParams_2, State).
 
 
 %% @doc Handle a request (sub)
 %% @private
--spec(handle_2(Ret, Req, HttpVerb, State, Bucket, Path) ->
+-spec(handle_2(Ret, Req, HttpVerb, Path, ReqParams, State) ->
              {ok, Req, State} when Ret::{ok, AccessKeyId} | {error, Cause},
                                    AccessKeyId::binary(),
                                    Cause::any(),
                                    Req::cowboy_req:req(),
                                    HttpVerb::binary(),
-                                   State::[any()],
-                                   Bucket::binary(),
-                                   Path::binary()).
-handle_2({error, unmatch}, Req,_,Key,_,State) ->
+                                   Path::binary(),
+                                   ReqParams::#req_params{},
+                                   State::[any()]).
+handle_2({error, unmatch}, Req,_HttpVerb, Key,_ReqParams, State) ->
     {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER],
                                    ?XML_ERROR_CODE_SignatureDoesNotMatch,
                                    ?XML_ERROR_MSG_SignatureDoesNotMatch, Key, <<>>, Req),
     {ok, Req_2, State};
-handle_2({error, not_found}, Req,_,Key,_,State) ->
+handle_2({error, not_found}, Req,_HttpVerb, Key,_ReqParams, State) ->
     {ok, Req_2} = ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req),
     {ok, Req_2, State};
-handle_2({error, already_yours}, Req,_,Key,_,State) ->
+handle_2({error, already_yours}, Req,_HttpVerb, Key,_ReqParams, State) ->
     {ok, Req_2} = ?reply_conflict([?SERVER_HEADER], ?XML_ERROR_CODE_BucketAlreadyOwnedByYou,
                                   ?XML_ERROR_MSG_BucketAlreadyOwnedByYou, Key, <<>>, Req),
     {ok, Req_2, State};
-handle_2({error, _Cause}, Req,_,Key,_,State) ->
+handle_2({error, _Cause}, Req,_HttpVerb, Key,_ReqParams,State) ->
     {ok, Req_2} = ?reply_forbidden([?SERVER_HEADER],
                                    ?XML_ERROR_CODE_AccessDenied,
                                    ?XML_ERROR_MSG_AccessDenied, Key, <<>>, Req),
     {ok, Req_2, State};
 
 %% For Multipart Upload - Initiation
-handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
-                                                            is_upload = true}, State) ->
+handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key, #req_params{path = Path,
+                                                              is_upload = true}, State) ->
     %% remove a registered object with 'touch-command'
     %% from the cache
     _ = (catch leo_cache_api:delete(Path)),
@@ -820,7 +819,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, Key,
                                      ?XML_ERROR_MSG_EntityTooLarge,
                                      Key, <<>>, Req),
     {ok, Req_2, State};
-handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, _,
+
+handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT,_Key,
          #req_params{path = Path,
                      is_upload = false,
                      upload_id = UploadId,
@@ -847,7 +847,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, _,
                 ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
         end,
     {ok, Req_2, State};
-handle_2({ok,_AccessKeyId}, Req, ?HTTP_DELETE, _,
+
+handle_2({ok,_AccessKeyId}, Req, ?HTTP_DELETE,_Key,
          #req_params{path = Path,
                      upload_id = UploadId}, State) when UploadId /= <<>> ->
     _ = leo_gateway_rpc_handler:put(Path, <<>>, 0),
@@ -857,7 +858,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_DELETE, _,
     {ok, Req_2, State};
 
 %% For Multipart Upload - Completion
-handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _,
+handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key,
          #req_params{path = Path,
                      chunked_obj_len = ChunkedLen,
                      is_upload = false,
@@ -1325,6 +1326,7 @@ auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
                  false ->
                      ?BIN_EMPTY
              end,
+    ?debugVal(Bucket),
 
     case leo_s3_bucket:get_acls(Bucket) of
         {ok, ACLs} ->
