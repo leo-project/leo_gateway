@@ -42,7 +42,7 @@
 -export([set_endpoint/1, delete_endpoint/1,
          update_acl/3]).
 
--export([add_bucket/4, delete_bucket/3]).
+-export([add_bucket/4, delete_bucket/3, update_bucket/1]).
 
 
 %%----------------------------------------------------------------------
@@ -237,6 +237,7 @@ update_acl(?CANNED_ACL_AUTHENTICATED_READ, AccessKey, Bucket) ->
 update_acl(_,_,_) ->
     {error, invalid_args}.
 
+
 %% @doc Add a bucket(S3-API)
 %%
 -spec(add_bucket(binary(), binary(), string(), atom()) ->
@@ -244,9 +245,18 @@ update_acl(_,_,_) ->
 add_bucket(AccessKey, Bucket, CannedACL, _Atom) ->
     leo_s3_bucket:put(AccessKey, Bucket, CannedACL, _Atom, ets).
 
+
 %% @doc Delete a bucket(S3-API)
 %%
 -spec(delete_bucket(binary(), binary(), atom()) ->
              ok | {error, any()}).
 delete_bucket(AccessKey, Bucket, _Atom) ->
     leo_s3_bucket:delete(AccessKey, Bucket, _Atom).
+
+
+%% @doc Update a bucket(S3-API)
+%%
+-spec(update_bucket(Bucket) ->
+             ok | {error, any()} when Bucket::#?BUCKET{}).
+update_bucket(Bucket) ->
+    leo_s3_bucket:put(Bucket).
