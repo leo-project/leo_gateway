@@ -319,7 +319,6 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
                                     checksum   = 0,
                                     ring_hash  = 0,
                                     cluster_id = [],
-                                    num_of_replicas = 0,
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    }
@@ -451,7 +450,6 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     checksum   = 0,
                                     ring_hash  = 0,
                                     cluster_id = [],
-                                    num_of_replicas = 0,
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    }
@@ -580,7 +578,6 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     checksum   = 0,
                                     ring_hash  = 0,
                                     cluster_id = [],
-                                    num_of_replicas = 0,
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    },
@@ -632,7 +629,6 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     checksum   = 0,
                                     ring_hash  = 0,
                                     cluster_id = [],
-                                    num_of_replicas = 0,
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    }
@@ -654,7 +650,6 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     checksum   = 0,
                                     ring_hash  = 0,
                                     cluster_id = [],
-                                    num_of_replicas = 0,
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    },
