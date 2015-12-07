@@ -534,12 +534,12 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
 
 %% @doc POST/PUT operation on Objects. COPY
 %% @private
-put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket = Bucket} = Params) ->
+put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket_name = BucketName} = Params) ->
     Size = size(Bin),
 
     case leo_gateway_rpc_handler:put(Key, Bin, Size) of
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
-            ?access_log_put(Bucket, Key, Size, ?HTTP_ST_OK),
+            ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
             resp_copy_obj_xml(Req, Meta);
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
             put_object_2(Req, Key, Meta, Params);
@@ -562,10 +562,10 @@ put_object_2(Req, Key, Meta, Params) ->
     end.
 
 %% @private
-put_object_3(Req, #?METADATA{key = Key, dsize = Size} = Meta, #req_params{bucket = Bucket}) ->
+put_object_3(Req, #?METADATA{key = Key, dsize = Size} = Meta, #req_params{bucket_name = BucketName}) ->
     case leo_gateway_rpc_handler:delete(Meta#?METADATA.key) of
         ok ->
-            ?access_log_delete(Bucket, Key, Size, ?HTTP_ST_NO_CONTENT),
+            ?access_log_delete(BucketName, Key, Size, ?HTTP_ST_NO_CONTENT),
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
@@ -656,13 +656,13 @@ get_bucket_and_path(Req, Path) ->
 
 %% @doc Handle an http-request
 %% @private
--spec(handle_1(Req, State, Bucket, Path) ->
+-spec(handle_1(Req, State, BucketName, Path) ->
              {ok, Req, State} when Req::cowboy_req:req(),
                                    State::[any()],
-                                   Bucket::binary(),
+                                   BucketName::binary(),
                                    Path::binary()).
 handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
-               HasInnerCache, CustomHeaderSettings, Props] = State, Bucket, Path) ->
+               HasInnerCache, CustomHeaderSettings, Props] = State, BucketName, Path) ->
     BinPart = binary:part(Path, {byte_size(Path)-1, 1}),
     TokenLen = length(binary:split(Path, [?BIN_SLASH], [global, trim])),
     HTTPMethod = cowboy_req:get(method, Req),
@@ -692,7 +692,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                                #req_params{
                                   handler = ?MODULE,
                                   path = Path_1,
-                                  bucket = Bucket,
+                                  bucket_name = BucketName,
                                   token_length = TokenLen,
                                   min_layers = NumOfMinLayers,
                                   max_layers = NumOfMaxLayers,
@@ -794,8 +794,8 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key, #req_params{path = Path,
                << Path/binary, ?STR_NEWLINE, UploadIdBin/binary >>, <<>>, 0) of
             {ok, _ETag} ->
                 %% Response xml to a client
-                [Bucket|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
-                XML = gen_upload_initiate_xml(Bucket, Path_1, UploadId),
+                [BucketName|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
+                XML = gen_upload_initiate_xml(BucketName, Path_1, UploadId),
                 ?reply_ok([?SERVER_HEADER], XML, Req);
             {error, unavailable} ->
                 ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
@@ -1106,10 +1106,10 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
                     case leo_gateway_rpc_handler:put(Path, <<>>, Len, ChildObjSize,
                                                      TotalUploadedObjs, ETag1) of
                         {ok,_} ->
-                            [Bucket|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
+                            [BucketName|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
                             ETag2 = leo_hex:integer_to_hex(ETag1, 32),
                             XML = gen_upload_completion_xml(
-                                    Bucket, Path_1, ETag2, TotalUploadedObjs),
+                                    BucketName, Path_1, ETag2, TotalUploadedObjs),
                             ?reply_ok([?SERVER_HEADER], XML, Req);
                         {error, unavailable} ->
                             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
@@ -1182,30 +1182,30 @@ gen_upload_key(Path) ->
 
 %% @doc Generate an update-initiate xml
 %% @private
--spec(gen_upload_initiate_xml(BucketBin, Path, UploadId) ->
-             Ret when BucketBin::binary(),
+-spec(gen_upload_initiate_xml(BucketNameBin, Path, UploadId) ->
+             Ret when BucketNameBin::binary(),
                       Path::[binary()],
                       UploadId::binary(),
                       Ret::string()).
-gen_upload_initiate_xml(BucketBin, Path, UploadId) ->
-    Bucket = binary_to_list(BucketBin),
+gen_upload_initiate_xml(BucketNameBin, Path, UploadId) ->
+    BucketName = binary_to_list(BucketNameBin),
     Key = gen_upload_key(Path),
-    io_lib:format(?XML_UPLOAD_INITIATION, [Bucket, Key, UploadId]).
+    io_lib:format(?XML_UPLOAD_INITIATION, [BucketName, Key, UploadId]).
 
 
 %% @doc Generate an update-completion xml
 %% @private
--spec(gen_upload_completion_xml(BucketBin, Path, ETag, Total) ->
-             Ret when BucketBin::binary(),
+-spec(gen_upload_completion_xml(BucketNameBin, Path, ETag, Total) ->
+             Ret when BucketNameBin::binary(),
                       Path::[binary()],
                       ETag::binary(),
                       Total::non_neg_integer(),
                       Ret::string()).
-gen_upload_completion_xml(BucketBin, Path, ETag, Total) ->
-    Bucket = binary_to_list(BucketBin),
+gen_upload_completion_xml(BucketNameBin, Path, ETag, Total) ->
+    BucketName = binary_to_list(BucketNameBin),
     TotalStr = integer_to_list(Total),
     Key = gen_upload_key(Path),
-    io_lib:format(?XML_UPLOAD_COMPLETION, [Bucket, Key, ETag, TotalStr]).
+    io_lib:format(?XML_UPLOAD_COMPLETION, [BucketName, Key, ETag, TotalStr]).
 
 
 %% @doc Generate copy-obj's xml
@@ -1320,31 +1320,32 @@ is_public_read_write([H|Rest]) ->
                                  SignKey::binary(),
                                  Cause::any()).
 auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
-    Bucket = case (TokenLen >= 1) of
-                 true ->
-                     hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
-                 false ->
-                     ?BIN_EMPTY
-             end,
-    ?debugVal(Bucket),
+    BucketName = case (TokenLen >= 1) of
+                     true ->
+                         erlang:hd(leo_misc:binary_tokens(Path, ?BIN_SLASH));
+                     false ->
+                         ?BIN_EMPTY
+                 end,
+    ?debugVal(BucketName),
 
-    case leo_s3_bucket:get_acls(Bucket) of
-        {ok, ACLs} ->
-            auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
+    case leo_s3_bucket:get_latest_bucket(BucketName) of
+        {ok, #?BUCKET{acls = ACLs} = _Bucket} ->
+            ?debugVal(_Bucket),
+            auth(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams);
         not_found ->
-            auth(Req, HTTPMethod, Path, TokenLen, Bucket, [], ReqParams);
+            auth(Req, HTTPMethod, Path, TokenLen, BucketName, [], ReqParams);
         {error, Cause} ->
             {error, Cause}
     end.
 
 %% @private
--spec(auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) ->
+-spec(auth(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams) ->
              {ok, AccessKeyId, {Signature, SignHead, SignKey}|undefined} |
              {error, Cause} when Req::cowboy_req:req(),
                                  HTTPMethod::binary(),
                                  Path::binary(),
                                  TokenLen::non_neg_integer(),
-                                 Bucket::binary(),
+                                 BucketName::binary(),
                                  ACLs::[binary()],
                                  ReqParams::#req_params{},
                                  AccessKeyId::binary(),
@@ -1352,36 +1353,36 @@ auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
                                  SignHead::binary(),
                                  SignKey::binary(),
                                  Cause::any()).
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs,
+auth(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs,
      #req_params{is_multi_delete = true} = ReqParams) when TokenLen =< 1 ->
     case is_public_read_write(ACLs) of
         true ->
             {ok, <<>>, undefined};
         false ->
-            auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
+            auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams)
     end;
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen =< 1 ->
-    auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams);
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1,
-                                                                    (HTTPMethod == ?HTTP_POST orelse
-                                                                     HTTPMethod == ?HTTP_PUT  orelse
-                                                                     HTTPMethod == ?HTTP_DELETE) ->
+auth(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams) when TokenLen =< 1 ->
+    auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams);
+auth(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams) when TokenLen > 1,
+                                                                        (HTTPMethod == ?HTTP_POST orelse
+                                                                         HTTPMethod == ?HTTP_PUT  orelse
+                                                                         HTTPMethod == ?HTTP_DELETE) ->
     case is_public_read_write(ACLs) of
         true ->
             {ok, <<>>, undefined};
         false ->
-            auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
+            auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams)
     end;
-auth(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams) when TokenLen > 1 ->
+auth(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams) when TokenLen > 1 ->
     case is_public_read(ACLs) of
         true ->
             {ok, <<>>, undefined};
         false ->
-            auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, ACLs, ReqParams)
+            auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams)
     end.
 
 %% @private
-auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsACL}) ->
+auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, _ACLs, #req_params{is_acl = IsACL}) ->
     case cowboy_req:header(?HTTP_HEAD_AUTHORIZATION, Req) of
         {undefined, _} ->
             {error, undefined};
@@ -1415,7 +1416,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                     Token_2 = leo_misc:binary_tokens(RawURI, << ?STR_SLASH >>),
                     Path_1 = case (length(Token_1) /= length(Token_2)) of
                                  true ->
-                                     << ?STR_SLASH, Bucket/binary, RawURI/binary >>;
+                                     << ?STR_SLASH, BucketName/binary, RawURI/binary >>;
                                  false ->
                                      case RawURI of
                                          << ?STR_SLASH, _/binary >> ->
@@ -1456,7 +1457,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, Bucket, _ACLs, #req_params{is_acl = IsAC
                                               content_md5 = ?http_header(Req, ?HTTP_HEAD_CONTENT_MD5),
                                               content_type = ?http_header(Req, ?HTTP_HEAD_CONTENT_TYPE),
                                               date = ?http_header(Req, ?HTTP_HEAD_DATE),
-                                              bucket = Bucket,
+                                              bucket = BucketName,
                                               raw_uri = RawURI,
                                               requested_uri = Path_1,
                                               query_str = QStr_3,
@@ -1495,18 +1496,18 @@ get_bucket_1(AccessKeyId, ?BIN_SLASH, _Delimiter, _Marker, _MaxKeys, none) ->
         Error ->
             Error
     end;
-get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
+get_bucket_1(_AccessKeyId, BucketName, _Delimiter, _Marker, 0, Prefix) ->
     Prefix_1 = case Prefix of
                    none ->
                        <<>>;
                    _ ->
                        Prefix
                end,
-    Path = << Bucket/binary, Prefix_1/binary >>,
+    Path = << BucketName/binary, Prefix_1/binary >>,
     {ok, generate_bucket_xml(Path, Prefix_1, [], 0)};
-get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
-    ?debug("get_bucket_1/6", "Bucket: ~p, Marker: ~p, MaxKeys: ~p",
-           [Bucket, Marker, MaxKeys]),
+get_bucket_1(_AccessKeyId, BucketName, none, Marker, MaxKeys, Prefix) ->
+    ?debug("get_bucket_1/6", "BucketName: ~p, Marker: ~p, MaxKeys: ~p",
+           [BucketName, Marker, MaxKeys]),
     Prefix_1 = case Prefix of
                    none ->
                        <<>>;
@@ -1515,8 +1516,8 @@ get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
                end,
 
     {ok, #redundancies{nodes = Redundancies}} =
-        leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
-    Key = << Bucket/binary, Prefix_1/binary >>,
+        leo_redundant_manager_api:get_redundancies_by_key(get, BucketName),
+    Key = << BucketName/binary, Prefix_1/binary >>,
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
@@ -1528,7 +1529,7 @@ get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
                                HeadBin = generate_list_head_xml(Prefix_1, MaxKeys, <<>>),
                                ok = Transport:send(Socket, HeadBin),
                                {ok, IsTruncated, NextMarker} =
-                                   recursive_find(Bucket, Redundancies, Metadata,
+                                   recursive_find(BucketName, Redundancies, Metadata,
                                                   Marker, MaxKeys, Transport, Socket),
                                FootBin = generate_list_foot_xml(IsTruncated, NextMarker),
                                ok = Transport:send(Socket, FootBin)
@@ -1539,7 +1540,7 @@ get_bucket_1(_AccessKeyId, Bucket, none, Marker, MaxKeys, Prefix) ->
         Error ->
             Error
     end;
-get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
+get_bucket_1(_AccessKeyId, BucketName, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none ->
                        <<>>;
@@ -1548,8 +1549,8 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
                end,
 
     {ok, #redundancies{nodes = Redundancies}} =
-        leo_redundant_manager_api:get_redundancies_by_key(get, Bucket),
-    Path = << Bucket/binary, Prefix_1/binary >>,
+        leo_redundant_manager_api:get_redundancies_by_key(get, BucketName),
+    Path = << BucketName/binary, Prefix_1/binary >>,
 
     case leo_gateway_rpc_handler:invoke(Redundancies,
                                         leo_storage_handler_directory,
@@ -1570,56 +1571,56 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
 %% @doc Put a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketPUT.html
--spec(put_bucket_1(CannedACL, AccessKeyId, Bucket) ->
+-spec(put_bucket_1(CannedACL, AccessKeyId, BucketName) ->
              ok | {error, Cause} when CannedACL::string(),
                                       AccessKeyId::binary(),
-                                      Bucket::binary(),
+                                      BucketName::binary(),
                                       Cause::any()).
-put_bucket_1([], AccessKeyId, Bucket) ->
-    leo_s3_bucket:put(AccessKeyId, Bucket);
-put_bucket_1(CannedACL, AccessKeyId, Bucket) ->
-    leo_s3_bucket:put(AccessKeyId, Bucket, CannedACL).
+put_bucket_1([], AccessKeyId, BucketName) ->
+    leo_s3_bucket:put(AccessKeyId, BucketName);
+put_bucket_1(CannedACL, AccessKeyId, BucketName) ->
+    leo_s3_bucket:put(AccessKeyId, BucketName, CannedACL).
 
 
 %% @doc Put a bucket ACL
 %% @private
 %% @see http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTacl.html
--spec(put_bucket_acl_1(CannedACL, AccessKeyId, Bucket) ->
+-spec(put_bucket_acl_1(CannedACL, AccessKeyId, BucketName) ->
              ok | {error, Cause} when CannedACL::string(),
                                       AccessKeyId::binary(),
-                                      Bucket::binary(),
+                                      BucketName::binary(),
                                       Cause::any()).
-put_bucket_acl_1(?CANNED_ACL_PRIVATE, AccessKeyId, Bucket) ->
-    leo_s3_bucket:update_acls2private(AccessKeyId, Bucket);
-put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ, AccessKeyId, Bucket) ->
-    leo_s3_bucket:update_acls2public_read(AccessKeyId, Bucket);
-put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ_WRITE, AccessKeyId, Bucket) ->
-    leo_s3_bucket:update_acls2public_read_write(AccessKeyId, Bucket);
-put_bucket_acl_1(_, _AccessKeyId, _Bucket) ->
+put_bucket_acl_1(?CANNED_ACL_PRIVATE, AccessKeyId, BucketName) ->
+    leo_s3_bucket:update_acls2private(AccessKeyId, BucketName);
+put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ, AccessKeyId, BucketName) ->
+    leo_s3_bucket:update_acls2public_read(AccessKeyId, BucketName);
+put_bucket_acl_1(?CANNED_ACL_PUBLIC_READ_WRITE, AccessKeyId, BucketName) ->
+    leo_s3_bucket:update_acls2public_read_write(AccessKeyId, BucketName);
+put_bucket_acl_1(_, _AccessKeyId, _BucketName) ->
     {error, not_supported}.
 
 
 %% @doc Delete a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketDELETE.html
--spec(delete_bucket_1(AccessKeyId, Bucket) ->
+-spec(delete_bucket_1(AccessKeyId, BucketName) ->
              ok |  not_found | {error, Cause} when AccessKeyId::binary(),
-                                                   Bucket::binary()|none,
+                                                   BucketName::binary()|none,
                                                    Cause::any()).
-delete_bucket_1(AccessKeyId, Bucket) ->
-    Bucket_2 = formalize_bucket(Bucket),
+delete_bucket_1(AccessKeyId, BucketName) ->
+    BucketName_2 = formalize_bucket(BucketName),
     ManagerNodes = ?env_manager_nodes(leo_gateway),
-    delete_bucket_2(ManagerNodes, AccessKeyId, Bucket_2).
+    delete_bucket_2(ManagerNodes, AccessKeyId, BucketName_2).
 
 %% @private
--spec(delete_bucket_2(NodeL, AccessKeyId, Bucket) ->
+-spec(delete_bucket_2(NodeL, AccessKeyId, BucketName) ->
              ok |  not_found | {error, Cause} when NodeL::[atom()],
                                                    AccessKeyId::binary(),
-                                                   Bucket::binary()|none,
+                                                   BucketName::binary()|none,
                                                    Cause::any()).
 delete_bucket_2([],_,_) ->
     {error, ?ERR_TYPE_INTERNAL_ERROR};
-delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
+delete_bucket_2([Node|Rest], AccessKeyId, BucketName) ->
     Node_1 = case is_list(Node) of
                  true ->
                      list_to_atom(Node);
@@ -1628,26 +1629,26 @@ delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
              end,
 
     case rpc:call(Node_1, leo_manager_api, delete_bucket,
-                  [AccessKeyId, Bucket], ?DEF_TIMEOUT) of
+                  [AccessKeyId, BucketName], ?DEF_TIMEOUT) of
         ok ->
             ok;
         {error, not_found} ->
             not_found;
         {_, Cause} ->
             ?warn("delete_bucket_2/3", [{cause, Cause}]),
-            delete_bucket_2(Rest, AccessKeyId, Bucket)
+            delete_bucket_2(Rest, AccessKeyId, BucketName)
     end.
 
 
 %% @doc Head a bucket
 %% @private
 %% @see http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketHEAD.html
--spec(head_bucket_1(AccessKeyId, Bucket) ->
+-spec(head_bucket_1(AccessKeyId, BucketName) ->
              ok | not_found | {error, Cause} when AccessKeyId::binary(),
-                                                  Bucket::binary(),
+                                                  BucketName::binary(),
                                                   Cause::any()).
-head_bucket_1(AccessKeyId, Bucket) ->
-    leo_s3_bucket:head(AccessKeyId, Bucket).
+head_bucket_1(AccessKeyId, BucketName) ->
+    leo_s3_bucket:head(AccessKeyId, BucketName).
 
 
 %% @doc Generate XML from matadata-list
@@ -1683,16 +1684,16 @@ generate_bucket_xml(PathBin, PrefixBin, MetadataL, MaxKeys) ->
              XMLRet when MetadataL::[#?METADATA{}],
                          XMLRet::string()).
 generate_bucket_xml(MetadataL) ->
-    Fun = fun(#?BUCKET{name = BucketBin,
+    Fun = fun(#?BUCKET{name = BucketNameBin,
                        created_at = CreatedAt} , Acc) ->
-                  Bucket = binary_to_list(BucketBin),
-                  case string:equal(?STR_SLASH, Bucket) of
+                  BucketName = binary_to_list(BucketNameBin),
+                  case string:equal(?STR_SLASH, BucketName) of
                       true ->
                           Acc;
                       false ->
                           lists:append([Acc,
                                         io_lib:format(?XML_BUCKET,
-                                                      [xmerl_lib:export_text(Bucket),
+                                                      [xmerl_lib:export_text(BucketName),
                                                        leo_http:web_date(CreatedAt)])])
                   end
           end,
@@ -1884,14 +1885,14 @@ delete_multi_objects_3(Req, [_|Rest], IsQuiet, Keys, Params) ->
 delete_multi_objects_4(Req, IsQuiet, [], DeletedKeys, ErrorKeys, Params) ->
     delete_multi_objects_5(Req, IsQuiet, DeletedKeys, ErrorKeys, Params);
 delete_multi_objects_4(Req, IsQuiet, [Key|Rest], DeletedKeys, ErrorKeys,
-                       #req_params{bucket = Bucket} = Params) ->
+                       #req_params{bucket_name = BucketName} = Params) ->
     BinKey = list_to_binary(Key),
-    Path = <<Bucket/binary, <<"/">>/binary, BinKey/binary>>,
+    Path = <<BucketName/binary, <<"/">>/binary, BinKey/binary>>,
     case leo_gateway_rpc_handler:head(Path) of
         {ok, Meta} ->
             case leo_gateway_rpc_handler:delete(Path) of
                 ok ->
-                    ?access_log_delete(Bucket, Path, Meta#?METADATA.dsize, ?HTTP_ST_NO_CONTENT),
+                    ?access_log_delete(BucketName, Path, Meta#?METADATA.dsize, ?HTTP_ST_NO_CONTENT),
                     delete_multi_objects_4(Req, IsQuiet, Rest,
                                            [Key|DeletedKeys], ErrorKeys, Params);
                 {error, not_found} ->
@@ -1917,14 +1918,14 @@ delete_multi_objects_5(Req, IsQuiet, DeletedKeys, ErrorKeys, _Params) ->
 
 
 %% @private
--spec(formalize_bucket(Bucket) ->
-             Bucket when Bucket::binary()).
-formalize_bucket(Bucket) ->
-    case (binary:last(Bucket) == $/) of
+-spec(formalize_bucket(BucketName) ->
+             BucketName when BucketName::binary()).
+formalize_bucket(BucketName) ->
+    case (binary:last(BucketName) == $/) of
         true ->
-            binary:part(Bucket, {0, byte_size(Bucket) - 1});
+            binary:part(BucketName, {0, byte_size(BucketName) - 1});
         false ->
-            Bucket
+            BucketName
     end.
 
 generate_list_head_xml(Prefix, MaxKeys, Delimiter) ->
@@ -1944,13 +1945,13 @@ generate_list_foot_xml(IsTruncated, NextMarker) ->
                   [TruncatedStr,
                    xmerl_lib:export_text(NextMarker)]).
 
-generate_list_file_xml(Bucket, #?METADATA{key = Key,
-                                          dsize = Length,
-                                          timestamp = TS,
-                                          checksum = CS,
-                                          del = 0}) ->
-    BucketLen = byte_size(Bucket),
-    <<_:BucketLen/binary, Key_1/binary>> = Key,
+generate_list_file_xml(BucketName, #?METADATA{key = Key,
+                                              dsize = Length,
+                                              timestamp = TS,
+                                              checksum = CS,
+                                              del = 0}) ->
+    BucketNameLen = byte_size(BucketName),
+    <<_:BucketNameLen/binary, Key_1/binary>> = Key,
     io_lib:format(?XML_OBJ_LIST_FILE_1,
                   [xmerl_lib:export_text(Key_1),
                    leo_http:web_date(TS),
@@ -1962,9 +1963,9 @@ generate_list_file_xml(_,_) ->
 
 %% @doc Recursively find a key in the bucket
 %% @private
--spec(recursive_find(Bucket, Redundancies, MetadataList,
+-spec(recursive_find(BucketName, Redundancies, MetadataList,
                      Marker, MaxKeys, Transport, Socket) ->
-             {ok, CanFindKey, LastKey} | {error, any()} when Bucket::binary(),
+             {ok, CanFindKey, LastKey} | {error, any()} when BucketName::binary(),
                                                              Redundancies::[#redundancies{}],
                                                              MetadataList::[#?METADATA{}],
                                                              Marker::binary(),
@@ -1973,20 +1974,20 @@ generate_list_file_xml(_,_) ->
                                                              Socket::port(),
                                                              CanFindKey::boolean(),
                                                              LastKey::binary()).
-recursive_find(Bucket, Redundancies, MetadataList,
+recursive_find(BucketName, Redundancies, MetadataList,
                Marker, MaxKeys, Transport, Socket) ->
-    recursive_find(Bucket, Redundancies, [], MetadataList,
+    recursive_find(BucketName, Redundancies, [], MetadataList,
                    Marker, MaxKeys, <<>>, Transport, Socket).
 
-recursive_find(_Bucket, _Redundancies,_,_,_, 0, LastKey,_,_) ->
+recursive_find(_BucketName, _Redundancies,_,_,_, 0, LastKey,_,_) ->
     {ok, true, LastKey};
-recursive_find(_Bucket, _Redundancies,[],[],_,_,_,_,_) ->
+recursive_find(_BucketName, _Redundancies,[],[],_,_,_,_,_) ->
     {ok, false, <<>>};
-recursive_find(Bucket, Redundancies, [Head|Rest], [],
+recursive_find(BucketName, Redundancies, [Head|Rest], [],
                Marker, MaxKeys, LastKey, Transport, Socket) ->
-    recursive_find(Bucket, Redundancies, Rest, Head,
+    recursive_find(BucketName, Redundancies, Rest, Head,
                    Marker, MaxKeys, LastKey, Transport, Socket);
-recursive_find(Bucket, Redundancies, Acc,
+recursive_find(BucketName, Redundancies, Acc,
                [#?METADATA{dsize = -1, key = Key}|Rest],
                Marker, MaxKeys, LastKey, Transport, Socket) ->
     case leo_gateway_rpc_handler:invoke(Redundancies,
@@ -1995,24 +1996,24 @@ recursive_find(Bucket, Redundancies, Acc,
                                         [Key, ?BIN_SLASH, Marker, MaxKeys],
                                         []) of
         {ok, Metadata} when is_list(Metadata) ->
-            recursive_find(Bucket, Redundancies, [Metadata | Acc], Rest,
+            recursive_find(BucketName, Redundancies, [Metadata | Acc], Rest,
                            Marker, MaxKeys, LastKey, Transport, Socket);
         {ok,_} ->
             {error, invalid_format};
         Error ->
             Error
     end;
-recursive_find(Bucket, Redundancies, Acc,
+recursive_find(BucketName, Redundancies, Acc,
                [#?METADATA{key = Key} = Head|Rest],
                Marker, MaxKeys, LastKey, Transport, Socket) ->
-    case generate_list_file_xml(Bucket, Head) of
+    case generate_list_file_xml(BucketName, Head) of
         error ->
-            recursive_find(Bucket, Redundancies, Acc, Rest,
+            recursive_find(BucketName, Redundancies, Acc, Rest,
                            MaxKeys, MaxKeys, LastKey, Transport, Socket);
         Bin ->
             case Transport:send(Socket, Bin) of
                 ok ->
-                    recursive_find(Bucket, Redundancies, Acc, Rest,
+                    recursive_find(BucketName, Redundancies, Acc, Rest,
                                    Marker, MaxKeys - 1, Key, Transport, Socket);
                 Error ->
                     Error

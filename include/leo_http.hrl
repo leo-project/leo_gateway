@@ -500,7 +500,8 @@
           %% basic info
           handler                    :: atom(),                 %% http-handler
           path = <<>>                :: binary(),               %% path (uri)
-          bucket = <<>>              :: binary(),               %% bucket (for s3-api)
+          bucket_name = <<>>         :: binary(),               %% bucket-name (for s3-api)
+          bucket_info = undefined    :: term(),                 %% bucket (for s3-api)
           redundancy_method          :: atom(),                 %% redundancy method
           ec_method                  :: atom(),                 %% erasure-coding method
           ec_params                  :: {pos_integer(), pos_integer()}|undefined, %% erasure-coding params

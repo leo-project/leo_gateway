@@ -174,9 +174,12 @@ setup(InitFun, TermFun) ->
     meck:expect(leo_s3_endpoint, get_endpoints, 0, {ok, [{endpoint, <<"localhost">>, 0}]}),
 
     meck:new(leo_s3_bucket, [non_strict]),
-    meck:expect(leo_s3_bucket, get_acls, 1,
-                {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
-                                       permissions = [read, write]}]}),
+    meck:expect(leo_s3_bucket, get_latest_bucket,
+                fun(_BucketName) ->
+                        {ok, #?BUCKET{name =_BucketName,
+                                      acls = [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
+                                                               permissions = [read, write]}]}}
+                end),
 
     Date = erlang:list_to_binary(leo_http:rfc1123_date(leo_date:now())),
     meck:new(cowboy_clock, [non_strict]),
@@ -350,16 +353,16 @@ get_bucket_acl_normal1_([_TermFun, _Node0,_Node1]) ->
             timer:sleep(150),
             %% leo_s3_bucket is already created at setup
             meck:expect(leo_s3_bucket, get_acls, 1,
-                {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
-                                       permissions = [read, write]}]}),
+                        {ok, [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
+                                               permissions = [read, write]}]}),
             meck:expect(leo_s3_bucket, find_bucket_by_name, 1,
-                {ok, #?BUCKET{name = "bucket",
-                              access_key_id = <<"ackid">>,
-                              acls = [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
-                                                       permissions = [read, write]},
-                                      #bucket_acl_info{user_id = ?GRANTEE_AUTHENTICATED_USER,
-                                                       permissions = [full_control]}]
-                              }}),
+                        {ok, #?BUCKET{name = "bucket",
+                                      access_key_id = <<"ackid">>,
+                                      acls = [#bucket_acl_info{user_id = ?GRANTEE_ALL_USER,
+                                                               permissions = [read, write]},
+                                              #bucket_acl_info{user_id = ?GRANTEE_AUTHENTICATED_USER,
+                                                               permissions = [full_control]}]
+                                     }}),
             meck:new(leo_s3_auth, [no_link, non_strict]),
             meck:expect(leo_s3_auth, authenticate, 3, {ok, ["hoge"], undefined}),
             try
@@ -510,8 +513,8 @@ get_object_invalid_([_TermFun, _Node0, Node1]) ->
                 Date = leo_http:rfc1123_date(leo_date:now()),
                 {ok, {SC, _Body}} =
                     httpc:request(head, {lists:append(["http://",
-                                                      ?TARGET_HOST,
-                                                      ":8080/"]), [{"Date", Date}, {"Host", ""}]}, [{version, "HTTP/1.0"}], [{full_result, false}]),
+                                                       ?TARGET_HOST,
+                                                       ":8080/"]), [{"Date", Date}, {"Host", ""}]}, [{version, "HTTP/1.0"}], [{full_result, false}]),
 
                 ?assertEqual(400, SC)
             catch
@@ -864,15 +867,15 @@ put_object_aws_chunked_([_TermFun, _Node0, Node1]) ->
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
                 {ok, {SC, _Body}} =
-                httpc:request(put, {lists:append(["http://",
-                                                  ?TARGET_HOST,
-                                                  ":8080/testjv4/testFile.large.one"]),
-                                    [{"Date", Date},
-                                     {"authorization","AWS4-HMAC-SHA256 Credential=05236/20150706/us-east-1/s3/aws4_request, SignedHeaders=content-length, Signature=642797dcfdf817ac23b553420f52c160847d3747b2e86e5ac9d07cc5e7f60f63"},
-                                     {"x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"},
-                                     {"x-amz-decoded-content-length", integer_to_list(?AWSCHUNKEDSIZE)}
-                                    ], "image/png", Chunks},
-                              [], [{full_result, false}]),
+                    httpc:request(put, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/testjv4/testFile.large.one"]),
+                                        [{"Date", Date},
+                                         {"authorization","AWS4-HMAC-SHA256 Credential=05236/20150706/us-east-1/s3/aws4_request, SignedHeaders=content-length, Signature=642797dcfdf817ac23b553420f52c160847d3747b2e86e5ac9d07cc5e7f60f63"},
+                                         {"x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"},
+                                         {"x-amz-decoded-content-length", integer_to_list(?AWSCHUNKEDSIZE)}
+                                        ], "image/png", Chunks},
+                                  [], [{full_result, false}]),
                 ?assertEqual(200, SC)
             catch
                 throw:Reason ->
@@ -895,21 +898,23 @@ put_object_aws_chunked_error_([_TermFun, _Node0, Node1]) ->
             SignatureI = <<"incorrect">>,
             SignHead = <<"20150706T051217Z\n20150706/us-east-1/s3/aws4_request\n">>,
             SignKey = <<"2040321d898be34c82d1db9e132124f11eb18a3d21569d1ed58b460b88954ac7">>,
+
             meck:expect(leo_s3_auth, authenticate, 3, {ok, <<"05236">>, {Signature, SignHead, SignKey}}),
-            meck:expect(leo_s3_bucket, get_acls, 1, not_found),
+            meck:expect(leo_s3_bucket, get_latest_bucket, 1, not_found),
+
             Chunks = gen_chunks(SignatureI, SignHead, SignKey, ?AWSCHUNKEDSIZE, <<>>),
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
                 {ok, {SC, _Body}} =
-                httpc:request(put, {lists:append(["http://",
-                                                  ?TARGET_HOST,
-                                                  ":8080/testjv4/testFile.large.one"]),
-                                    [{"Date", Date},
-                                     {"authorization","AWS4-HMAC-SHA256 Credential=05236/20150706/us-east-1/s3/aws4_request, SignedHeaders=content-length, Signature=642797dcfdf817ac23b553420f52c160847d3747b2e86e5ac9d07cc5e7f60f63"},
-                                     {"x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"},
-                                     {"x-amz-decoded-content-length", integer_to_list(?AWSCHUNKEDSIZE)}
-                                    ], "image/png", Chunks},
-                              [], [{full_result, false}]),
+                    httpc:request(put, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/testjv4/testFile.large.one"]),
+                                        [{"Date", Date},
+                                         {"authorization","AWS4-HMAC-SHA256 Credential=05236/20150706/us-east-1/s3/aws4_request, SignedHeaders=content-length, Signature=642797dcfdf817ac23b553420f52c160847d3747b2e86e5ac9d07cc5e7f60f63"},
+                                         {"x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"},
+                                         {"x-amz-decoded-content-length", integer_to_list(?AWSCHUNKEDSIZE)}
+                                        ], "image/png", Chunks},
+                                  [], [{full_result, false}]),
                 ?assertEqual(403, SC)
             catch
                 throw:Reason ->
