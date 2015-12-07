@@ -69,7 +69,7 @@
           {false, void}
          }).
 
--define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
+-define(NFS_DUMMY_FILE4S3DIR, << "$$_dir_$$" >>).
 -define(NFS_READDIR_NUM_OF_RESPONSE, 10).
 
 -define(NFS3_OK,          'NFS3_OK').
@@ -179,7 +179,7 @@ nfsproc3_access_3({{UID}, AccessBitMask} = _1, Clnt, State) ->
 nfsproc3_readlink_3(_1, Clnt, State) ->
     ?debug("nfsproc3_readlink_3", "args:~p client:~p", [_1, Clnt]),
     {reply, {?NFS3_OK, {{false, void}, %% post_op_attr for obj
-                        <<"link path">>}
+                        << "link path" >>}
             }, State}.
 
 %% @doc
@@ -431,7 +431,7 @@ sattr_mtime_to_file_info({_, {MTime, _}})         -> MTime.
 readdir(Path, Cookie, CookieVerf, _MaxCnt, IsPlus, State) ->
     Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
     {ok, NewCookieVerf, ReadDir} = case CookieVerf of
-                                       <<0,0,0,0,0,0,0,0>> ->
+                                       << 0,0,0,0,0,0,0,0 >> ->
                                            readdir_add_entry(Path4S3Dir);
                                        CookieVerf ->
                                            readdir_get_entry(CookieVerf)
@@ -686,7 +686,7 @@ getattr(Path) ->
 -spec(inode(binary() | string()) ->
              integer()).
 inode(Path) ->
-    <<F8:8/binary, _/binary>> = erlang:md5(Path),
+    << F8:8/binary, _/binary >> = erlang:md5(Path),
     Hex = leo_hex:binary_to_hex(F8),
     leo_hex:hex_to_integer(Hex).
 

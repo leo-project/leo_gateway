@@ -67,24 +67,24 @@ get_node_status() ->
                    {mnesia,     []},
                    {snmp_agent, SNMPAgent}
                   ],
-    RingHashes  = [{ring_cur,  RingHashCur},
-                   {ring_prev, RingHashPrev }
-                  ],
-    Statistics  = [{vm_version,       erlang:system_info(version)},
-                   {total_mem_usage,  erlang:memory(total)},
-                   {system_mem_usage, erlang:memory(system)},
-                   {proc_mem_usage,   erlang:memory(processes)},
-                   {ets_mem_usage,    erlang:memory(ets)},
-                   {num_of_procs,     erlang:system_info(process_count)},
-                   {process_limit,    erlang:system_info(process_limit)},
-                   {kernel_poll,      erlang:system_info(kernel_poll)},
-                   {thread_pool_size, erlang:system_info(thread_pool_size)}
-                  ],
+    RingHashes = [{ring_cur,  RingHashCur},
+                  {ring_prev, RingHashPrev }
+                 ],
+    Statistics = [{vm_version,       erlang:system_info(version)},
+                  {total_mem_usage,  erlang:memory(total)},
+                  {system_mem_usage, erlang:memory(system)},
+                  {proc_mem_usage,   erlang:memory(processes)},
+                  {ets_mem_usage,    erlang:memory(ets)},
+                  {num_of_procs,     erlang:system_info(process_count)},
+                  {process_limit,    erlang:system_info(process_limit)},
+                  {kernel_poll,      erlang:system_info(kernel_poll)},
+                  {thread_pool_size, erlang:system_info(thread_pool_size)}
+                 ],
 
-    Protocol   = ?env_protocol(),
-    HttpProps  = ?env_http_properties(),
+    Protocol = ?env_protocol(),
+    HttpProps = ?env_http_properties(),
     CacheProps = ?env_cache_properties(),
-    LObjProps  = ?env_large_object_properties(),
+    LObjProps = ?env_large_object_properties(),
     HttpConf =
         [
          {handler,                  leo_misc:get_value('protocol',                 HttpProps,  Protocol)},
@@ -107,9 +107,9 @@ get_node_status() ->
          {reading_chunked_obj_len,  leo_misc:get_value('reading_chunked_obj_len',  LObjProps,  ?DEF_LOBJ_READING_CHUNK_OBJ_LEN)},
          {threshold_of_chunk_len,   leo_misc:get_value('threshold_of_chunk_len',   LObjProps,  ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN)}
         ],
-    {ok, [{type,          gateway},
-          {version,       Version},
-          {dirs,          Directories},
+    {ok, [{type, gateway},
+          {version, Version},
+          {dirs, Directories},
           {ring_checksum, RingHashes},
           {watchdog,
            [{cpu_enabled,    ?env_wd_cpu_enabled()},
@@ -189,7 +189,7 @@ register_in_monitor([Node1|Rest], Pid, RequestedTimes) ->
 -spec(purge(string()) -> ok).
 purge(Path) ->
     BinPath = list_to_binary(Path),
-    _ = (catch leo_cache_api:delete(BinPath)),
+    catch leo_cache_api:delete(BinPath),
     ok.
 
 

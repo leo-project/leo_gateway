@@ -181,21 +181,21 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, _CustomHeaderSet
 
     case (TokenLen >= NumOfMinLayers) of
         true ->
-            ReqParams  = #req_params{handler = ?MODULE,
-                                     path = Path,
-                                     token_length = TokenLen,
-                                     min_layers = NumOfMinLayers,
-                                     max_layers = NumOfMaxLayers,
-                                     has_inner_cache = HasInnerCache,
-                                     is_cached = true,
-                                     max_chunked_objs = Props#http_options.max_chunked_objs,
-                                     max_len_of_obj = Props#http_options.max_len_of_obj,
-                                     chunked_obj_len = Props#http_options.chunked_obj_len,
-                                     timeout_for_header = Props#http_options.timeout_for_header,
-                                     timeout_for_body = Props#http_options.timeout_for_body,
-                                     sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
-                                     reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
-                                     threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len},
+            ReqParams = #req_params{handler = ?MODULE,
+                                    path = Path,
+                                    token_length = TokenLen,
+                                    min_layers = NumOfMinLayers,
+                                    max_layers = NumOfMaxLayers,
+                                    has_inner_cache = HasInnerCache,
+                                    is_cached = true,
+                                    max_chunked_objs = Props#http_options.max_chunked_objs,
+                                    max_len_of_obj = Props#http_options.max_len_of_obj,
+                                    chunked_obj_len = Props#http_options.chunked_obj_len,
+                                    timeout_for_header = Props#http_options.timeout_for_header,
+                                    timeout_for_body = Props#http_options.timeout_for_body,
+                                    sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
+                                    reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
+                                    threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len},
             handle_2(Req, HTTPMethod, Path, ReqParams, State);
         false when HTTPMethod == ?HTTP_GET ->
             ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);

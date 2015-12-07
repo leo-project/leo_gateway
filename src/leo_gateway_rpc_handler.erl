@@ -31,26 +31,26 @@
          get/3,
          get_dir_meta/1,
          delete/1,
-         put/2, put/3, put/4, put/6, put/7,
+         put/1, put/2, put/4, put/6, put/7,
          invoke/5,
          get_request_parameters/2
         ]).
 
+-include("leo_http.hrl").
 -include("leo_gateway.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
 -include_lib("leo_redundant_manager/include/leo_redundant_manager.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -undef(MAX_RETRY_TIMES).
 -include_lib("leo_statistics/include/leo_statistics.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
-
--record(req_params, {
-          req_id       = 0  :: integer(),
-          timestamp    = 0  :: integer(),
-          addr_id      = 0  :: integer(),
-          redundancies = [] :: list(#redundant_node{})
+-record(rpc_params, {
+          req_id = 0  :: non_neg_integer(),
+          timestamp = 0  :: non_neg_integer(),
+          addr_id = 0  :: non_neg_integer(),
+          redundancies = [] :: [#redundant_node{}]
          }).
 
 
@@ -60,10 +60,10 @@
              {ok, #?METADATA{}}|{error, any()}).
 head(Key) ->
     ReqParams = get_request_parameters(head, Key),
-    invoke(ReqParams#req_params.redundancies,
+    invoke(ReqParams#rpc_params.redundancies,
            leo_storage_handler_object,
            head,
-           [ReqParams#req_params.addr_id, Key],
+           [ReqParams#rpc_params.addr_id, Key],
            []).
 
 %% @doc Retrieve an object from the storage-cluster
@@ -73,20 +73,20 @@ head(Key) ->
 get(Key) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
-    invoke(ReqParams#req_params.redundancies,
+    invoke(ReqParams#rpc_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, Key, ReqParams#req_params.req_id],
+           [ReqParams#rpc_params.addr_id, Key, ReqParams#rpc_params.req_id],
            []).
 -spec(get(binary(), integer()) ->
              {ok, match}|{ok, #?METADATA{}, binary()}|{error, any()}).
 get(Key, ETag) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
-    invoke(ReqParams#req_params.redundancies,
+    invoke(ReqParams#rpc_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id, Key, ETag, ReqParams#req_params.req_id],
+           [ReqParams#rpc_params.addr_id, Key, ETag, ReqParams#rpc_params.req_id],
            []).
 
 -spec(get(binary(), integer(), integer()) ->
@@ -94,12 +94,12 @@ get(Key, ETag) ->
 get(Key, StartPos, EndPos) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
-    invoke(ReqParams#req_params.redundancies,
+    invoke(ReqParams#rpc_params.redundancies,
            leo_storage_handler_object,
            get,
-           [ReqParams#req_params.addr_id,
+           [ReqParams#rpc_params.addr_id,
             Key, StartPos, EndPos,
-            ReqParams#req_params.req_id],
+            ReqParams#rpc_params.req_id],
            []).
 
 %% @doc Retrieve a directory metadata encoded into binary from the storage-cluster
@@ -108,7 +108,7 @@ get(Key, StartPos, EndPos) ->
              {ok, binary()}|{error, any()}).
 get_dir_meta(Key) ->
     ReqParams = get_request_parameters(get, Key),
-    invoke(ReqParams#req_params.redundancies,
+    invoke(ReqParams#rpc_params.redundancies,
            leo_storage_handler_directory,
            get,
            [Key],
@@ -122,66 +122,95 @@ get_dir_meta(Key) ->
 delete(Key) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_DEL),
     ReqParams = get_request_parameters(delete, Key),
-    invoke(ReqParams#req_params.redundancies,
+    invoke(ReqParams#rpc_params.redundancies,
            leo_storage_handler_object,
            delete,
-           [#?OBJECT{addr_id   = ReqParams#req_params.addr_id,
-                     key       = Key,
-                     timestamp = ReqParams#req_params.timestamp},
-            ReqParams#req_params.req_id],
+           [#?OBJECT{addr_id = ReqParams#rpc_params.addr_id,
+                     key = Key,
+                     timestamp = ReqParams#rpc_params.timestamp},
+            ReqParams#rpc_params.req_id],
            []).
 
 
 %% @doc Insert an object into the storage-cluster (regular-case)
-%%
+-spec(put(ReqParams) ->
+             ok|{ok, pos_integer()}|{error, any()} when ReqParams::#put_req_params{}).
+put(#put_req_params{path = Key,
+                    body = Body,
+                    dsize = Size,
+                    total_chunks = TotalChunks,
+                    cindex = ChunkIndex,
+                    csize = ChunkedSize,
+                    digest = Digest,
+                    bucket_info = BucketInfo}) ->
+    ok = leo_metrics_req:notify(?STAT_COUNT_PUT),
+    #?BUCKET{redundancy_method = RedMethod,
+             cp_params = CPParams,
+             ec_method = ECMethod,
+             ec_params = ECParams} =
+        case BucketInfo of
+            undefined ->
+                BucketName =
+                    erlang:hd(
+                      leo_misc:binary_tokens(Key, <<"/">>)),
+                case catch leo_s3_bucket:get_latest_bucket(BucketName) of
+                    {ok, #?BUCKET{} = BucketInfo_1} ->
+                        BucketInfo_1;
+                    _ ->
+                        #?BUCKET{name = BucketName}
+                end;
+            _ ->
+                BucketInfo
+        end,
+    ReqParams = get_request_parameters(put, Key),
+
+    invoke(ReqParams#rpc_params.redundancies,
+           leo_storage_handler_object, put,
+           [#?OBJECT{addr_id = ReqParams#rpc_params.addr_id,
+                     key = Key,
+                     data = Body,
+                     dsize = Size,
+                     timestamp = ReqParams#rpc_params.timestamp,
+                     csize = ChunkedSize,
+                     cnumber = TotalChunks,
+                     cindex = ChunkIndex,
+                     checksum = Digest,
+                     redundancy_method = RedMethod,
+                     cp_params = CPParams,
+                     ec_method = ECMethod,
+                     ec_params = ECParams},
+            ReqParams#rpc_params.req_id], []).
+
 -spec(put(binary(), binary()) ->
              ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body) ->
     Size = byte_size(Body),
     put(Key, Body, Size, 0, 0, 0, 0).
 
--spec(put(binary(), binary(), integer()) ->
-             ok|{ok, pos_integer()}|{error, any()}).
-put(Key, Body, Size) ->
-    put(Key, Body, Size, 0, 0, 0, 0).
-
 %% @doc Insert an object into the storage-cluster (child of chunked-object)
-%%
 -spec(put(binary(), binary(), integer(), integer()) ->
              ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body, Size, Index) ->
     put(Key, Body, Size, 0, 0, Index, 0).
 
 %% @doc Insert an object into the storage-cluster (parent of chunked-object)
-%%
 -spec(put(binary(), binary(), integer(), integer(), integer(), integer()) ->
              ok|{ok, pos_integer()}|{error, any()}).
 put(Key, Body, Size, ChunkedSize, TotalOfChunks, Digest) ->
     put(Key, Body, Size, ChunkedSize, TotalOfChunks, 0, Digest).
 
 %% @doc Insert an object into the storage-cluster
-%%
 -spec(put(binary(), binary(), integer(), integer(), integer(), integer(), integer()) ->
              ok|{ok, pos_integer()}|{error, any()}).
-put(Key, Body, Size, ChunkedSize, TotalOfChunks, ChunkIndex, Digest) ->
-    ok = leo_metrics_req:notify(?STAT_COUNT_PUT),
-    ReqParams = get_request_parameters(put, Key),
-
-    invoke(ReqParams#req_params.redundancies,
-           leo_storage_handler_object,
-           put,
-           [#?OBJECT{addr_id   = ReqParams#req_params.addr_id,
-                     key       = Key,
-                     data      = Body,
-                     dsize     = Size,
-                     timestamp = ReqParams#req_params.timestamp,
-                     csize     = ChunkedSize,
-                     cnumber   = TotalOfChunks,
-                     cindex    = ChunkIndex,
-                     checksum  = Digest
-                    },
-            ReqParams#req_params.req_id],
-           []).
+put(Key, Body, Size, ChunkedSize, TotalChunks, ChunkIndex, Digest) ->
+    put(#put_req_params{path = Key,
+                        body = Body,
+                        dsize = Size,
+                        total_chunks = TotalChunks,
+                        cindex = ChunkIndex,
+                        csize = ChunkedSize,
+                        digest = Digest,
+                        bucket_info = undefined}).
 
 
 %% @doc Do invoke rpc calls with handling retries
@@ -192,9 +221,9 @@ invoke([], _Mod, _Method, _Args, Errors) ->
     {error, error_filter(Errors)};
 invoke([#redundant_node{available = false}|T], Mod, Method, Args, Errors) ->
     invoke(T, Mod, Method, Args, [?ERR_TYPE_INTERNAL_ERROR|Errors]);
-invoke([#redundant_node{node      = Node,
+invoke([#redundant_node{node = Node,
                         available = true}|T], Mod, Method, Args, Errors) ->
-    RPCKey  = rpc:async_call(Node, Mod, Method, Args),
+    RPCKey = rpc:async_call(Node, Mod, Method, Args),
     Timeout = timeout(Method, Args),
 
     case rpc:nb_yield(RPCKey, Timeout) of
@@ -228,7 +257,7 @@ invoke([#redundant_node{node      = Node,
 %% @doc Get request parameters
 %%
 -spec(get_request_parameters(atom(), binary()) ->
-             #req_params{}).
+             #rpc_params{}).
 get_request_parameters(Method, Key) ->
     {ok, #redundancies{id = Id, nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(Method, Key),
@@ -240,10 +269,10 @@ get_request_parameters(Method, Key) ->
     ReqId = erlang:phash2([Y,MO,D,H,MI,S, erlang:node(), Key, NowPart]),
     Timestamp = calendar:datetime_to_gregorian_seconds(UnivDateTime),
 
-    #req_params{addr_id      = Id,
+    #rpc_params{addr_id = Id,
                 redundancies = Redundancies,
-                req_id       = ReqId,
-                timestamp    = Timestamp}.
+                req_id = ReqId,
+                timestamp = Timestamp}.
 
 
 %% @doc Error messeage filtering

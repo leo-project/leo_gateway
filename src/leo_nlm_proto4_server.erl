@@ -62,7 +62,7 @@
 -define(NLM4_FAILED,                'NLM4_FAILED').
 
 -record(nlm_state, {
-            handler :: atom()
+          handler :: atom()
          }).
 
 %% ---------------------------------------------------------------------
@@ -169,7 +169,7 @@ nlmproc4_granted_msg_4(TestArgs, Clnt, State) ->
 nlmproc4_test_res_4(TestRes, Clnt, State) ->
     ?debug("NLM_TEST_RES", "Args:~p, from:~p", [TestRes, Clnt]),
     {noreply, State}.
- 
+
 nlmproc4_lock_res_4(Res, Clnt, State) ->
     ?debug("NLM_LOCK_RES", "Args:~p, from:~p", [Res, Clnt]),
     {noreply, State}.
@@ -227,39 +227,35 @@ convert_lock({_, _, Owner, Uppid, Offset, Length}, Excl) ->
 convert_lock_test() ->
     ?debugMsg("===== Testing Convert Lock ====="),
     Lock = {
-      <<"freebsd102">>,         % CallerName
+      <<"freebsd102">>, %% CallerName
       <<159,64,92,200,58,233,78,51,175,128,47,36,35,144,134,200>>,
-                                % FileHandler
-      <<"6350@freebsd102">>,    % Owner
-      6350,                     % Svid
-      1,                        % Offset
-      10                        % Length
+      %% FileHandler
+      <<"6350@freebsd102">>, %% Owner
+      6350, %% Svid
+      1, %% Offset
+      10 %% Length
      },
-    #lock_record{
-       start    = 1,
-       till     = 10,
-       len      = 10,
-       owner    = <<"6350@freebsd102">>,
-       uppid    = 6350,
-       excl     = true
-      } = convert_lock(Lock, true),
+    #lock_record{start = 1,
+                 till = 10,
+                 len = 10,
+                 owner = <<"6350@freebsd102">>,
+                 uppid = 6350,
+                 excl = true
+                } = convert_lock(Lock, true),
 
     ?debugMsg("===== Testing Convert Lock with 0 Length (Whole File) ====="),
-    Lock2 = {
-      <<"freebsd102">>,         % CallerName
-      <<159,64,92,200,58,233,78,51,175,128,47,36,35,144,134,200>>,
-                                % FileHandler
-      <<"6350@freebsd102">>,    % Owner
-      6350,                     % Svid
-      1,                        % Offset
-      0                         % Length
-     },
-    #lock_record{
-       start    = 1,
-       till     = -1,
-       len      = 0,
-       owner    = <<"6350@freebsd102">>,
-       uppid    = 6350,
-       excl     = false
-      } = convert_lock(Lock2, false).
+    Lock2 = {<<"freebsd102">>, %% CallerName
+             <<159,64,92,200,58,233,78,51,175,128,47,36,35,144,134,200>>,
+             %% FileHandler
+             <<"6350@freebsd102">>, %% Owner
+             6350, %% Svid
+             1, %% Offset
+             0  %% Length
+            },
+    #lock_record{start = 1,
+                 till = -1,
+                 len = 0,
+                 owner = <<"6350@freebsd102">>,
+                 uppid = 6350,
+                 excl = false} = convert_lock(Lock2, false).
 -endif.

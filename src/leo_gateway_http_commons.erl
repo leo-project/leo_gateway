@@ -29,6 +29,7 @@
 -include("leo_http.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start/1, start/2]).
@@ -41,6 +42,7 @@
 -record(req_large_obj, {
           handler :: pid(),
           bucket_name = <<>> :: binary(),
+          bucket_info :: #?BUCKET{},
           key = <<>> :: binary(),
           length :: pos_integer(),
           timeout_for_body = 0 :: non_neg_integer(),
@@ -216,12 +218,11 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                             Now = leo_date:now(),
                             Bin = term_to_binary(
                                     #cache{mtime = Now,
-                                           etag  = leo_hex:raw_binary_to_integer(crypto:hash(md5, Body)),
-                                           size  = byte_size(Body),
-                                           body  = Body,
+                                           etag = leo_hex:raw_binary_to_integer(crypto:hash(md5, Body)),
+                                           size = byte_size(Body),
+                                           body = Body,
                                            content_type = ?http_content_type(Header1)}),
-                            _ = (catch leo_cache_api:put(Key, Bin)),
-
+                            catch leo_cache_api:put(Key, Bin),
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
                             Header3 = [{?HTTP_HEAD_RESP_CACHE_CTRL,    ?httP_cache_ctl(Expire)},
                                        {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(Now)}
@@ -355,12 +356,11 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
         %% MISS: get an object from storage (small-size)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
-            Val = term_to_binary(#cache{etag  = Meta#?METADATA.checksum,
+            Val = term_to_binary(#cache{etag = Meta#?METADATA.checksum,
                                         mtime = Meta#?METADATA.timestamp,
                                         content_type = Mime,
                                         body = RespObject,
-                                        size = byte_size(RespObject)
-                                       }),
+                                        size = byte_size(RespObject)}),
             catch leo_cache_api:put(Key, Val),
 
             ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
@@ -413,24 +413,28 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
 %% @doc MOVE/COPY an object
 -spec(move_large_object(#?METADATA{}, binary(), #req_params{}) ->
              ok | {error, any()}).
-move_large_object(#?METADATA{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DstKey, Params) ->
+move_large_object(#?METADATA{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DestKey, Params) ->
     {ok, ReadHandler} = leo_large_object_move_handler:start_link(Key, 0, TotalChunkedObjs),
     try
-        move_large_object(SrcMeta, DstKey, Params, ReadHandler)
+        move_large_object(SrcMeta, DestKey, Params, ReadHandler)
     after
         catch leo_large_object_move_handler:stop(ReadHandler)
     end.
 
-move_large_object(#?METADATA{dsize = Size}, DstKey,
-                  #req_params{chunked_obj_len = ChunkedSize, bucket_name = BucketName},
-                  ReadHandler) ->
-    {ok, WriteHandler}  = leo_large_object_put_handler:start_link(DstKey, ChunkedSize),
+move_large_object(#?METADATA{dsize = Size}, DestKey,
+                  #req_params{chunked_obj_len = ChunkedSize,
+                              bucket_name = BucketName,
+                              bucket_info = BucketInfo}, ReadHandler) ->
+    {ok, WriteHandler} =
+        leo_large_object_put_handler:start_link(
+          BucketInfo, DestKey, ChunkedSize),
     try
         case move_large_object_1(
                leo_large_object_move_handler:get_chunk_obj(ReadHandler),
                #req_large_obj{handler = WriteHandler,
                               bucket_name = BucketName,
-                              key = DstKey,
+                              bucket_info = BucketInfo,
+                              key = DestKey,
                               length = Size,
                               chunked_size = ChunkedSize}, ReadHandler) of
             ok ->
@@ -443,6 +447,7 @@ move_large_object(#?METADATA{dsize = Size}, DstKey,
         catch leo_large_object_put_handler:stop(WriteHandler)
     end.
 
+%% @private
 move_large_object_1({ok, Data},
                     #req_large_obj{key = Key,
                                    handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
@@ -461,23 +466,29 @@ move_large_object_1({ok, Data},
             {error, ?ERROR_FAIL_PUT_OBJ}
     end;
 move_large_object_1({error, Cause},
-                    #req_large_obj{key = Key}, _) ->
+                    #req_large_obj{key = Key},_ReadHandler) ->
     ?error("move_large_object_1/3",
            [{key, binary_to_list(Key)}, {cause, Cause}]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                                          bucket_name = BucketName,
+                                         bucket_info = BucketInfo,
                                          key = Key,
                                          length = Size,
-                                         chunked_size = ChunkedSize}, _) ->
+                                         chunked_size = ChunkedSize},_ReadHandler) ->
     case catch leo_large_object_put_handler:result(WriteHandler) of
         {ok, #large_obj_info{length = TotalSize,
                              num_of_chunks = TotalChunks,
-                             md5_context   = Digest}} when Size == TotalSize ->
+                             md5_context = Digest}} when Size == TotalSize ->
             Digest_1 = leo_hex:raw_binary_to_integer(Digest),
-
-            case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
-                                             ChunkedSize, TotalChunks, Digest_1) of
+            case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                             body = ?BIN_EMPTY,
+                                                             dsize = Size,
+                                                             total_chunks = TotalChunks,
+                                                             cindex = 0,
+                                                             csize = ChunkedSize,
+                                                             digest = Digest_1,
+                                                             bucket_info = BucketInfo}) of
                 {ok, _ETag} ->
                     ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
                     ok;
@@ -485,7 +496,7 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                     {error, Cause};
                 {error, unavailable} ->
                     {error, unavailable};
-                {error, _Cause} ->
+                {error,_Cause} ->
                     {error, ?ERROR_FAIL_PUT_OBJ}
             end;
         {ok, _} ->
@@ -503,10 +514,10 @@ put_object(Req, Key, #req_params{bucket_name = BucketName,
                                  max_len_of_obj = MaxLenForObj,
                                  threshold_of_chunk_len = ThresholdObjLen,
                                  transfer_decode_fun = TransferDecodeFun,
-                                 transfer_decode_state = TransferDecodeState
-                                } = Params) ->
+                                 transfer_decode_state = TransferDecodeState} = Params) ->
     {Size, _} = cowboy_req:body_length(Req),
     ?debug("put_object/3", "Object Size: ~p", [Size]),
+
     case (Size >= ThresholdObjLen) of
         true when Size >= MaxLenForObj ->
             ?access_log_put(BucketName, Key, 0, ?HTTP_ST_BAD_REQ),
@@ -517,7 +528,6 @@ put_object(Req, Key, #req_params{bucket_name = BucketName,
 
         true when IsUpload == false ->
             put_large_object(Req, Key, Size, Params);
-
         false ->
             Ret = case cowboy_req:has_body(Req) of
                       true ->
@@ -560,20 +570,24 @@ put_small_object({error, Cause},_,_) ->
     {error, Cause};
 put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket_name = BucketName,
                                                           upload_part_num = UploadPartNum,
-                                                          has_inner_cache = HasInnerCache
-                                                         }) ->
-    case leo_gateway_rpc_handler:put(Key, Bin, Size, UploadPartNum) of
+                                                          has_inner_cache = HasInnerCache,
+                                                          bucket_info = BucketInfo}) ->
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = Bin,
+                                                     dsize = Size,
+                                                     cindex = UploadPartNum,
+                                                     bucket_info = BucketInfo}) of
         {ok, ETag} ->
             case (HasInnerCache
                   andalso binary_is_contained(Key, 10) == false) of
                 true  ->
                     Mime = leo_mime:guess_mime(Key),
-                    Val  = term_to_binary(#cache{etag = ETag,
-                                                 mtime = leo_date:now(),
-                                                 content_type = Mime,
-                                                 body = Bin,
-                                                 size = byte_size(Bin)
-                                                }),
+                    Val = term_to_binary(#cache{etag = ETag,
+                                                mtime = leo_date:now(),
+                                                content_type = Mime,
+                                                body = Bin,
+                                                size = byte_size(Bin)
+                                               }),
                     catch leo_cache_api:put(Key, Val);
                 false ->
                     void
@@ -599,14 +613,15 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket_name = BucketNa
 -spec(put_large_object(cowboy_req:req(), binary(), pos_integer(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 put_large_object(Req, Key, Size, #req_params{bucket_name = BucketName,
+                                             bucket_info = BucketInfo,
                                              timeout_for_body = Timeout4Body,
                                              chunked_obj_len = ChunkedSize,
                                              reading_chunked_obj_len = ReadingChunkedSize,
                                              transfer_decode_fun = TransferDecodeFun,
-                                             transfer_decode_state = TransferDecodeState
-                                            })->
+                                             transfer_decode_state = TransferDecodeState})->
     %% launch 'large_object_handler'
-    {ok, Handler}  = leo_large_object_put_handler:start_link(Key, ChunkedSize),
+    {ok, Handler} =
+        leo_large_object_put_handler:start_link(BucketInfo, Key, ChunkedSize),
 
     %% remove a registered object with 'touch-command'
     %% from the cache
@@ -697,6 +712,7 @@ put_large_object_1({error, Cause}, #req_large_obj{key = Key}) ->
 
 %% @private
 put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
+                                                   bucket_info = BucketInfo,
                                                    key = Key,
                                                    length = Size,
                                                    chunked_size = ChunkedSize}) ->
@@ -705,11 +721,16 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
             case catch leo_large_object_put_handler:result(Handler) of
                 {ok, #large_obj_info{length = TotalSize,
                                      num_of_chunks = TotalChunks,
-                                     md5_context   = Digest}} when Size == TotalSize ->
+                                     md5_context = Digest}} when Size == TotalSize ->
                     Digest_1 = leo_hex:raw_binary_to_integer(Digest),
-
-                    case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
-                                                     ChunkedSize, TotalChunks, Digest_1) of
+                    case leo_gateway_rpc_handler:put(#put_req_params{
+                                                        path = Key,
+                                                        body = ?BIN_EMPTY,
+                                                        dsize = Size,
+                                                        total_chunks = TotalChunks,
+                                                        csize = ChunkedSize,
+                                                        digest = Digest_1,
+                                                        bucket_info = BucketInfo}) of
                         {ok, _ETag} ->
                             Header = [?SERVER_HEADER,
                                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(Digest_1)}],
@@ -775,11 +796,11 @@ head_object(Req, Key, #req_params{bucket_name = BucketName}) ->
         {ok, #?METADATA{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#?METADATA.timestamp),
             ?access_log_head(BucketName, Key, ?HTTP_ST_OK),
-            Headers   = [?SERVER_HEADER,
-                         {?HTTP_HEAD_RESP_CONTENT_TYPE, leo_mime:guess_mime(Key)},
-                         {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
-                         {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
-                         {?HTTP_HEAD_RESP_LAST_MODIFIED, Timestamp}],
+            Headers = [?SERVER_HEADER,
+                       {?HTTP_HEAD_RESP_CONTENT_TYPE, leo_mime:guess_mime(Key)},
+                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
+                       {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
+                       {?HTTP_HEAD_RESP_LAST_MODIFIED, Timestamp}],
             cowboy_req:reply(?HTTP_ST_OK, Headers, fun() -> void end, Req);
         {ok, #?METADATA{del = 1}} ->
             ?access_log_head(BucketName, Key, ?HTTP_ST_NOT_FOUND),
@@ -980,7 +1001,7 @@ move_curpos2head(_Start, _ChunkedSize, CurPos, Idx) ->
 %% @private
 calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
     NewStartPos = ObjectSize + EndPos,
-    NewEndPos   = ObjectSize - 1,
+    NewEndPos = ObjectSize - 1,
     {NewStartPos, NewEndPos};
 calc_pos(StartPos, 0, ObjectSize) when StartPos > 0 ->
     {StartPos, ObjectSize - 1};
@@ -1045,7 +1066,7 @@ send_chunk(_Req,_BucketName, Key, Start, End, CurPos, ChunkSize,
     end;
 send_chunk(_Req, _BucketName, Key, Start, End, CurPos, ChunkSize,
            #transport_record{transport = Transport,
-                             socket    = Socket,
+                             socket = Socket,
                              sending_chunked_obj_len = SendChunkLen}) ->
     %% partial get
     StartPos = case Start =< CurPos of

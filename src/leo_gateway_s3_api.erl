@@ -48,7 +48,9 @@
 -include_lib("xmerl/include/xmerl.hrl").
 
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
-                   handle_multi_upload_1/7, handle_multi_upload_2/4, handle_multi_upload_3/3,
+                   handle_multi_upload_1/8,
+                   handle_multi_upload_2/5,
+                   handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
                    resp_copy_obj_xml/2, request_params/2, auth/5, auth/7, auth_1/7,
                    get_bucket_1/6, put_bucket_1/3, delete_bucket_1/2, head_bucket_1/2
@@ -230,7 +232,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                    {0, KeySize} ->
                                        Marker;
                                    _Other ->
-                                       <<Key/binary, Marker/binary>>
+                                       << Key/binary, Marker/binary >>
                                end
                        end,
     MaxKeys = case cowboy_req:qs_val(?HTTP_QS_BIN_MAXKEYS, Req) of
@@ -534,10 +536,13 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
 
 %% @doc POST/PUT operation on Objects. COPY
 %% @private
-put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket_name = BucketName} = Params) ->
+put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket_name = BucketName,
+                                                         bucket_info = BucketInfo} = Params) ->
     Size = size(Bin),
-
-    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = Bin,
+                                                     dsize = Size,
+                                                     bucket_info = BucketInfo}) of
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
             ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
             resp_copy_obj_xml(Req, Meta);
@@ -676,7 +681,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                               ?BIN_SLASH ->
                                   Path;
                               _ ->
-                                  <<Path/binary, ?BIN_SLASH/binary>>
+                                  << Path/binary, ?BIN_SLASH/binary >>
                           end,
                 {BinParam, true, NewPath, Req_1}
         end,
@@ -778,20 +783,25 @@ handle_2({error, _Cause}, Req,_HttpVerb, Key,_ReqParams,State) ->
     {ok, Req_2, State};
 
 %% For Multipart Upload - Initiation
-handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key, #req_params{path = Path,
+handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key, #req_params{bucket_info = BucketInfo,
+                                                              path = Path,
                                                               is_upload = true}, State) ->
     %% remove a registered object with 'touch-command'
     %% from the cache
-    _ = (catch leo_cache_api:delete(Path)),
+    catch leo_cache_api:delete(Path),
+
     %% Insert a metadata into the storage-cluster
     NowBin = list_to_binary(integer_to_list(leo_date:now())),
     UploadId = leo_hex:binary_to_hex(
                  crypto:hash(md5, << Path/binary, NowBin/binary >>)),
     UploadIdBin = list_to_binary(UploadId),
+    UploadKey = << Path/binary, ?STR_NEWLINE, UploadIdBin/binary >>,
 
     {ok, Req_2} =
-        case leo_gateway_rpc_handler:put(
-               << Path/binary, ?STR_NEWLINE, UploadIdBin/binary >>, <<>>, 0) of
+        case leo_gateway_rpc_handler:put(#put_req_params{path = UploadKey,
+                                                         body = ?BIN_EMPTY,
+                                                         dsize = 0,
+                                                         bucket_info = BucketInfo}) of
             {ok, _ETag} ->
                 %% Response xml to a client
                 [BucketName|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
@@ -811,7 +821,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key, #req_params{path = Path,
 %% @private
 handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT, Key,
          #req_params{upload_id = UploadId,
-                     upload_part_num  = PartNum,
+                     upload_part_num = PartNum,
                      max_chunked_objs = MaxChunkedObjs}, State) when UploadId /= <<>>,
                                                                      PartNum > MaxChunkedObjs ->
     {ok, Req_2} = ?reply_bad_request([?SERVER_HEADER],
@@ -849,9 +859,13 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_PUT,_Key,
     {ok, Req_2, State};
 
 handle_2({ok,_AccessKeyId}, Req, ?HTTP_DELETE,_Key,
-         #req_params{path = Path,
+         #req_params{bucket_info = BucketInfo,
+                     path = Path,
                      upload_id = UploadId}, State) when UploadId /= <<>> ->
-    _ = leo_gateway_rpc_handler:put(Path, <<>>, 0),
+    _ = leo_gateway_rpc_handler:put(#put_req_params{path = Path,
+                                                    body = ?BIN_EMPTY,
+                                                    dsize = 0,
+                                                    bucket_info = BucketInfo}),
     _ = leo_gateway_rpc_handler:delete(Path),
     _ = leo_gateway_rpc_handler:delete(<< Path/binary, ?STR_NEWLINE >>),
     {ok, Req_2} = ?reply_no_content([?SERVER_HEADER], Req),
@@ -859,19 +873,19 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_DELETE,_Key,
 
 %% For Multipart Upload - Completion
 handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key,
-         #req_params{path = Path,
+         #req_params{bucket_info = BucketInfo,
+                     path = Path,
                      chunked_obj_len = ChunkedLen,
                      is_upload = false,
                      upload_id = UploadId,
                      upload_part_num = PartNum,
                      transfer_decode_fun = TransferDecodeFun,
-                     transfer_decode_state = TransferDecodeState
-                    }, State) when UploadId /= <<>>,
-                                   PartNum  == 0 ->
+                     transfer_decode_state = TransferDecodeState}, State) when UploadId /= <<>>,
+                                                                               PartNum == 0 ->
     Res = cowboy_req:has_body(Req),
     {ok, Req_2} = handle_multi_upload_1(
                     Res, Req, Path, UploadId,
-                    ChunkedLen, TransferDecodeFun, TransferDecodeState),
+                    ChunkedLen, TransferDecodeFun, TransferDecodeState, BucketInfo),
     {ok, Req_2, State};
 
 %% For Regular cases
@@ -930,12 +944,12 @@ aws_chunk_decode({ok, Acc}, Buffer, wait_size, 0,
                  #aws_chunk_sign_params{sign_head = SignHead} = SignParams) ->
     case byte_size(Buffer) of
         Len when Len > 10 ->
-            <<Bin:10/binary, _/binary>> = Buffer,
+            << Bin:10/binary, _/binary >> = Buffer,
             case binary:match(Bin, <<";">>) of
                 nomatch ->
                     {{error, incorrect}, {Buffer, error, 0, SignParams}};
                 {Start, _} ->
-                    <<SizeHexBin:Start/binary, ";", Rest/binary>> = Buffer,
+                    << SizeHexBin:Start/binary, ";", Rest/binary >> = Buffer,
                     SizeHex = binary_to_list(SizeHexBin),
                     Size = leo_hex:hex_to_integer(SizeHex),
                     SignParams_2 =
@@ -973,7 +987,8 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
     ChunkRemainSize = ChunkSize - Offset,
     case byte_size(Buffer) of
         Len when Len >= ChunkRemainSize + 2 ->
-            <<ChunkPart:ChunkRemainSize/binary, "\r\n", Rest/binary>> = Buffer,
+            << ChunkPart:ChunkRemainSize/binary,
+               "\r\n", Rest/binary >> = Buffer,
             case SignHead of
                 undefined ->
                     ?debug("aws_chunk_decode/4", "Output Chunk Size: ~p, No Sign", [ChunkSize]),
@@ -982,7 +997,7 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
                         0 ->
                             {{done, Acc}, {Rest, done, 0, #aws_chunk_sign_params{}}};
                         _ ->
-                            aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>},
+                            aws_chunk_decode({ok, << Acc/binary, ChunkPart/binary >>},
                                              Rest, wait_size, 0, SignParams)
                     end;
                 _ ->
@@ -1008,7 +1023,7 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
                                 false ->
                                     ?debug("aws_chunk_decode/4",
                                            "Output Chunk Size: ~p, Sign: ~p", [ChunkSize, ChunkSign]),
-                                    aws_chunk_decode({ok, <<Acc/binary, ChunkPart/binary>>},
+                                    aws_chunk_decode({ok, << Acc/binary, ChunkPart/binary >>},
                                                      Rest, wait_size, 0,
                                                      SignParams#aws_chunk_sign_params{prev_sign = ChunkSign,
                                                                                       chunk_sign = <<>>})
@@ -1028,7 +1043,7 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
                                    Context_2 = crypto:hash_update(Context, Buffer),
                                    SignParams#aws_chunk_sign_params{hash_context = Context_2}
                            end,
-            {{ok, <<Acc/binary, Buffer/binary>>},
+            {{ok, << Acc/binary, Buffer/binary >>},
              {<<>>, read_chunk, Offset + Len, SignParams_2}};
         _ ->
             {{ok, Acc},
@@ -1039,16 +1054,17 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
 %% @doc Handle multi-upload processing
 %% @private
 -spec(handle_multi_upload_1(IsHandling, Req, Path, UploadId,
-                            ChunkedLen, TransferDecodeFun, TransferDecodeState) ->
+                            ChunkedLen, TransferDecodeFun, TransferDecodeState, BucketInfo) ->
              {ok, Req} when IsHandling::boolean(),
                             Req::cowboy_req:req(),
                             Path::binary(),
                             UploadId::binary(),
                             ChunkedLen::non_neg_integer(),
                             TransferDecodeFun::function(),
-                            TransferDecodeState::term()).
+                            TransferDecodeState::term(),
+                            BucketInfo::#?BUCKET{}).
 handle_multi_upload_1(true, Req, Path, UploadId,
-                      ChunkedLen, TransferDecodeFun, TransferDecodeState) ->
+                      ChunkedLen, TransferDecodeFun, TransferDecodeState, BucketInfo) ->
     Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
 
     case leo_gateway_rpc_handler:head(Path4Conf) of
@@ -1062,25 +1078,26 @@ handle_multi_upload_1(true, Req, Path, UploadId,
                                [{transfer_decode, TransferDecodeFun, TransferDecodeState}]
                        end,
             Ret = cowboy_req:body(Req, BodyOpts),
-            handle_multi_upload_2(Ret, Req, Path, ChunkedLen);
+            handle_multi_upload_2(Ret, Req, Path, ChunkedLen, BucketInfo);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         _ ->
             ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
                              ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req)
     end;
-handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen,_,_) ->
+handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen,_,_,_) ->
     ?reply_forbidden([?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
                      ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req).
 
 %% @private
--spec(handle_multi_upload_2({ok, Bin, Req}|{error, Cause}, Req, Path, ChunkedLen) ->
+-spec(handle_multi_upload_2({ok, Bin, Req}|{error, Cause}, Req, Path, ChunkedLen, BucketInfo) ->
              {ok, Req} when Bin::binary(),
                             Req::cowboy_req:req(),
                             Cause::any(),
                             Path::binary(),
-                            ChunkedLen::non_neg_integer()).
-handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
+                            ChunkedLen::non_neg_integer(),
+                            BucketInfo::#?BUCKET{}).
+handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen, BucketInfo) ->
     %% trim spaces
     Acc = fun(#xmlText{value = " ",
                        pos = P}, Acc, S) ->
@@ -1094,7 +1111,7 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
     TotalUploadedObjs = length(Content),
 
     case handle_multi_upload_3(TotalUploadedObjs, Path, []) of
-        {ok, {Len, ETag1}} ->
+        {ok, {Len, ETag_1}} ->
             %% Retrieve the child object's metadata
             %% to set the actual chunked length
             IndexBin = list_to_binary(integer_to_list(1)),
@@ -1103,34 +1120,40 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
             case leo_gateway_rpc_handler:head(ChildKey) of
                 {ok, #?METADATA{del = 0,
                                 dsize = ChildObjSize}} ->
-                    case leo_gateway_rpc_handler:put(Path, <<>>, Len, ChildObjSize,
-                                                     TotalUploadedObjs, ETag1) of
+                    %% @TODO:
+                    case leo_gateway_rpc_handler:put(#put_req_params{path = Path,
+                                                                     body = ?BIN_EMPTY,
+                                                                     dsize = Len,
+                                                                     csize = ChildObjSize,
+                                                                     total_chunks = TotalUploadedObjs,
+                                                                     digest = ETag_1,
+                                                                     bucket_info = BucketInfo}) of
                         {ok,_} ->
                             [BucketName|Path_1] = leo_misc:binary_tokens(Path, ?BIN_SLASH),
-                            ETag2 = leo_hex:integer_to_hex(ETag1, 32),
+                            ETag2 = leo_hex:integer_to_hex(ETag_1, 32),
                             XML = gen_upload_completion_xml(
                                     BucketName, Path_1, ETag2, TotalUploadedObjs),
                             ?reply_ok([?SERVER_HEADER], XML, Req);
                         {error, unavailable} ->
                             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
                         {error, Cause} ->
-                            ?error("handle_multi_upload_2/4",
+                            ?error("handle_multi_upload_2/5",
                                    [{key, binary_to_list(Path)}, {cause, Cause}]),
                             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
                     end;
                 _ ->
-                    ?error("handle_multi_upload_2/4",
+                    ?error("handle_multi_upload_2/5",
                            [{key, binary_to_list(Path)}, {cause, invalid_metadata}]),
                     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
             end;
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         {error, Cause} ->
-            ?error("handle_multi_upload_2/4", [{key, binary_to_list(Path)}, {cause, Cause}]),
+            ?error("handle_multi_upload_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_2({error, Cause}, Req, Path, _ChunkedLen) ->
-    ?error("handle_multi_upload_2/4", [{key, binary_to_list(Path)}, {cause, Cause}]),
+handle_multi_upload_2({error, Cause}, Req, Path,_ChunkedLen,_BucketInfo) ->
+    ?error("handle_multi_upload_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 
 
@@ -1387,8 +1410,9 @@ auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, _ACLs, #req_params{is_acl = 
             {error, undefined};
         {AuthorizationBin, _} ->
             case AuthorizationBin of
-                <<Head:4/binary, _Rest/binary>> when Head =:= ?HTTP_HEAD_X_AWS_SIGNATURE_V2;
-                                                     Head =:= ?HTTP_HEAD_X_AWS_SIGNATURE_V4 ->
+                << Head:4/binary,
+                   _Rest/binary >> when Head =:= ?HTTP_HEAD_X_AWS_SIGNATURE_V2;
+                                        Head =:= ?HTTP_HEAD_X_AWS_SIGNATURE_V4 ->
                     IsCreateBucketOp = (TokenLen == 1 andalso
                                         HTTPMethod == ?HTTP_PUT andalso
                                         not IsACL),
@@ -1432,7 +1456,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, _ACLs, #req_params{is_acl = 
                                  false ->
                                      QStr
                              end,
-                    QStr_3 = case binary:match(QStr_2, <<"&">>) of
+                    QStr_3 = case binary:match(QStr_2, << "&" >>) of
                                  nomatch ->
                                      QStr_2;
                                  _ ->
@@ -1462,7 +1486,7 @@ auth_1(Req, HTTPMethod, Path, TokenLen, BucketName, _ACLs, #req_params{is_acl = 
                                               query_str = QStr_3,
                                               sign_ver = SignVer,
                                               headers = Headers,
-                                              amz_headers   = leo_http:get_amz_headers4cow(Headers)},
+                                              amz_headers = leo_http:get_amz_headers4cow(Headers)},
                     leo_s3_auth:authenticate(AuthorizationBin, SignParams, IsCreateBucketOp);
                 _->
                     {error, nomatch}
@@ -1781,7 +1805,7 @@ generate_bucket_xml_loop(Ref, TotalDivs, CallbackFun, Acc) ->
              XMLRet when BucketInfo::#?BUCKET{},
                          XMLRet::string()).
 generate_acl_xml(#?BUCKET{access_key_id = ID, acls = ACLs}) ->
-    Fun = fun(#bucket_acl_info{user_id     = URI,
+    Fun = fun(#bucket_acl_info{user_id = URI,
                                permissions = Permissions} , Acc) ->
                   lists:foldl(
                     fun(read, Acc_1) ->
@@ -1886,7 +1910,7 @@ delete_multi_objects_4(Req, IsQuiet, [], DeletedKeys, ErrorKeys, Params) ->
 delete_multi_objects_4(Req, IsQuiet, [Key|Rest], DeletedKeys, ErrorKeys,
                        #req_params{bucket_name = BucketName} = Params) ->
     BinKey = list_to_binary(Key),
-    Path = <<BucketName/binary, <<"/">>/binary, BinKey/binary>>,
+    Path = << BucketName/binary, <<"/">>/binary, BinKey/binary >>,
     case leo_gateway_rpc_handler:head(Path) of
         {ok, Meta} ->
             case leo_gateway_rpc_handler:delete(Path) of
@@ -1936,9 +1960,9 @@ generate_list_head_xml(Prefix, MaxKeys, Delimiter) ->
 generate_list_foot_xml(IsTruncated, NextMarker) ->
     TruncatedStr = case IsTruncated of
                        true ->
-                           <<"true">>;
+                           << "true" >>;
                        false ->
-                           <<"false">>
+                           << "false" >>
                    end,
     io_lib:format(?XML_OBJ_LIST_FOOT,
                   [TruncatedStr,
@@ -1950,7 +1974,7 @@ generate_list_file_xml(BucketName, #?METADATA{key = Key,
                                               checksum = CS,
                                               del = 0}) ->
     BucketNameLen = byte_size(BucketName),
-    <<_:BucketNameLen/binary, Key_1/binary>> = Key,
+    << _:BucketNameLen/binary, Key_1/binary >> = Key,
     io_lib:format(?XML_OBJ_LIST_FILE_1,
                   [xmerl_lib:export_text(Key_1),
                    leo_http:web_date(TS),

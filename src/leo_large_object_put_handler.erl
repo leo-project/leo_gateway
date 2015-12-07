@@ -20,19 +20,19 @@
 %%
 %%======================================================================
 -module(leo_large_object_put_handler).
-
 -behaviour(gen_server).
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_bucket.hrl").
 -include_lib("leo_dcerl/include/leo_dcerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 
 %% Application callbacks
--export([start_link/2, stop/1]).
+-export([start_link/2, start_link/3, stop/1]).
 -export([put/2, rollback/1, result/1]).
 -export([init/1,
          handle_call/3,
@@ -47,14 +47,15 @@
 -undef(DEF_TIMEOUT).
 -define(DEF_TIMEOUT, 30000).
 
--record(state, {key = <<>>            :: binary(),
-                max_obj_len = 0       :: non_neg_integer(),
-                stacked_bin = <<>>    :: binary(),
-                num_of_chunks = 0     :: non_neg_integer(),
-                total_len = 0         :: non_neg_integer(),
-                md5_context = <<>>    :: any(),
-                errors = []           :: list(),
-                monitor_set           :: set()
+-record(state, {bucket_info :: #?BUCKET{},
+                key = <<>> :: binary(),
+                max_obj_len = 0 :: non_neg_integer(),
+                stacked_bin = <<>> :: binary(),
+                num_of_chunks = 0 :: non_neg_integer(),
+                total_len = 0 :: non_neg_integer(),
+                md5_context = <<>> :: any(),
+                errors = [] :: list(),
+                monitor_set :: set()
                }).
 
 
@@ -65,7 +66,16 @@
              ok | {error, any()} when Key::binary(),
                                       Length::non_neg_integer()).
 start_link(Key, Length) ->
-    gen_server:start_link(?MODULE, [Key, Length], []).
+    %% @TODO:
+    BucketInfo = #?BUCKET{},
+    start_link(BucketInfo, Key, Length).
+
+-spec(start_link(BucketInfo, Key, Length) ->
+             ok | {error, any()} when BucketInfo::#?BUCKET{},
+                                      Key::binary(),
+                                      Length::non_neg_integer()).
+start_link(BucketInfo, Key, Length) ->
+    gen_server:start_link(?MODULE, [BucketInfo, Key, Length], []).
 
 
 %% @doc Stop this server
@@ -104,8 +114,9 @@ result(Pid) ->
 %%====================================================================
 %% GEN_SERVER CALLBACKS
 %%====================================================================
-init([Key, Length]) ->
-    State = #state{key = Key,
+init([BucketInfo, Key, Length]) ->
+    State = #state{bucket_info = BucketInfo,
+                   key = Key,
                    max_obj_len = Length,
                    num_of_chunks = 1,
                    stacked_bin = <<>>,
@@ -119,14 +130,14 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call({put, Bin}, _From, #state{key = Key,
-                                      max_obj_len   = MaxObjLen,
-                                      stacked_bin   = StackedBin,
+                                      max_obj_len = MaxObjLen,
+                                      stacked_bin = StackedBin,
                                       num_of_chunks = NumOfChunks,
-                                      total_len     = TotalLen,
-                                      errors        = [],
-                                      monitor_set   = MonitorSet,
-                                      md5_context   = Context} = State) ->
-    Size  = erlang:byte_size(Bin),
+                                      total_len = TotalLen,
+                                      errors = [],
+                                      monitor_set = MonitorSet,
+                                      md5_context = Context} = State) ->
+    Size = erlang:byte_size(Bin),
     TotalLen_1 = TotalLen + Size,
     Bin_1 = << StackedBin/binary, Bin/binary >>,
 
@@ -138,6 +149,7 @@ handle_call({put, Bin}, _From, #state{key = Key,
                           ChunkedKey = << Key/binary,
                                           ?DEF_SEPARATOR/binary,
                                           NumOfChunksBin/binary >>,
+                          %% @TODO:
                           Ret = leo_gateway_rpc_handler:put(
                                   ChunkedKey, Bin_2, MaxObjLen, NumOfChunks),
                           AsyncNotify = {async_notify, ChunkedKey, Ret},
@@ -145,22 +157,25 @@ handle_call({put, Bin}, _From, #state{key = Key,
                   end,
             SpawnRet = erlang:spawn_monitor(Fun),
             Context_1 = crypto:hash_update(Context, Bin_2),
-			<< Head:8/binary, _Rest/binary>> = Bin_2,
-			Offset = MaxObjLen * NumOfChunks,
-			?debug("handle_call", "Save Chunk, Key: ~p, Chunk: ~p, Offset: ~p, Bin: ~p", [Key, NumOfChunks, Offset, leo_hex:binary_to_hex(Head)]),
-            {reply, ok, State#state{stacked_bin   = StackedBin_1,
+            << Head:8/binary, _Rest/binary>> = Bin_2,
+            Offset = MaxObjLen * NumOfChunks,
+
+            ?debug("handle_call",
+                   "Save Chunk, Key: ~p, Chunk: ~p, Offset: ~p, Bin: ~p",
+                   [Key, NumOfChunks, Offset, leo_hex:binary_to_hex(Head)]),
+            {reply, ok, State#state{stacked_bin = StackedBin_1,
                                     num_of_chunks = NumOfChunks + 1,
-                                    total_len     = TotalLen_1,
-                                    monitor_set   = sets:add_element(SpawnRet, MonitorSet),
-                                    md5_context   = Context_1}};
+                                    total_len = TotalLen_1,
+                                    monitor_set = sets:add_element(SpawnRet, MonitorSet),
+                                    md5_context = Context_1}};
         false ->
             {reply, ok, State#state{stacked_bin = Bin_1,
-                                    total_len   = TotalLen_1}}
+                                    total_len = TotalLen_1}}
     end;
 
 handle_call({put, _Bin}, _From, #state{key = Key,
                                        errors = Errors} = State) ->
-	?debug("handle_call", "Large Put Failed Key: ~p, Error: ~p", [Key, Errors]),
+    ?debug("handle_call", "Large Put Failed Key: ~p, Error: ~p", [Key, Errors]),
     {reply, {error, Errors}, State};
 
 handle_call(rollback, _From, #state{key = Key} = State) ->
@@ -169,11 +184,11 @@ handle_call(rollback, _From, #state{key = Key} = State) ->
 
 
 handle_call(result, _From, #state{key = Key,
-                                  md5_context   = Context,
-                                  stacked_bin   = StackedBin,
+                                  md5_context = Context,
+                                  stacked_bin = StackedBin,
                                   num_of_chunks = NumOfChunks,
-                                  total_len     = TotalLen,
-                                  monitor_set   = MonitorSet,
+                                  total_len = TotalLen,
+                                  monitor_set = MonitorSet,
                                   errors = []} = State) ->
     Ret = case StackedBin of
               <<>> ->
@@ -181,10 +196,11 @@ handle_call(result, _From, #state{key = Key,
               _ ->
                   NumOfChunksBin = list_to_binary(integer_to_list(NumOfChunks)),
                   Size = erlang:byte_size(StackedBin),
-                  Bin  = << Key/binary,
-                            ?DEF_SEPARATOR/binary,
-                            NumOfChunksBin/binary >>,
+                  Bin = << Key/binary,
+                           ?DEF_SEPARATOR/binary,
+                           NumOfChunksBin/binary >>,
 
+                  %% @TODO:
                   case leo_gateway_rpc_handler:put(
                          Bin, StackedBin, Size, NumOfChunks) of
                       {ok, _ETag} ->
@@ -202,11 +218,11 @@ handle_call(result, _From, #state{key = Key,
             case Ret of
                 {ok, {NumOfChunks_1, Context_1}} ->
                     Digest = crypto:hash_final(Context_1),
-                    Reply  = {ok, #large_obj_info{
-                                     key = Key,
-                                     num_of_chunks = NumOfChunks_1,
-                                     length = TotalLen,
-                                     md5_context = Digest}},
+                    Reply = {ok, #large_obj_info{
+                                    key = Key,
+                                    num_of_chunks = NumOfChunks_1,
+                                    length = TotalLen,
+                                    md5_context = Digest}},
                     {reply, Reply, State_1#state{md5_context = Digest}};
                 {error, Reason} ->
                     Reply = {error, {#large_obj_info{

@@ -73,12 +73,12 @@ put(Key, Body) ->
     case leo_gateway_rpc_handler:put(Key, Body) of
         {ok, ETag} = Ret ->
             Mime = leo_mime:guess_mime(Key),
-            Val  = term_to_binary(#cache{etag = ETag,
-                                         mtime = leo_date:now(),
-                                         content_type = Mime,
-                                         body = Body,
-                                         size = byte_size(Body)
-                                        }),
+            Val= term_to_binary(#cache{etag = ETag,
+                                       mtime = leo_date:now(),
+                                       content_type = Mime,
+                                       body = Body,
+                                       size = byte_size(Body)
+                                      }),
             _ = (catch leo_cache_api:put(Key, Val)),
             Ret;
         Error ->

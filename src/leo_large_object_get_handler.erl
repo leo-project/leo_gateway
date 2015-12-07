@@ -161,10 +161,9 @@ run(Key, _, _, {TotalOfChunkedObjs, Req, Meta, TransportRec}, _) ->
                                   transport_rec = TransportRec}),
     case Reply of
         {ok, _Req} ->
-            CacheMeta = #cache_meta{
-                           md5   = Meta#?METADATA.checksum,
-                           mtime = Meta#?METADATA.timestamp,
-                           content_type = leo_mime:guess_mime(Key)},
+            CacheMeta = #cache_meta{md5 = Meta#?METADATA.checksum,
+                                    mtime = Meta#?METADATA.timestamp,
+                                    content_type = leo_mime:guess_mime(Key)},
             catch leo_cache_api:put_end_tran(Ref, write, Key, CacheMeta, true);
         _ ->
             catch leo_cache_api:put_end_tran(Ref, write, Key, undefined, false)
@@ -212,7 +211,7 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
         %%
         {ok, #?METADATA{cnumber = 0}, Bin} ->
             #transport_record{transport = Transport,
-                              socket    = Socket,
+                              socket = Socket,
                               sending_chunked_obj_len = SendChunkLen} = TransportRec,
             case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->

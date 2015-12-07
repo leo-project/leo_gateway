@@ -60,14 +60,16 @@ start_link(Window) ->
 %%--------------------------------------------------------------------
 handle_notify() ->
     Stats = case catch leo_cache_api:stats() of
-                {ok, Value} -> Value;
-                {_, _Cause} -> #stats{}
+                {ok, Value} ->
+                    Value;
+                {_, _Cause} ->
+                    #stats{}
             end,
 
-    #stats{get     = NumOfRead,
-           hits    = HitCount,
+    #stats{get = NumOfRead,
+           hits = HitCount,
            records = NumOfObjects,
-           size    = TotalOfSize0} = Stats,
+           size = TotalOfSize0} = Stats,
     TotalOfSize1 = erlang:round(TotalOfSize0 / (1024*1024)),
 
     catch snmp_generic:variable_set(?SNMP_CACHE_HIT_COUNT,  HitCount),

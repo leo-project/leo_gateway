@@ -535,6 +535,17 @@
           transfer_decode_state     :: #aws_chunk_decode_state{} | undefined    %% transfer decode state
          }).
 
+-record(put_req_params, {
+          path = <<>> :: binary(),
+          body = <<>> :: binary(),
+          dsize = 0 :: non_neg_integer(),
+          total_chunks = 0 :: non_neg_integer(),
+          cindex = 0 :: non_neg_integer(),
+          csize = 0 :: non_neg_integer(),
+          digest = 0 :: non_neg_integer(),
+          bucket_info = undefined :: term()|undefined
+          }).
+
 -record(transport_record, {
           transport :: module(),
           socket    :: inet:socket(),

@@ -90,36 +90,35 @@ list_dir(Path, IncludeHiddenFiles) ->
                        void
                end,
     list_dir(Redundancies, Path, <<>>, [], Modifier).
+
 list_dir(Redundancies, Path, Marker, Acc, Modifier) when is_function(Modifier) ->
-    case leo_gateway_rpc_handler:invoke(Redundancies,
-                                        leo_storage_handler_directory,
-                                        find_by_parent_dir,
-                                        [Path, <<"/">>, Marker, ?LEOFS_NUM_OF_LIST_DIR],
-                                        []) of
+    case leo_gateway_rpc_handler:invoke(
+           Redundancies,
+           leo_storage_handler_directory,
+           find_by_parent_dir,
+           [Path, <<"/">>, Marker, ?LEOFS_NUM_OF_LIST_DIR], []) of
         {ok, []} ->
             {ok, Modifier(Path, Acc)};
-        {ok, Meta} when is_list(Meta) ->
-            Last = lists:last(Meta),
+        {ok, Metadata} when is_list(Metadata) ->
+            Last = lists:last(Metadata),
             TrimedKey = path_trim_trailing_sep(Last#?METADATA.key),
             case Marker of
                 TrimedKey ->
                     {ok, Modifier(Path, Acc)};
                 _Other ->
-                    list_dir(Redundancies, Path, TrimedKey, Meta ++ Acc, Modifier)
+                    list_dir(Redundancies, Path, TrimedKey, Metadata ++ Acc, Modifier)
             end;
         Error ->
             ?error("list_dir", [{cause, Error}]),
             Error
     end;
 list_dir(Redundancies, Path, Marker, _Acc, _Modifier) ->
-    leo_gateway_rpc_handler:invoke(Redundancies,
-                                   leo_storage_handler_directory,
-                                   find_by_parent_dir,
-                                   [Path, <<"/">>, Marker, ?LEOFS_NUM_OF_LIST_DIR],
-                                   []).
+    leo_gateway_rpc_handler:invoke(
+      Redundancies,
+      leo_storage_handler_directory,
+      find_by_parent_dir,
+      [Path, <<"/">>, Marker, ?LEOFS_NUM_OF_LIST_DIR], []).
 
-
-%% @doc
 %% @private
 list_dir_append_hidden_files(BasePath, List) ->
     %% add current(.) and parent(..) directories
@@ -133,59 +132,69 @@ list_dir_append_hidden_files(BasePath, List) ->
 %% @doc Rename the file SrcKey to DstKey
 %%
 -spec(rename(binary(), binary()) ->
-             ok | {error, any()}).
+             ok |
+             {error, not_found} |
+             {error, ?ERR_TYPE_INTERNAL_ERROR} |
+             {error, timeout}).
 rename(SrcKey, DstKey) ->
     case leo_gateway_rpc_handler:get(SrcKey) of
-        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
-            rename_1(DstKey, Meta, RespObject);
-        {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
-            rename_large_object_1(DstKey, Meta);
+        {ok, #?METADATA{cnumber = 0} = Metadata, RespObject} ->
+            rename_1(DstKey, Metadata, RespObject);
+        {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Metadata, _RespObject} ->
+            rename_large_object_1(DstKey, Metadata);
         Error ->
-            %% {error, not_found} | {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
             Error
     end.
 
 %% @private
-rename_1(Key, Meta, Bin) ->
-    Size = size(Bin),
-    case leo_gateway_rpc_handler:put(Key, Bin, Size) of
+-spec(rename_1(Key, Metadata, Bin) ->
+             ok |
+             {error, ?ERR_TYPE_INTERNAL_ERROR} |
+             {error, timeout} when Key::binary(),
+                                   Metadata::#?METADATA{},
+                                   Bin::binary()).
+rename_1(Key, Metadata, Bin) ->
+    case leo_gateway_rpc_handler:put(Key, Bin) of
         {ok, _ETag} ->
-            rename_2(Meta);
+            rename_2(Metadata);
         Error ->
-            %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
+            %%
             Error
     end.
 
 %% @private
-rename_2(Meta) ->
-    case leo_gateway_rpc_handler:delete(Meta#?METADATA.key) of
+-spec(rename_2(Metadata) ->
+             ok |
+             {error, ?ERR_TYPE_INTERNAL_ERROR} |
+             {error, timeout} when Metadata::#?METADATA{}).
+rename_2(Metadata) ->
+    case leo_gateway_rpc_handler:delete(Metadata#?METADATA.key) of
         ok ->
             ok;
         {error, not_found} ->
             ok;
         Error ->
-            %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
             Error
     end.
 
 %% @private
-rename_large_object_1(Key, Meta) ->
+rename_large_object_1(Key, Metadata) ->
     %% Params to be applied with configurations about large object
-    LargeObjectProp   = ?env_large_object_properties(),
-    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
-                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    LargeObjectProp = ?env_large_object_properties(),
+    ChunkedObjLen = leo_misc:get_value('chunked_obj_len',
+                                       LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     Params = #req_params{chunked_obj_len = ChunkedObjLen},
-    case leo_gateway_http_commons:move_large_object(Meta, Key, Params) of
+    case leo_gateway_http_commons:move_large_object(Metadata, Key, Params) of
         ok ->
-            rename_large_object_2(Meta);
+            rename_large_object_2(Metadata);
         Error ->
             Error %% {error, ?ERR_TYPE_INTERNAL_ERROR} | {error, timeout}
     end.
 
 %% @private
-rename_large_object_2(Meta) ->
-    leo_large_object_commons:delete_chunked_objects(Meta#?METADATA.key),
-    catch leo_gateway_rpc_handler:delete(Meta#?METADATA.key),
+rename_large_object_2(Metadata) ->
+    leo_large_object_commons:delete_chunked_objects(Metadata#?METADATA.key),
+    catch leo_gateway_rpc_handler:delete(Metadata#?METADATA.key),
     ok.
 
 
@@ -197,17 +206,17 @@ rename_large_object_2(Meta) ->
 -spec(write(binary(), pos_integer(), pos_integer(), binary()) ->
              ok | {error, any()}).
 write(Key, Start, End, Data) ->
-    LargeObjectProp   = ?env_large_object_properties(),
-    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
-                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    LargeObjectProp = ?env_large_object_properties(),
+    ChunkedObjLen = leo_misc:get_value('chunked_obj_len',
+                                       LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     IsLarge = (End + 1) > ChunkedObjLen,
     case leo_gateway_rpc_handler:get(Key) of
-        {ok, #?METADATA{cnumber = 0} = SrcMeta, SrcObj} when IsLarge =:= true ->
-            write_small2large(Key, Start, End, Data, SrcMeta, SrcObj);
-        {ok, #?METADATA{cnumber = 0} = SrcMeta, SrcObj} when IsLarge =:= false ->
-            write_small2small(Key, Start, End, Data, SrcMeta, SrcObj);
-        {ok, #?METADATA{cnumber = _CNum} = SrcMeta, _} ->
-            write_large2any(Key, Start, End, Data, SrcMeta);
+        {ok, #?METADATA{cnumber = 0} = SrcMetadata, SrcObj} when IsLarge =:= true ->
+            write_small2large(Key, Start, End, Data, SrcMetadata, SrcObj);
+        {ok, #?METADATA{cnumber = 0} = SrcMetadata, SrcObj} when IsLarge =:= false ->
+            write_small2small(Key, Start, End, Data, SrcMetadata, SrcObj);
+        {ok, #?METADATA{cnumber = _CNum} = SrcMetadata, _} ->
+            write_large2any(Key, Start, End, Data, SrcMetadata);
         {error, not_found} when IsLarge =:= true ->
             write_nothing2large(Key, Start, End, Data);
         {error, not_found} when IsLarge =:= false ->
@@ -217,16 +226,16 @@ write(Key, Start, End, Data) ->
     end.
 
 %% @private
-write_small2large(Key, Start, _End, Data, SrcMeta, SrcObj) ->
+write_small2large(Key, Start, _End, Data, SrcMetadata, SrcObj) ->
     %% result to be merged with existing data blocks
-    Data2 = case Start > SrcMeta#?METADATA.dsize of
-                true ->
-                    <<SrcObj/binary, 0:(8*(Start - SrcMeta#?METADATA.dsize)), Data/binary>>;
-                false ->
-                    <<Head:Start/binary, _/binary>> = SrcObj,
-                    <<Head/binary, Data/binary>>
-            end,
-    case large_obj_update(Key, Data2) of
+    Data_1 = case Start > SrcMetadata#?METADATA.dsize of
+                 true ->
+                     << SrcObj/binary, 0:(8*(Start - SrcMetadata#?METADATA.dsize)), Data/binary >>;
+                 false ->
+                     << Head:Start/binary, _/binary >> = SrcObj,
+                     << Head/binary, Data/binary >>
+             end,
+    case large_obj_update(Key, Data_1) of
         ok ->
             ok;
         Error ->
@@ -234,23 +243,23 @@ write_small2large(Key, Start, _End, Data, SrcMeta, SrcObj) ->
     end.
 
 %% @private
-write_small2small(Key, Start, End, Data, SrcMeta, SrcObj) ->
+write_small2small(Key, Start, End, Data, SrcMetadata, SrcObj) ->
     %% result to be merged with existing data blocks
-    Data2 = case Start > SrcMeta#?METADATA.dsize of
-                true ->
-                    <<SrcObj/binary, 0:(8*(Start - SrcMeta#?METADATA.dsize)), Data/binary>>;
-                false ->
-                    case (End + 1) < SrcMeta#?METADATA.dsize of
-                        true ->
-                            <<Head:Start/binary, _/binary>> = SrcObj,
-                            <<_:End/binary, _:1/binary, Tail/binary>> = SrcObj,
-                            <<Head/binary, Data/binary, Tail/binary>>;
-                        false ->
-                            <<Head:Start/binary, _/binary>> = SrcObj,
-                            <<Head/binary, Data/binary>>
-                    end
-            end,
-    case leo_gateway_rpc_handler:put(Key, Data2) of
+    Data_1 = case Start > SrcMetadata#?METADATA.dsize of
+                 true ->
+                     << SrcObj/binary, 0:(8*(Start - SrcMetadata#?METADATA.dsize)), Data/binary >>;
+                 false ->
+                     case (End + 1) < SrcMetadata#?METADATA.dsize of
+                         true ->
+                             << Head:Start/binary, _/binary >> = SrcObj,
+                             << _:End/binary, _:1/binary, Tail/binary >> = SrcObj,
+                             << Head/binary, Data/binary, Tail/binary >>;
+                         false ->
+                             << Head:Start/binary, _/binary >> = SrcObj,
+                             << Head/binary, Data/binary >>
+                     end
+             end,
+    case leo_gateway_rpc_handler:put(Key, Data_1) of
         {ok, _} ->
             ok;
         Error ->
@@ -258,12 +267,12 @@ write_small2small(Key, Start, End, Data, SrcMeta, SrcObj) ->
     end.
 
 %% @private
-write_large2any(Key, Start, End, Data, SrcMeta) ->
-    LargeObjectProp   = ?env_large_object_properties(),
-    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
-                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+write_large2any(Key, Start, End, Data, SrcMetadata) ->
+    LargeObjectProp = ?env_large_object_properties(),
+    ChunkedObjLen = leo_misc:get_value('chunked_obj_len',
+                                       LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     IndexStart = Start div ChunkedObjLen + 1,
-    IndexEnd   = End div ChunkedObjLen + 1,
+    IndexEnd = End div ChunkedObjLen + 1,
     case IndexStart =:= IndexEnd of
         true ->
             Offset = Start rem ChunkedObjLen,
@@ -273,11 +282,11 @@ write_large2any(Key, Start, End, Data, SrcMeta) ->
             %% head
             HeadOffset = Start rem ChunkedObjLen,
             HeadSize = ChunkedObjLen - HeadOffset,
-            <<HeadData:HeadSize/binary, Rest/binary>> = Data,
+            << HeadData:HeadSize/binary, Rest/binary >> = Data,
             large_obj_partial_update(Key, HeadData, IndexStart, HeadOffset, HeadSize),
             %% middle
             Rest3 = lists:foldl(
-                      fun(Index, <<MidData:ChunkedObjLen/binary, Rest2/binary>>) ->
+                      fun(Index, << MidData:ChunkedObjLen/binary, Rest2/binary >>) ->
                               large_obj_partial_update(Key, MidData, Index),
                               Rest2
                       end,
@@ -288,13 +297,13 @@ write_large2any(Key, Start, End, Data, SrcMeta) ->
             TailSize = End rem ChunkedObjLen + 1,
             large_obj_partial_update(Key, Rest3, IndexEnd, TailOffset, TailSize)
     end,
-    NumChunks = erlang:max(IndexEnd, SrcMeta#?METADATA.cnumber),
+    NumChunks = erlang:max(IndexEnd, SrcMetadata#?METADATA.cnumber),
     large_obj_partial_commit(Key, NumChunks, ChunkedObjLen).
 
 %% @private
 write_nothing2large(Key, Start, _End, Data) ->
-    Data2 = <<0:(Start*8), Data/binary>>,
-    case large_obj_update(Key, Data2) of
+    Data_1 = << 0:(Start*8), Data/binary >>,
+    case large_obj_update(Key, Data_1) of
         ok ->
             ok;
         Error ->
@@ -304,8 +313,8 @@ write_nothing2large(Key, Start, _End, Data) ->
 %% @private
 write_nothing2small(Key, Start, _End, Data) ->
     %% zero pdding to be added until the position reached Start
-    Data2 = <<0:(Start*8), Data/binary>>,
-    case leo_gateway_rpc_handler:put(Key, Data2) of
+    Data_1 = << 0:(Start*8), Data/binary >>,
+    case leo_gateway_rpc_handler:put(Key, Data_1) of
         {ok, _} ->
             ok;
         Error ->
@@ -317,13 +326,14 @@ write_nothing2small(Key, Start, _End, Data) ->
 -spec(large_obj_update(binary(), binary()) ->
              ok | {error, any()}).
 large_obj_update(Key, Data) ->
-    LargeObjectProp   = ?env_large_object_properties(),
-    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
-                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    LargeObjectProp = ?env_large_object_properties(),
+    ChunkedObjLen = leo_misc:get_value('chunked_obj_len',
+                                       LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     {ok, Handler} = leo_large_object_put_handler:start_link(Key, ChunkedObjLen),
     case catch leo_large_object_put_handler:put(Handler, Data) of
         ok ->
-            large_obj_commit(Handler, Key, size(Data), ChunkedObjLen);
+            large_obj_commit(
+              Handler, Key, byte_size(Data), ChunkedObjLen);
         {_, Cause} ->
             ok = leo_large_object_put_handler:rollback(Handler),
             {error, Cause}
@@ -334,7 +344,7 @@ large_obj_commit(Handler, Key, Size, ChunkedObjLen) ->
     case catch leo_large_object_put_handler:result(Handler) of
         {ok, #large_obj_info{length = TotalSize,
                              num_of_chunks = TotalChunks,
-                             md5_context   = Digest}} when Size == TotalSize ->
+                             md5_context = Digest}} when Size == TotalSize ->
             Digest_1 = leo_hex:raw_binary_to_integer(Digest),
             case leo_gateway_rpc_handler:put(Key, ?BIN_EMPTY, Size,
                                              ChunkedObjLen, TotalChunks, Digest_1) of
@@ -356,8 +366,9 @@ large_obj_commit(Handler, Key, Size, ChunkedObjLen) ->
              ok | {error, any()}).
 large_obj_partial_update(Key, Data, Index) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
-    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-    case leo_gateway_rpc_handler:put(Key2, Data, size(Data), Index) of
+    Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:put(
+           Key_1, Data, byte_size(Data), Index) of
         {ok, _ETag} ->
             ok;
         {error, Cause} ->
@@ -365,33 +376,35 @@ large_obj_partial_update(Key, Data, Index) ->
     end.
 large_obj_partial_update(Key, Data, Index, Offset, Size) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
-    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-    case leo_gateway_rpc_handler:get(Key2) of
-        {ok, Meta, Bin} ->
-            Data2 = case Offset > Meta#?METADATA.dsize of
-                        true ->
-                            <<Bin/binary, 0:(8*(Offset - Meta#?METADATA.dsize)), Data/binary>>;
-                        false ->
-                            case (Offset + Size + 1) < Meta#?METADATA.dsize of
-                                true ->
-                                    End = Offset + Size,
-                                    <<Head:Offset/binary, _/binary>> = Bin,
-                                    <<_:End/binary, Tail/binary>> = Bin,
-                                    <<Head/binary, Data/binary, Tail/binary>>;
-                                false ->
-                                    <<Head:Offset/binary, _/binary>> = Bin,
-                                    <<Head/binary, Data/binary>>
-                            end
-                    end,
-            case leo_gateway_rpc_handler:put(Key2, Data2, size(Data2), Index) of
+    Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:get(Key_1) of
+        {ok, Metadata, Bin} ->
+            Data_1 = case Offset > Metadata#?METADATA.dsize of
+                         true ->
+                             << Bin/binary, 0:(8*(Offset - Metadata#?METADATA.dsize)), Data/binary >>;
+                         false ->
+                             case (Offset + Size + 1) < Metadata#?METADATA.dsize of
+                                 true ->
+                                     End = Offset + Size,
+                                     << Head:Offset/binary, _/binary >> = Bin,
+                                     << _:End/binary, Tail/binary >> = Bin,
+                                     << Head/binary, Data/binary, Tail/binary >>;
+                                 false ->
+                                     << Head:Offset/binary, _/binary >> = Bin,
+                                     << Head/binary, Data/binary >>
+                             end
+                     end,
+            case leo_gateway_rpc_handler:put(
+                   Key_1, Data_1, byte_size(Data_1), Index) of
                 {ok, _ETag} ->
                     ok;
                 {error, Cause} ->
                     {error, Cause}
             end;
         {error, not_found} ->
-            Data2 = <<0:(Offset*8), Data/binary>>,
-            case leo_gateway_rpc_handler:put(Key2, Data2, size(Data2), Index) of
+            Data_1 = << 0:(Offset*8), Data/binary >>,
+            case leo_gateway_rpc_handler:put(
+                   Key_1, Data_1, byte_size(Data_1), Index) of
                 {ok, _ETag} ->
                     ok;
                 {error, Cause} ->
@@ -410,7 +423,8 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
 large_obj_partial_commit(Key, NumChunks, ChunkSize) ->
     large_obj_partial_commit(NumChunks, Key, NumChunks, ChunkSize, 0).
 large_obj_partial_commit(0, Key, NumChunks, ChunkSize, TotalSize) ->
-    case leo_gateway_rpc_handler:put(Key, <<>>, TotalSize, ChunkSize, NumChunks, 0) of
+    case leo_gateway_rpc_handler:put(
+           Key, <<>>, TotalSize, ChunkSize, NumChunks, 0) of
         {ok, _} ->
             ok;
         Error ->
@@ -418,8 +432,8 @@ large_obj_partial_commit(0, Key, NumChunks, ChunkSize, TotalSize) ->
     end;
 large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
     PartNumBin = list_to_binary(integer_to_list(PartNum)),
-    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, PartNumBin/binary >>,
-    case leo_gateway_rpc_handler:head(Key2) of
+    Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, PartNumBin/binary >>,
+    case leo_gateway_rpc_handler:head(Key_1) of
         {ok, #?METADATA{dsize = Size}} ->
             large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, TotalSize + Size);
         Error ->
@@ -436,22 +450,22 @@ large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
              {ok, #?METADATA{}, binary()}| {error, any()}).
 read(Key, Start, End) ->
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #?METADATA{dsize = ObjectSize} = Meta} ->
+        {ok, #?METADATA{dsize = ObjectSize} = Metadata} ->
             End2 = if ObjectSize - 1 > End ->
-                          End;
+                           End;
                       true ->
-                          ObjectSize - 1
+                           ObjectSize - 1
                    end,
-            case Meta of
+            case Metadata of
                 #?METADATA{del = 0, cnumber = 0} ->
                     read_small(Key, Start, End2);
-                #?METADATA{del = 0, cnumber = N, csize = CS} = Meta ->
+                #?METADATA{del = 0, cnumber = N, csize = CS} = Metadata ->
                     {NewStartPos, NewEndPos} = calc_pos(Start, End2, ObjectSize),
                     {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
                     {ok, _Pos, Bin} = read_large(Key, NewStartPos, NewEndPos, N, Index, CurPos, <<>>),
-                    {ok, Meta, Bin};
+                    {ok, Metadata, Bin};
                 _ ->
-                    {error, Meta}
+                    {error, Metadata}
             end;
         Error ->
             Error
@@ -460,8 +474,8 @@ read(Key, Start, End) ->
 %% @private
 read_small(Key, Start, End) ->
     case leo_gateway_rpc_handler:get(Key, Start, End) of
-        {ok, Meta, Bin} ->
-            {ok, Meta, Bin};
+        {ok, Metadata, Bin} ->
+            {ok, Metadata, Bin};
         {error, Cause} ->
             {error, Cause}
     end.
@@ -475,7 +489,7 @@ move_curpos2head(_Start, _ChunkedSize, CurPos, Idx) ->
 %% @private
 calc_pos(_StartPos, EndPos, ObjectSize) when EndPos < 0 ->
     NewStartPos = ObjectSize + EndPos,
-    NewEndPos   = ObjectSize - 1,
+    NewEndPos = ObjectSize - 1,
     {NewStartPos, NewEndPos};
 calc_pos(StartPos, 0, ObjectSize) ->
     {StartPos, ObjectSize - 1};
@@ -489,13 +503,13 @@ read_large(_Key,_Start, End,_Total,_Index, CurPos, Acc) when CurPos > End ->
     {ok, CurPos, Acc};
 read_large(Key, Start, End, Total, Index, CurPos, Acc) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
-    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-    case leo_gateway_rpc_handler:head(Key2) of
+    Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:head(Key_1) of
         {ok, #?METADATA{cnumber = 0, dsize = CS}} ->
-            {NewPos, Bin} = get_chunk(Key2, Start, End, CurPos, CS),
-            read_large(Key, Start, End, Total, Index + 1, NewPos, <<Acc/binary, Bin/binary>>);
+            {NewPos, Bin} = get_chunk(Key_1, Start, End, CurPos, CS),
+            read_large(Key, Start, End, Total, Index + 1, NewPos, << Acc/binary, Bin/binary >>);
         {ok, #?METADATA{cnumber = GrandChildNum}} ->
-            case read_large(Key2, Start, End, GrandChildNum, 0, CurPos, Acc) of
+            case read_large(Key_1, Start, End, GrandChildNum, 0, CurPos, Acc) of
                 {ok, NewPos, NewAcc} ->
                     read_large(Key, Start, End, Total, Index + 1, NewPos, NewAcc);
                 {error, Cause} ->
@@ -513,7 +527,7 @@ get_chunk(Key, Start, End, CurPos, ChunkSize) when CurPos >= Start andalso
                                                    (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
-        {ok, _Meta, Bin} ->
+        {ok, _Metadata, Bin} ->
             {CurPos + ChunkSize, Bin};
         Error ->
             Error
@@ -529,7 +543,7 @@ get_chunk(Key, Start, End, CurPos, ChunkSize) ->
                  false -> End - CurPos
              end,
     case leo_gateway_rpc_handler:get(Key, StartPos, EndPos) of
-        {ok, _Meta, Bin} ->
+        {ok, _Metadata, Bin} ->
             {CurPos + ChunkSize, Bin};
         {error, Cause} ->
             {error, Cause}
@@ -543,35 +557,35 @@ get_chunk(Key, Start, End, CurPos, ChunkSize) ->
 -spec(trim(binary(), pos_integer()) ->
              ok | {error, any()}).
 trim(Key, Size) ->
-    LargeObjectProp   = ?env_large_object_properties(),
-    ChunkedObjLen     = leo_misc:get_value('chunked_obj_len',
-                                           LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
+    LargeObjectProp = ?env_large_object_properties(),
+    ChunkedObjLen = leo_misc:get_value('chunked_obj_len',
+                                       LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     IsLarge = Size > ChunkedObjLen,
     case leo_gateway_rpc_handler:get(Key) of
         %% TODO Handle Truncate Large Object
         {error, not_found} when IsLarge =:= false ->
-            Obj = <<0:(8* Size)>>,
+            Obj = << 0:(8* Size) >>,
             case leo_gateway_rpc_handler:put(Key, Obj) of
                 {ok, _} ->
                     ok;
                 Error ->
                     Error
             end;
-        {ok, #?METADATA{cnumber = 0} = _SrcMeta, SrcObj} when IsLarge =:= false ->
+        {ok, #?METADATA{cnumber = 0} = _SrcMetadata, SrcObj} when IsLarge =:= false ->
             %% small to small
             %% @todo handle expand case
-            <<DstObj:Size/binary, _Rest/binary>> = SrcObj,
+            << DstObj:Size/binary, _Rest/binary >> = SrcObj,
             case leo_gateway_rpc_handler:put(Key, DstObj) of
                 {ok, _} ->
                     ok;
                 Error ->
                     Error
             end;
-        {ok, #?METADATA{cnumber = 0} = _SrcMeta, _SrcObj} ->
+        {ok, #?METADATA{cnumber = 0} = _SrcMetadata, _SrcObj} ->
             %% small to large
             %% @todo handle expand case
             ok;
-        {ok, #?METADATA{cnumber = CNum} = _SrcMeta, _} when IsLarge =:= true ->
+        {ok, #?METADATA{cnumber = CNum} = _SrcMetadata, _} when IsLarge =:= true ->
             %% large to large
             %% @todo handle expand case
             End = Size - 1,
@@ -581,7 +595,8 @@ trim(Key, Size) ->
             case large_obj_partial_trim(Key, IndexEnd, TailSize) of
                 ok ->
                     %% Update the metadata based on Size and IndexEnd
-                    case leo_gateway_rpc_handler:put(Key, <<>>, Size, ChunkedObjLen, IndexEnd, 0) of
+                    case leo_gateway_rpc_handler:put(
+                           Key, <<>>, Size, ChunkedObjLen, IndexEnd, 0) of
                         {ok, _} ->
                             %% Remove tail chunks between IndexEnd + 1 to CNum
                             RemovedIdxList = lists:seq(IndexEnd + 1, CNum),
@@ -593,15 +608,15 @@ trim(Key, Size) ->
                 Error ->
                     Error
             end;
-        {ok, #?METADATA{cnumber = _CNum} = _SrcMeta, _} ->
+        {ok, #?METADATA{cnumber = _CNum} = _SrcMetadata, _} ->
             %% large to small
             %% Get the first chunk
             IndexBin = list_to_binary(integer_to_list(1)),
-            Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-            case leo_gateway_rpc_handler:get(Key2) of
-                {ok, _Meta, SrcObj} ->
+            Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+            case leo_gateway_rpc_handler:get(Key_1) of
+                {ok, _Metadata, SrcObj} ->
                     %% Trim the data by Size
-                    <<DstObj:Size/binary, _Rest/binary>> = SrcObj,
+                    << DstObj:Size/binary, _Rest/binary >> = SrcObj,
                     %% Insert the new object as a small object
                     case leo_gateway_rpc_handler:put(Key, DstObj) of
                         {ok, _} ->
@@ -617,11 +632,11 @@ trim(Key, Size) ->
 %% @private
 large_obj_partial_trim(Key, Index, Size) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
-    Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
-    case leo_gateway_rpc_handler:get(Key2) of
-        {ok, _Meta, SrcObj} ->
-            <<DstObj:Size/binary, _Rest/binary>> = SrcObj,
-            case leo_gateway_rpc_handler:put(Key2, DstObj) of
+    Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
+    case leo_gateway_rpc_handler:get(Key_1) of
+        {ok, _Metadata, SrcObj} ->
+            << DstObj:Size/binary, _Rest/binary >> = SrcObj,
+            case leo_gateway_rpc_handler:put(Key_1, DstObj) of
                 {ok, _} ->
                     ok;
                 Error ->
@@ -634,18 +649,18 @@ large_obj_partial_trim(Key, Index, Size) ->
 %% @private
 large_obj_delete_chunks(_Key, []) ->
     ok;
-large_obj_delete_chunks(Key1, [Index1|Rest]) ->
+large_obj_delete_chunks(Key, [Index1|Rest]) ->
     Index2 = list_to_binary(integer_to_list(Index1)),
-    Key2   = << Key1/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
-    case leo_gateway_rpc_handler:delete(Key2) of
+    Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, Index2/binary >>,
+    case leo_gateway_rpc_handler:delete(Key_1) of
         ok ->
             void;
         {error, Cause} ->
             ?error("large_obj_delete_chunks/2",
-                   [{key, binary_to_list(Key1)},
+                   [{key, binary_to_list(Key)},
                     {index, Index1}, {cause, Cause}])
     end,
-    large_obj_delete_chunks(Key1, Rest).
+    large_obj_delete_chunks(Key, Rest).
 
 
 %% @doc Convert from the file path to the path trailing '/'
@@ -657,7 +672,7 @@ path_to_dir(Path) ->
         $/ ->
             Path;
         _ ->
-            <<Path/binary, "/">>
+            << Path/binary, "/" >>
     end.
 
 
@@ -668,7 +683,7 @@ path_to_dir(Path) ->
 path_trim_trailing_sep(Src) ->
     case binary:last(Src) of
         $/ ->
-            binary:part(Src, 0, size(Src) - 1);
+            binary:part(Src, 0, byte_size(Src) - 1);
         _ ->
             Src
     end.
@@ -701,9 +716,9 @@ path_relative_to_abs([Segment|Rest], Acc) ->
              boolean()).
 binary_is_contained(<<>>, _Char) ->
     false;
-binary_is_contained(<<Char:8, _Rest/binary>>, Char) ->
+binary_is_contained(<< Char:8, _Rest/binary >>, Char) ->
     true;
-binary_is_contained(<<_Other:8, Rest/binary>>, Char) ->
+binary_is_contained(<< _Other:8, Rest/binary >>, Char) ->
     binary_is_contained(Rest, Char).
 
 
@@ -714,7 +729,7 @@ binary_is_contained(<<_Other:8, Rest/binary>>, Char) ->
 get_disk_usage() ->
     StorageNodes = case leo_redundant_manager_api:get_members() of
                        {ok, Members} ->
-                           Nodes = [_N || #member{node  = _N,
+                           Nodes = [_N || #member{node = _N,
                                                   state = ?STATE_RUNNING} <- Members],
                            Nodes;
                        {error,_Cause} ->

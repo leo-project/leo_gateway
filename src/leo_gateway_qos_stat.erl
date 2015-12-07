@@ -139,7 +139,7 @@ init([SVManagers, IsEnabled]) ->
         false ->
             void
     end,
-    {ok, #state{managers   = SVManagers,
+    {ok, #state{managers = SVManagers,
                 is_enabled = IsEnabled}}.
 
 handle_call(_Msg,_From, State) ->
