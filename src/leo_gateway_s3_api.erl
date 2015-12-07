@@ -1326,12 +1326,11 @@ auth(Req, HTTPMethod, Path, TokenLen, ReqParams) ->
                      false ->
                          ?BIN_EMPTY
                  end,
-    ?debugVal(BucketName),
 
     case leo_s3_bucket:get_latest_bucket(BucketName) of
-        {ok, #?BUCKET{acls = ACLs} = _Bucket} ->
-            ?debugVal(_Bucket),
-            auth(Req, HTTPMethod, Path, TokenLen, BucketName, ACLs, ReqParams);
+        {ok, #?BUCKET{acls = ACLs} = Bucket} ->
+            auth(Req, HTTPMethod, Path, TokenLen,
+                 BucketName, ACLs, ReqParams#req_params{bucket_info = Bucket});
         not_found ->
             auth(Req, HTTPMethod, Path, TokenLen, BucketName, [], ReqParams);
         {error, Cause} ->
