@@ -162,15 +162,16 @@ put(#put_req_params{path = Key,
             _ ->
                 BucketInfo
         end,
-    ReqParams = get_request_parameters(put, Key),
-
-    invoke(ReqParams#rpc_params.redundancies,
-           leo_storage_handler_object, put,
-           [#?OBJECT{addr_id = ReqParams#rpc_params.addr_id,
+    #rpc_params{addr_id = AddrId,
+                redundancies = Redundancies,
+                timestamp = Timestamp,
+                req_id = ReqId} = get_request_parameters(put, Key),
+    invoke(Redundancies, leo_storage_handler_object, put,
+           [#?OBJECT{addr_id = AddrId,
                      key = Key,
                      data = Body,
                      dsize = Size,
-                     timestamp = ReqParams#rpc_params.timestamp,
+                     timestamp = Timestamp,
                      csize = ChunkedSize,
                      cnumber = TotalChunks,
                      cindex = ChunkIndex,
@@ -178,8 +179,7 @@ put(#put_req_params{path = Key,
                      redundancy_method = RedMethod,
                      cp_params = CPParams,
                      ec_method = ECMethod,
-                     ec_params = ECParams},
-            ReqParams#rpc_params.req_id], []).
+                     ec_params = ECParams}, ReqId], []).
 
 -spec(put(binary(), binary()) ->
              ok|{ok, pos_integer()}|{error, any()}).
@@ -259,7 +259,8 @@ invoke([#redundant_node{node = Node,
 -spec(get_request_parameters(atom(), binary()) ->
              #rpc_params{}).
 get_request_parameters(Method, Key) ->
-    {ok, #redundancies{id = Id, nodes = Redundancies}} =
+    {ok, #redundancies{id = Id,
+                       nodes = Redundancies}} =
         leo_redundant_manager_api:get_redundancies_by_key(Method, Key),
 
     UnivDateTime = erlang:universaltime(),
