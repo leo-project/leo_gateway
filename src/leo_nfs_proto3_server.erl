@@ -89,8 +89,8 @@ init(_Args) ->
     leo_nfs_state_ets:add_write_verfier(crypto:rand_bytes(8)),
     {ok, void}.
 
-handle_call(Req, _From, S) ->
-    ?debug("handle_call", "req:~p from:~p", [Req, _From]),
+handle_call(Req,_From, S) ->
+    ?debug("handle_call", "req:~p from:~p", [Req,_From]),
     {reply, [], S}.
 
 handle_cast(Req, S) ->
@@ -101,7 +101,7 @@ handle_info(Req, S) ->
     ?debug("handle_info", "req:~p", [Req]),
     {noreply, S}.
 
-terminate(_Reason, _S) ->
+terminate(_Reason,_S) ->
     ok.
 
 
@@ -111,6 +111,7 @@ terminate(_Reason, _S) ->
 %% @doc
 nfsproc3_null_3(_Clnt, State) ->
     {reply, [], State}.
+
 
 %% @doc
 nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
@@ -125,6 +126,7 @@ nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
             {reply, {?NFS3ERR_IO, Reason}, State}
     end.
 
+
 %% @doc
 %% @todo for now do nothing
 nfsproc3_setattr_3({{FileUID}, {_Mode,
@@ -132,7 +134,7 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
                                 _GID,
                                 SattrSize,
                                 _ATime,
-                                _MTime}, _Guard} = _1, Clnt, State) ->
+                                _MTime},_Guard} = _1, Clnt, State) ->
     ?debug("nfsproc3_setattr_3", "args:~p client:~p", [_1, Clnt]),
     Size = sattr_size_to_file_info(SattrSize),
     case Size of
@@ -163,9 +165,10 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
                                }}, State};
         not_found ->
             {reply, {?NFS3ERR_NOENT, {{false, void}}}, State};
-        {error, _Reason} ->
+        {error,_Reason} ->
             {reply, {?NFS3ERR_IO, {{false, void}}}, State}
     end.
+
 
 %% @doc
 nfsproc3_access_3({{UID}, AccessBitMask} = _1, Clnt, State) ->
@@ -175,12 +178,14 @@ nfsproc3_access_3({{UID}, AccessBitMask} = _1, Clnt, State) ->
                         AccessBitMask  %% access bits(up all)
                        }}, State}.
 
+
 %% @doc
 nfsproc3_readlink_3(_1, Clnt, State) ->
     ?debug("nfsproc3_readlink_3", "args:~p client:~p", [_1, Clnt]),
     {reply, {?NFS3_OK, {{false, void}, %% post_op_attr for obj
                         << "link path" >>}
             }, State}.
+
 
 %% @doc
 nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
@@ -200,8 +205,9 @@ nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
                                   }}, State}
     end.
 
+
 %% @doc
-nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, State) ->
+nfsproc3_write_3({{UID}, Offset, Count,_HowStable, Data} = _1, Clnt, State) ->
     ?debug("nfsproc3_write_3", "uid:~p offset:~p count:~p client:~p",
            [UID, Offset, Count, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
@@ -218,14 +224,18 @@ nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, State) ->
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
+
 %% @doc
-nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, State) ->
+nfsproc3_create_3({{{UID}, Name}, {_CreateMode,_How}} = _1, Clnt, State) ->
     ?debug("nfsproc3_create_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
-    FilePath4S3 = filename:join(Dir, Name),
-    case leo_gateway_rpc_handler:put(FilePath4S3, <<>>) of
-        {ok, _}->
-            {ok, FileUID} = leo_nfs_state_ets:add_path(FilePath4S3),
+    Key = filename:join(Dir, Name),
+
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = ?BIN_EMPTY,
+                                                     dsize = 0}) of
+        {ok,_}->
+            {ok, FileUID} = leo_nfs_state_ets:add_path(Key),
             {reply, {?NFS3_OK, {{true, {FileUID}}, %% post_op file handle
                                 {false, void},      %% post_op_attr
                                 ?SIMPLENFS_WCC_EMPTY}
@@ -235,14 +245,18 @@ nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, State) ->
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
+
 %% @doc
-nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, State) ->
+nfsproc3_mkdir_3({{{UID}, Name},_How} = _1, Clnt, State) ->
     ?debug("nfsproc3_mkdir_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
     DirPath = filename:join(Dir, Name),
-    DummyFile4S3Dir = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
-    case leo_gateway_rpc_handler:put(DummyFile4S3Dir, <<>>) of
-        {ok, _}->
+    Key = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
+
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = ?BIN_EMPTY,
+                                                     dsize = 0}) of
+        {ok,_}->
             {reply, {?NFS3_OK, {{false, void}, %% post_op file handle
                                 {false, void}, %% post_op_attr
                                 ?SIMPLENFS_WCC_EMPTY
@@ -257,6 +271,7 @@ nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, State) ->
                     }, State}
     end.
 
+
 %% @doc
 nfsproc3_symlink_3(_1, Clnt, State) ->
     ?debug("nfsproc3_symlink_3", "args:~p client:~p", [_1, Clnt]),
@@ -264,6 +279,7 @@ nfsproc3_symlink_3(_1, Clnt, State) ->
                         {false, void}, %% post_op_attr
                         ?SIMPLENFS_WCC_EMPTY}
             }, State}.
+
 
 %% @doc
 nfsproc3_mknod_3(_1, Clnt, State) ->
@@ -273,18 +289,20 @@ nfsproc3_mknod_3(_1, Clnt, State) ->
                         ?SIMPLENFS_WCC_EMPTY}
             }, State}.
 
+
 %% @doc
 nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, State) ->
     ?debug("nfsproc3_remove_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
-    FilePath4S3 = filename:join(Dir, Name),
-    case leo_gateway_rpc_handler:delete(FilePath4S3) of
+    Key = filename:join(Dir, Name),
+    case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
         {error, Reason} ->
             io:format(user, "[remove]reason:~p~n",[Reason]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
+
 
 %% @doc
 nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
@@ -294,12 +312,13 @@ nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
     Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
     case is_empty_dir(Path4S3Dir) of
         true ->
-            DummyFile4S3Dir = filename:join(Path4S3Dir, ?NFS_DUMMY_FILE4S3DIR),
-            catch leo_gateway_rpc_handler:delete(DummyFile4S3Dir),
+            Key = filename:join(Path4S3Dir, ?NFS_DUMMY_FILE4S3DIR),
+            catch leo_gateway_rpc_handler:delete(Key),
             {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
         false ->
             {reply, {?NFS3ERR_NOTEMPTY, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
+
 
 %% @doc
 nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) ->
@@ -324,6 +343,7 @@ nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) -
                                   }}, State}
     end.
 
+
 %% @doc
 nfsproc3_link_3(_1, Clnt, State) ->
     ?debug("nfsproc3_link_3", "args:~p client:~p", [_1, Clnt]),
@@ -332,17 +352,20 @@ nfsproc3_link_3(_1, Clnt, State) ->
                        }
             }, State}.
 
+
 %% @doc
 nfsproc3_readdir_3({{UID}, Cookie, CookieVerf, MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdir_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
     readdir(Path, Cookie, CookieVerf, MaxCnt, false, State).
 
+
 %% @doc
-nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, MaxCnt} = _1, Clnt, State) ->
+nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf,_DirCnt, MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
     readdir(Path, Cookie, CookieVerf, MaxCnt, true, State).
+
 
 %% @doc
 nfsproc3_fsstat_3(_1, Clnt, State) ->
@@ -357,6 +380,7 @@ nfsproc3_fsstat_3(_1, Clnt, State) ->
                         8,             %% # of free file slots(for auth user)
                         10             %% invarsec
                        }}, State}.
+
 
 %% @doc
 nfsproc3_fsinfo_3(_1, Clnt, State) ->
@@ -375,6 +399,7 @@ nfsproc3_fsinfo_3(_1, Clnt, State) ->
                         0              %% properties
                        }}, State}.
 
+
 %% @doc
 nfsproc3_pathconf_3(_1, Clnt, State) ->
     ?debug("nfsproc3_pathconf_3", "args:~p client:~p", [_1, Clnt]),
@@ -387,6 +412,7 @@ nfsproc3_pathconf_3(_1, Clnt, State) ->
                         true           %% case_preserving
                        }}, State}.
 
+
 %% @doc
 nfsproc3_commit_3(_1, Clnt, State) ->
     ?debug("nfsproc3_commit_3", "args:~p client:~p", [_1, Clnt]),
@@ -397,38 +423,57 @@ nfsproc3_commit_3(_1, Clnt, State) ->
 
 
 %% @doc
-sattr_mode_to_file_info({0, _})   -> undefined;
-sattr_mode_to_file_info({true, Mode}) -> Mode.
+sattr_mode_to_file_info({0,_}) ->
+    undefined;
+sattr_mode_to_file_info({true, Mode}) ->
+    Mode.
+
 
 %% @doc
-sattr_uid_to_file_info({0, _})   -> undefined;
-sattr_uid_to_file_info({true, UID}) -> UID.
+sattr_uid_to_file_info({0,_}) ->
+    undefined;
+sattr_uid_to_file_info({true, UID}) ->
+    UID.
+
 
 %% @doc
-sattr_gid_to_file_info({0, _})   -> undefined;
-sattr_gid_to_file_info({true, GID}) -> GID.
+sattr_gid_to_file_info({0,_}) ->
+    undefined;
+sattr_gid_to_file_info({true, GID}) ->
+    GID.
+
 
 %% @doc
-sattr_size_to_file_info({true, Size}) -> Size;
-sattr_size_to_file_info({_, _})   -> undefined.
+sattr_size_to_file_info({true, Size}) ->
+    Size;
+sattr_size_to_file_info({_,_}) ->
+    undefined.
+
 
 %% @doc
-sattr_atime_to_file_info({'DONT_CHANGE', _}) -> undefined;
-sattr_atime_to_file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
-sattr_atime_to_file_info({_, {ATime, _}})         -> ATime.
+sattr_atime_to_file_info({'DONT_CHANGE',_}) ->
+    undefined;
+sattr_atime_to_file_info({'SET_TO_SERVER_TIME',_}) ->
+    leo_date:unixtime();
+sattr_atime_to_file_info({_, {ATime,_}}) ->
+    ATime.
+
 
 %% @doc
-sattr_mtime_to_file_info({'DONT_CHANGE', _}) -> undefined;
-sattr_mtime_to_file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
-sattr_mtime_to_file_info({_, {MTime, _}})         -> MTime.
+sattr_mtime_to_file_info({'DONT_CHANGE',_}) ->
+    undefined;
+sattr_mtime_to_file_info({'SET_TO_SERVER_TIME',_}) ->
+    leo_date:unixtime();
+sattr_mtime_to_file_info({_, {MTime,_}}) ->
+    MTime.
 
 
 %% ---------------------------------------------------------------------
 %% INNER FUNCTIONS
 %% ---------------------------------------------------------------------
 %% @doc
-%%
-readdir(Path, Cookie, CookieVerf, _MaxCnt, IsPlus, State) ->
+%% @private
+readdir(Path, Cookie, CookieVerf,_MaxCnt, IsPlus, State) ->
     Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
     {ok, NewCookieVerf, ReadDir} = case CookieVerf of
                                        << 0,0,0,0,0,0,0,0 >> ->
@@ -465,6 +510,7 @@ readdir(Path, Cookie, CookieVerf, _MaxCnt, IsPlus, State) ->
                                }}, State}
     end.
 
+
 %% @doc Returns true if Path refers to a directory which have child files,
 %%      and false otherwise.
 %% @private
@@ -473,29 +519,30 @@ is_empty_dir(Path) ->
     case leo_nfs_file_handler:list_dir(Path, false) of
         {ok, MetaList} when is_list(MetaList) ->
             ?debug("is_empty_dir/1", "List Dir ~p, ~p", [Path, MetaList]),
-            FilteredList = lists:foldl(
-                             fun(Meta, Acc) ->
-                                     case Meta of
-                                         #?METADATA{del = 1} ->
-                                             Acc;
-                                         #?METADATA{dsize = -1} ->
-                                             DummyKey = filename:join(Meta#?METADATA.key, ?NFS_DUMMY_FILE4S3DIR),
-                                             case leo_gateway_rpc_handler:head(DummyKey) of
-                                                 {ok, #?METADATA{del = 0}} ->
-                                                     [Meta | Acc];
-                                                 _ ->
-                                                     Acc
-                                             end;
-                                         _ ->
-                                             BaseName = filename:basename(Meta#?METADATA.key),
-                                             case BaseName of
-                                                 ?NFS_DUMMY_FILE4S3DIR ->
-                                                     Acc;
-                                                 _ ->
-                                                     [Meta | Acc]
-                                             end
-                                     end
-                             end, [], MetaList),
+            FilteredList =
+                lists:foldl(
+                  fun(Meta, Acc) ->
+                          case Meta of
+                              #?METADATA{del = 1} ->
+                                  Acc;
+                              #?METADATA{dsize = -1} ->
+                                  DummyKey = filename:join(Meta#?METADATA.key,
+                                                           ?NFS_DUMMY_FILE4S3DIR),
+                                  case leo_gateway_rpc_handler:head(DummyKey) of
+                                      {ok, #?METADATA{del = 0}} ->
+                                          [Meta | Acc];
+                                      _ ->
+                                          Acc
+                                  end;
+                              _ ->
+                                  case filename:basename(Meta#?METADATA.key) of
+                                      ?NFS_DUMMY_FILE4S3DIR ->
+                                          Acc;
+                                      _ ->
+                                          [Meta | Acc]
+                                  end
+                          end
+                  end, [], MetaList),
             length(FilteredList) =:= 0;
         _Error ->
             false
@@ -562,13 +609,12 @@ readdir_create_resp(Path, Cookie,
                         IsPlus,
                         void).
 
+%% @private
 readdir_create_resp(_Path, CurCookie,
-                    _ReadDir,
-                    Cookie, EOF, _IsPlus, Resp)
-  when CurCookie =:= Cookie ->
+                    _ReadDir, Cookie,
+                    EOF,_IsPlus, Resp) when CurCookie =:= Cookie ->
     ?debug("readdir_create_resp", "resp:~p ~n", [Resp]),
     {Resp, EOF};
-
 readdir_create_resp(Path, CurCookie,
                     #ongoing_readdir{filelist = FileList} = ReadDir,
                     Cookie, EOF, IsPlus, Resp) ->
@@ -599,7 +645,7 @@ readdir_create_resp(Path, CurCookie,
 
     FileName = filename:basename(Key),
     case {Del2, FileName} of
-        {1, _} ->
+        {1,_} ->
             readdir_create_resp(Path,
                                 CurCookie - 1,
                                 ReadDir,
@@ -646,6 +692,8 @@ readdir_create_resp(Path, CurCookie,
                                 NewResp)
     end.
 
+
+%% @private
 getattr(Path) ->
     case leo_nfs_file_handler:binary_is_contained(Path, $/) of
         %% object
@@ -680,13 +728,14 @@ getattr(Path) ->
             end
     end.
 
+
 %% @doc Return the inode of Path
 %% @private
 %% @todo to be replaced with truely unique id supported by LeoFS future works
 -spec(inode(binary() | string()) ->
              integer()).
 inode(Path) ->
-    << F8:8/binary, _/binary >> = erlang:md5(Path),
+    << F8:8/binary,_/binary >> = erlang:md5(Path),
     Hex = leo_hex:binary_to_hex(F8),
     leo_hex:hex_to_integer(Hex).
 
@@ -769,6 +818,7 @@ bucket2fattr3(Bucket) ->
      {UT, 0}, %% last access
      {UT, 0}, %% last modification
      {UT, 0}}.%% last change
+
 
 %% @private
 get_dir_unix_timestamp(Dir) ->

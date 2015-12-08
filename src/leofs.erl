@@ -70,7 +70,9 @@ get(Key) ->
 -spec(put(binary(), binary()) ->
              {ok, pos_integer()} | {error, any()}).
 put(Key, Body) ->
-    case leo_gateway_rpc_handler:put(Key, Body) of
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = Body,
+                                                     dsize = byte_size(Body)}) of
         {ok, ETag} = Ret ->
             Mime = leo_mime:guess_mime(Key),
             Val= term_to_binary(#cache{etag = ETag,

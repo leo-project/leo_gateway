@@ -129,7 +129,8 @@ init([BucketInfo, Key, Length]) ->
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
-handle_call({put, Bin}, _From, #state{key = Key,
+handle_call({put, Bin}, _From, #state{bucket_info = BucketInfo,
+                                      key = Key,
                                       max_obj_len = MaxObjLen,
                                       stacked_bin = StackedBin,
                                       num_of_chunks = NumOfChunks,
@@ -149,9 +150,12 @@ handle_call({put, Bin}, _From, #state{key = Key,
                           ChunkedKey = << Key/binary,
                                           ?DEF_SEPARATOR/binary,
                                           NumOfChunksBin/binary >>,
-                          %% @TODO:
                           Ret = leo_gateway_rpc_handler:put(
-                                  ChunkedKey, Bin_2, MaxObjLen, NumOfChunks),
+                                  #put_req_params{path = ChunkedKey,
+                                                  body = Bin_2,
+                                                  dsize = MaxObjLen,
+                                                  cindex = NumOfChunks,
+                                                  bucket_info = BucketInfo}),
                           AsyncNotify = {async_notify, ChunkedKey, Ret},
                           erlang:send(self(), AsyncNotify)
                   end,
@@ -183,7 +187,8 @@ handle_call(rollback, _From, #state{key = Key} = State) ->
     {reply, ok, State#state{errors = []}};
 
 
-handle_call(result, _From, #state{key = Key,
+handle_call(result, _From, #state{bucket_info = BucketInfo,
+                                  key = Key,
                                   md5_context = Context,
                                   stacked_bin = StackedBin,
                                   num_of_chunks = NumOfChunks,
@@ -196,14 +201,16 @@ handle_call(result, _From, #state{key = Key,
               _ ->
                   NumOfChunksBin = list_to_binary(integer_to_list(NumOfChunks)),
                   Size = erlang:byte_size(StackedBin),
-                  Bin = << Key/binary,
-                           ?DEF_SEPARATOR/binary,
-                           NumOfChunksBin/binary >>,
-
-                  %% @TODO:
+                  Key_1 = << Key/binary,
+                             ?DEF_SEPARATOR/binary,
+                             NumOfChunksBin/binary >>,
                   case leo_gateway_rpc_handler:put(
-                         Bin, StackedBin, Size, NumOfChunks) of
-                      {ok, _ETag} ->
+                         #put_req_params{path = Key_1,
+                                         body = StackedBin,
+                                         dsize = Size,
+                                         cindex = NumOfChunks,
+                                         bucket_info = BucketInfo}) of
+                      {ok,_ETag} ->
                           {ok, {NumOfChunks,
                                 crypto:hash_update(Context, StackedBin)}};
                       {error, Cause} ->
