@@ -66,8 +66,8 @@
              ok | {error, any()} when Key::binary(),
                                       Length::non_neg_integer()).
 start_link(Key, Length) ->
-    %% @TODO:
-    BucketInfo = #?BUCKET{},
+    BucketName = erlang:hd(leo_misc:binary_tokens(Key, <<"/">>)),
+    BucketInfo = #?BUCKET{name = BucketName},
     start_link(BucketInfo, Key, Length).
 
 -spec(start_link(BucketInfo, Key, Length) ->

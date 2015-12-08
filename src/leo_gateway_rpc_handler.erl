@@ -181,37 +181,6 @@ put(#put_req_params{path = Key,
                      ec_method = ECMethod,
                      ec_params = ECParams}, ReqId], []).
 
-%% -spec(put(binary(), binary()) ->
-%%              ok|{ok, pos_integer()}|{error, any()}).
-%% put(Key, Body) ->
-%%     Size = byte_size(Body),
-%%     put(Key, Body, Size, 0, 0, 0, 0).
-
-%% %% @doc Insert an object into the storage-cluster (child of chunked-object)
-%% -spec(put(binary(), binary(), integer(), integer()) ->
-%%              ok|{ok, pos_integer()}|{error, any()}).
-%% put(Key, Body, Size, Index) ->
-%%     put(Key, Body, Size, 0, 0, Index, 0).
-
-%% %% @doc Insert an object into the storage-cluster (parent of chunked-object)
-%% -spec(put(binary(), binary(), integer(), integer(), integer(), integer()) ->
-%%              ok|{ok, pos_integer()}|{error, any()}).
-%% put(Key, Body, Size, ChunkedSize, TotalOfChunks, Digest) ->
-%%     put(Key, Body, Size, ChunkedSize, TotalOfChunks, 0, Digest).
-
-%% %% @doc Insert an object into the storage-cluster
-%% -spec(put(binary(), binary(), integer(), integer(), integer(), integer(), integer()) ->
-%%              ok|{ok, pos_integer()}|{error, any()}).
-%% put(Key, Body, Size, ChunkedSize, TotalChunks, ChunkIndex, Digest) ->
-%%     put(#put_req_params{path = Key,
-%%                         body = Body,
-%%                         dsize = Size,
-%%                         total_chunks = TotalChunks,
-%%                         cindex = ChunkIndex,
-%%                         csize = ChunkedSize,
-%%                         digest = Digest,
-%%                         bucket_info = undefined}).
-
 
 %% @doc Do invoke rpc calls with handling retries
 %%

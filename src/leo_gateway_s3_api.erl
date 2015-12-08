@@ -1120,7 +1120,6 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen, BucketInfo) ->
             case leo_gateway_rpc_handler:head(ChildKey) of
                 {ok, #?METADATA{del = 0,
                                 dsize = ChildObjSize}} ->
-                    %% @TODO:
                     case leo_gateway_rpc_handler:put(#put_req_params{path = Path,
                                                                      body = ?BIN_EMPTY,
                                                                      dsize = Len,
