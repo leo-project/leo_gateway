@@ -146,7 +146,7 @@ put(#put_req_params{path = Key,
     ok = leo_metrics_req:notify(?STAT_COUNT_PUT),
     #?BUCKET{redundancy_method = RedMethod,
              cp_params = CPParams,
-             ec_method = ECMethod,
+             ec_lib = ECLib,
              ec_params = ECParams} =
         case BucketInfo of
             undefined ->
@@ -178,7 +178,7 @@ put(#put_req_params{path = Key,
                      checksum = Digest,
                      redundancy_method = RedMethod,
                      cp_params = CPParams,
-                     ec_method = ECMethod,
+                     ec_lib = ECLib,
                      ec_params = ECParams}, ReqId], []).
 
 
