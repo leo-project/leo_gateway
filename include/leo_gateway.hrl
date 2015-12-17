@@ -83,6 +83,7 @@
 -define(ERROR_NOT_MATCH_LENGTH,  "Not match object length").
 -define(ERROR_FAIL_PUT_OBJ,      "Fail put an object").
 -define(ERROR_FAIL_RETRIEVE_OBJ, "Fail retrieve an object").
+-define(ERROR_COULD_NOT_START_TRAN, "Could not start a transaction").
 
 
 %%----------------------------------------------------------------------
