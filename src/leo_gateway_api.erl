@@ -53,82 +53,114 @@
 %%
 -spec(get_node_status() -> {ok, list()}).
 get_node_status() ->
-    {ok, Version} = application:get_key(leo_gateway, vsn),
-    {RingHashCur, RingHashPrev} =
-        case leo_redundant_manager_api:checksum(?CHECKSUM_RING) of
-            {ok, {Chksum0, Chksum1}} -> {Chksum0, Chksum1};
-            _ -> {[], []}
-        end,
-
-    SNMPAgent = case application:get_env(leo_storage, snmp_agent) of
-                    {ok, EnvSNMPAgent} -> EnvSNMPAgent;
-                    _ -> []
-                end,
-    Directories = [{log,        ?env_log_dir(leo_gateway)},
-                   {mnesia,     []},
-                   {snmp_agent, SNMPAgent}
-                  ],
-    RingHashes  = [{ring_cur,  RingHashCur},
-                   {ring_prev, RingHashPrev }
-                  ],
-    Statistics  = [{vm_version,       erlang:system_info(version)},
-                   {total_mem_usage,  erlang:memory(total)},
-                   {system_mem_usage, erlang:memory(system)},
-                   {proc_mem_usage,   erlang:memory(processes)},
-                   {ets_mem_usage,    erlang:memory(ets)},
-                   {num_of_procs,     erlang:system_info(process_count)},
-                   {process_limit,    erlang:system_info(process_limit)},
-                   {kernel_poll,      erlang:system_info(kernel_poll)},
-                   {thread_pool_size, erlang:system_info(thread_pool_size)}
-                  ],
-
-    Protocol   = ?env_protocol(),
-    HttpProps  = ?env_http_properties(),
+    Statistics = [{vm_version, erlang:system_info(version)},
+                  {total_mem_usage, erlang:memory(total)},
+                  {system_mem_usage, erlang:memory(system)},
+                  {proc_mem_usage, erlang:memory(processes)},
+                  {ets_mem_usage, erlang:memory(ets)},
+                  {num_of_procs, erlang:system_info(process_count)},
+                  {process_limit, erlang:system_info(process_limit)},
+                  {kernel_poll, erlang:system_info(kernel_poll)},
+                  {thread_pool_size, erlang:system_info(thread_pool_size)}
+                 ],
+    Protocol = ?env_protocol(),
+    HttpProps = ?env_http_properties(),
     CacheProps = ?env_cache_properties(),
-    LObjProps  = ?env_large_object_properties(),
+    LObjProps = ?env_large_object_properties(),
     HttpConf =
         [
-         {handler,                  leo_misc:get_value('protocol',                 HttpProps,  Protocol)},
-         {port,                     leo_misc:get_value('port',                     HttpProps,  ?DEF_HTTP_PORT)},
-         {ssl_port,                 leo_misc:get_value('ssl_port',                 HttpProps,  ?DEF_HTTP_SSL_PORT)},
-         {num_of_acceptors,         leo_misc:get_value('num_of_acceptors',         HttpProps,  ?DEF_HTTP_NUM_OF_ACCEPTORS)},
-         {http_cache,               leo_misc:get_value('http_cache',               CacheProps, ?DEF_HTTP_CACHE)},
-         {cache_workers,            leo_misc:get_value('cache_workers',            CacheProps, ?DEF_CACHE_WORKERS)},
-         {cache_ram_capacity,       leo_misc:get_value('cache_ram_capacity',       CacheProps, ?DEF_CACHE_RAM_CAPACITY)},
-         {cache_disc_capacity,      leo_misc:get_value('cache_disc_capacity',      CacheProps, ?DEF_CACHE_DISC_CAPACITY)},
+         {handler, leo_misc:get_value('protocol', HttpProps, Protocol)},
+         {port, leo_misc:get_value('port', HttpProps, ?DEF_HTTP_PORT)},
+         {ssl_port, leo_misc:get_value('ssl_port', HttpProps, ?DEF_HTTP_SSL_PORT)},
+         {num_of_acceptors, leo_misc:get_value('num_of_acceptors', HttpProps, ?DEF_HTTP_NUM_OF_ACCEPTORS)},
+         {http_cache, leo_misc:get_value('http_cache', CacheProps, ?DEF_HTTP_CACHE)},
+         {cache_workers, leo_misc:get_value('cache_workers', CacheProps, ?DEF_CACHE_WORKERS)},
+         {cache_ram_capacity, leo_misc:get_value('cache_ram_capacity', CacheProps, ?DEF_CACHE_RAM_CAPACITY)},
+         {cache_disc_capacity, leo_misc:get_value('cache_disc_capacity', CacheProps, ?DEF_CACHE_DISC_CAPACITY)},
          {cache_disc_threshold_len, leo_misc:get_value('cache_disc_threshold_len', CacheProps, ?DEF_CACHE_DISC_THRESHOLD_LEN)},
-         {cache_disc_dir_data,      leo_misc:get_value('cache_disc_dir_data',      CacheProps, ?DEF_CACHE_DISC_DIR_DATA)},
-         {cache_disc_dir_journal,   leo_misc:get_value('cache_disc_dir_journal',   CacheProps, ?DEF_CACHE_DISC_DIR_JOURNAL)},
-         {cache_expire,             leo_misc:get_value('cache_expire',             CacheProps, ?DEF_CACHE_EXPIRE)},
-         {cache_max_content_len,    leo_misc:get_value('cache_max_content_len',    CacheProps, ?DEF_CACHE_MAX_CONTENT_LEN)},
-         {cachable_content_type,    leo_misc:get_value('cachable_content_type',    CacheProps, [])},
-         {cachable_path_pattern,    leo_misc:get_value('cachable_path_pattern',    CacheProps, [])},
-         {max_chunked_objs,         leo_misc:get_value('max_chunked_objs',         LObjProps,  ?DEF_LOBJ_MAX_CHUNKED_OBJS)},
-         {chunked_obj_len,          leo_misc:get_value('chunked_obj_len',          LObjProps,  ?DEF_LOBJ_CHUNK_OBJ_LEN)},
-         {reading_chunked_obj_len,  leo_misc:get_value('reading_chunked_obj_len',  LObjProps,  ?DEF_LOBJ_READING_CHUNK_OBJ_LEN)},
-         {threshold_of_chunk_len,   leo_misc:get_value('threshold_of_chunk_len',   LObjProps,  ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN)}
+         {cache_disc_dir_data, leo_misc:get_value('cache_disc_dir_data', CacheProps, ?DEF_CACHE_DISC_DIR_DATA)},
+         {cache_disc_dir_journal, leo_misc:get_value('cache_disc_dir_journal', CacheProps, ?DEF_CACHE_DISC_DIR_JOURNAL)},
+         {cache_expire, leo_misc:get_value('cache_expire', CacheProps, ?DEF_CACHE_EXPIRE)},
+         {cache_max_content_len, leo_misc:get_value('cache_max_content_len', CacheProps, ?DEF_CACHE_MAX_CONTENT_LEN)},
+         {cachable_content_type, leo_misc:get_value('cachable_content_type', CacheProps, [])},
+         {cachable_path_pattern, leo_misc:get_value('cachable_path_pattern', CacheProps, [])},
+         {max_chunked_objs, leo_misc:get_value('max_chunked_objs', LObjProps, ?DEF_LOBJ_MAX_CHUNKED_OBJS)},
+         {chunked_obj_len, leo_misc:get_value('chunked_obj_len', LObjProps, ?DEF_LOBJ_CHUNK_OBJ_LEN)},
+         {reading_chunked_obj_len, leo_misc:get_value('reading_chunked_obj_len', LObjProps, ?DEF_LOBJ_READING_CHUNK_OBJ_LEN)},
+         {threshold_of_chunk_len, leo_misc:get_value('threshold_of_chunk_len', LObjProps, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN)}
         ],
-    {ok, [{type,          gateway},
-          {version,       Version},
-          {dirs,          Directories},
-          {ring_checksum, RingHashes},
+    {ok, [{type, gateway},
+          {version, get_info(version)},
+          {dirs, get_info(directories)},
+          {ring_checksum, get_info(ring_hashes)},
           {watchdog,
-           [{cpu_enabled,    ?env_wd_cpu_enabled()},
-            {io_enabled,     ?env_wd_io_enabled()},
-            {rex_interval,   ?env_wd_rex_interval()},
-            {cpu_interval,   ?env_wd_cpu_interval()},
-            {io_interval,    ?env_wd_io_interval()},
-            {rex_threshold_mem_capacity,  ?env_wd_threshold_mem_capacity()},
-            {cpu_threshold_cpu_load_avg,  ?env_wd_threshold_cpu_load_avg()},
-            {cpu_threshold_cpu_util,      ?env_wd_threshold_cpu_util()},
-            {cpu_raised_error_times,      ?env_wd_cpu_raised_error_times()},
-            {io_threshold_input_per_sec,  ?env_wd_threshold_input_per_sec()},
+           [{cpu_enabled, ?env_wd_cpu_enabled()},
+            {io_enabled, ?env_wd_io_enabled()},
+            {rex_interval, ?env_wd_rex_interval()},
+            {cpu_interval, ?env_wd_cpu_interval()},
+            {io_interval, ?env_wd_io_interval()},
+            {rex_threshold_mem_capacity, ?env_wd_threshold_mem_capacity()},
+            {cpu_threshold_cpu_load_avg, ?env_wd_threshold_cpu_load_avg()},
+            {cpu_threshold_cpu_util, ?env_wd_threshold_cpu_util()},
+            {cpu_raised_error_times, ?env_wd_cpu_raised_error_times()},
+            {io_threshold_input_per_sec, ?env_wd_threshold_input_per_sec()},
             {io_threshold_output_per_sec, ?env_wd_threshold_output_per_sec()}
            ]
           },
-          {statistics,    Statistics},
-          {http_conf,     HttpConf}
+          {log_level, get_info(log_level)},
+          {statistics, Statistics},
+          {http_conf, HttpConf}
          ]}.
+
+%% Retrieve the environement values
+%% @private
+get_info(version) ->
+    case application:get_key(leo_gateway, vsn) of
+        {ok, Ver} ->
+            Ver;
+        _ ->
+            "undefined"
+    end;
+get_info(ring_hashes) ->
+    {RingHashCur, RingHashPrev} =
+        case leo_redundant_manager_api:checksum(?CHECKSUM_RING) of
+            {ok, {Chksum0, Chksum1}} ->
+                {Chksum0, Chksum1};
+            _ ->
+                {[],[]}
+        end,
+    [{ring_cur, RingHashCur},
+     {ring_prev, RingHashPrev }
+    ];
+get_info(directories) ->
+    SNMPAgent =
+        case application:get_env(leo_gateway, snmp_agent) of
+            {ok, EnvSNMPAgent} ->
+                EnvSNMPAgent;
+            _ ->
+                []
+        end,
+    [{log, ?env_log_dir(leo_gateway)},
+     {mnesia, []},
+     {snmp_agent, SNMPAgent}
+    ];
+get_info(log_level) ->
+    case application:get_env(leo_gateway, log_level) of
+        {ok, 0} ->
+            "debug";
+        {ok, 1} ->
+            "info";
+        {ok, 2} ->
+            "warn";
+        {ok, 3} ->
+            "error";
+        {ok, 4} ->
+            "fatal";
+        _ ->
+            "undefined"
+    end;
+get_info(_) ->
+    [].
 
 
 %% @doc Register into the manager-monitor.
