@@ -37,7 +37,8 @@
 
 -export([get_node_status/0,
          register_in_monitor/1, register_in_monitor/2,
-         purge/1, update_manager_nodes/1
+         purge/1, update_manager_nodes/1,
+         update_conf/2
         ]).
 
 -export([set_endpoint/1, delete_endpoint/1,
@@ -234,6 +235,25 @@ update_manager_nodes(Managers) ->
     ?update_env_manager_nodes(leo_gateway, Managers),
     ok = leo_membership_cluster_local:update_manager_nodes(Managers),
     leo_s3_libs:update_providers(Managers).
+
+
+%% @doc Update a configuration dinamically
+-spec(update_conf(Key, Val) ->
+             ok | {error, any()} when Key::atom(),
+                                      Val::any()).
+update_conf(log_level, Val) when Val == ?LOG_LEVEL_DEBUG;
+                                 Val == ?LOG_LEVEL_INFO;
+                                 Val == ?LOG_LEVEL_WARN;
+                                 Val == ?LOG_LEVEL_ERROR;
+                                 Val == ?LOG_LEVEL_FATAL ->
+    case application:set_env(leo_storage, log_level, Val) of
+        ok ->
+            leo_logger_client_message:update_log_level(Val);
+        _ ->
+            {error, ?ERROR_COULD_NOT_UPDATE_LOG_LEVEL}
+    end;
+update_conf(_,_) ->
+    {error, badarg}.
 
 
 %%----------------------------------------------------------------------
