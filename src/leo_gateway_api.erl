@@ -246,7 +246,7 @@ update_conf(log_level, Val) when Val == ?LOG_LEVEL_DEBUG;
                                  Val == ?LOG_LEVEL_WARN;
                                  Val == ?LOG_LEVEL_ERROR;
                                  Val == ?LOG_LEVEL_FATAL ->
-    case application:set_env(leo_storage, log_level, Val) of
+    case application:set_env(leo_gateway, log_level, Val) of
         ok ->
             leo_logger_client_message:update_log_level(Val);
         _ ->
