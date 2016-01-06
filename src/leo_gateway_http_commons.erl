@@ -774,6 +774,7 @@ get_range_object(Req, Bucket, Key, {error, badarg}, _) ->
     ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
 get_range_object(Req, Bucket, Key, {_Unit, Range}, SendChunkLen) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
+
     case get_body_length_1(Key, Range) of
         {ok, Length} ->
             Header = [?SERVER_HEADER,
@@ -853,7 +854,7 @@ get_range_object_2(Req, Bucket, Key, Start, End, TransportRec) ->
 
             %% Retrieve the grand-child's metadata
             %% to get collect chunk size of the object
-            {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
+            {CurPos, Index} = move_current_pos_to_head(NewStartPos, CS, 0, 0),
 
             IndexBin = list_to_binary(integer_to_list(1)),
             Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
@@ -861,7 +862,7 @@ get_range_object_2(Req, Bucket, Key, Start, End, TransportRec) ->
                 case leo_gateway_rpc_handler:head(Key_1) of
                     {ok, #?METADATA{del = 0,
                                     dsize = ChildObjSize}} ->
-                        move_curpos2head(NewStartPos, ChildObjSize, 0, 0);
+                        move_current_pos_to_head(NewStartPos, ChildObjSize, 0, 0);
                     _ ->
                         {CurPos, Index}
                 end,
@@ -896,9 +897,10 @@ get_range_object_small(_Req, Bucket, Key, Start, End, #transport_record{transpor
 
 %% @doc
 %% @private
-move_curpos2head(Start, ChunkedSize, CurPos, Idx) when (CurPos + ChunkedSize - 1) < Start ->
-    move_curpos2head(Start, ChunkedSize, CurPos + ChunkedSize, Idx + 1);
-move_curpos2head(_Start, _ChunkedSize, CurPos, Idx) ->
+move_current_pos_to_head(Start, ChunkedSize, CurPos, Idx)
+  when (CurPos + ChunkedSize - 1) < Start ->
+    move_current_pos_to_head(Start, ChunkedSize, CurPos + ChunkedSize, Idx + 1);
+move_current_pos_to_head(_Start, _ChunkedSize, CurPos, Idx) ->
     {CurPos, Idx}.
 
 
