@@ -222,13 +222,13 @@ after_process_0({ok, Pid}) ->
                 {ok, Pid} ->
                     {ok, Pid};
                 {_, Cause} ->
-                    ?error("inspect_cluster_status/1", "cause:~p",
-                           [{"After process failure", Cause}]),
+                    ?error("inspect_cluster_status/1", [{cause, Cause}]),
                     init:stop()
             end;
         false ->
-            ?error("inspect_cluster_status/1", "cause:~s, managers:~p",
-                   ["Not alive managers", Managers_1]),
+            ?error("inspect_cluster_status/1",
+                   [{manager_nodes, Managers_1},
+                    {cause, "Not alive managers"}]),
             init:stop()
     end;
 after_process_0(Error) ->
@@ -439,7 +439,7 @@ get_system_config_from_manager([Manager|T]) ->
                 {badrpc, Why} ->
                     {error, Why};
                 {error, Cause} ->
-                    ?error("get_system_config_from_manager/1", "cause:~p", [Cause]),
+                    ?error("get_system_config_from_manager/1", [{cause, Cause}]),
                     get_system_config_from_manager(T)
             end;
         false ->
@@ -465,8 +465,7 @@ get_members_from_manager([Manager|T]) ->
                 not_found ->
                     void;
                 _ ->
-                    ?error("get_members_from_manager/1",
-                           "cause:~p", [Cause])
+                    ?error("get_members_from_manager/1", [{cause, Cause}])
             end,
             get_members_from_manager(T)
     end.
@@ -530,6 +529,7 @@ get_options() ->
     CustomHeaderConf     = leo_misc:get_value('headers_config_file', HttpProp, ?DEF_HTTP_CUSTOM_HEADER_CONF),
     Timeout4Header       = leo_misc:get_value('timeout_for_header',  HttpProp, ?DEF_HTTP_TIMEOUT_FOR_HEADER),
     Timeout4Body         = leo_misc:get_value('timeout_for_body',    HttpProp, ?DEF_HTTP_TIMEOUT_FOR_BODY),
+    SendChunkLen         = leo_misc:get_value('sending_chunked_obj_len',   HttpProp, ?DEF_HTTP_SEND_CHUNK_LEN),
 
     %% Retrieve cache-related properties:
     CacheProp = ?env_cache_properties(),
@@ -589,6 +589,7 @@ get_options() ->
                                 headers_config_file      = CustomHeaderConf,
                                 timeout_for_header       = Timeout4Header,
                                 timeout_for_body         = Timeout4Body,
+                                sending_chunked_obj_len  = SendChunkLen,
                                 cache_method             = CacheMethod,
                                 cache_workers            = CacheWorkers,
                                 cache_ram_capacity       = CacheRAMCapacity,
@@ -615,6 +616,7 @@ get_options() ->
     ?info("start/3", "http custom header config: ~p",[CustomHeaderConf]),
     ?info("start/3", "timeout for header : ~p",      [Timeout4Header]),
     ?info("start/3", "timeout for body: ~p",         [Timeout4Body]),
+    ?info("start/3", "sending chunk length: ~p",     [SendChunkLen]),
     ?info("start/3", "cache_method: ~p",             [CacheMethod]),
     ?info("start/3", "cache workers: ~p",            [CacheWorkers]),
     ?info("start/3", "cache ram capacity: ~p",       [CacheRAMCapacity]),

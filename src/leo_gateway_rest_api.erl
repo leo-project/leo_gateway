@@ -190,6 +190,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, _CustomHeaderSet
                                      chunked_obj_len   = Props#http_options.chunked_obj_len,
                                      timeout_for_header      = Props#http_options.timeout_for_header,
                                      timeout_for_body        = Props#http_options.timeout_for_body,
+                                     sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
                                      reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                                      threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len},
             handle_2(Req, HTTPMethod, Path, ReqParams, State);
@@ -211,12 +212,11 @@ handle_2(Req1, HTTPMethod, Path, Params, State) ->
             {ok, Req2} = ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State};
         {error, Cause} ->
-            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
             {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State};
         {'EXIT', Cause} ->
-            ?error("handle1/5", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
             {ok, Req2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req1),
             {ok, Req2, State}
     end.
-

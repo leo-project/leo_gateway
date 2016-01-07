@@ -108,7 +108,7 @@ list_dir(Redundancies, Path, Marker, Acc, Modifier) when is_function(Modifier) -
                     list_dir(Redundancies, Path, TrimedKey, Meta ++ Acc, Modifier)
             end;
         Error ->
-            ?error("list_dir", "cause:~p~n", [Error]),
+            ?error("list_dir", [{cause, Error}]),
             Error
     end;
 list_dir(Redundancies, Path, Marker, _Acc, _Modifier) ->
@@ -622,8 +622,9 @@ large_obj_delete_chunks(Key1, [Index1|Rest]) ->
         ok ->
             void;
         {error, Cause} ->
-            ?error("large_obj_delete_chunks/2", "key:~s, index:~p, cause:~p",
-                   [binary_to_list(Key1), Index1, Cause])
+            ?error("large_obj_delete_chunks/2",
+                   [{key, binary_to_list(Key1)},
+                    {index, Index1}, {cause, Cause}])
     end,
     large_obj_delete_chunks(Key1, Rest).
 

@@ -251,17 +251,20 @@ handle_error(_Node,_Mod,_Method,_Args, {value, {error, not_found = Error}}) ->
 handle_error(_Node,_Mod,_Method,_Args, {value, {error, unavailable = Error}}) ->
     Error;
 handle_error(Node, Mod, Method, _Args, {value, {error, Cause}}) ->
-    ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
-          [Node, Mod, Method, Cause]),
+    ?warn("handle_error/5",
+          [{node, Node}, {mod, Mod},
+           {method, Method}, {cause, Cause}]),
     ?ERR_TYPE_INTERNAL_ERROR;
 handle_error(Node, Mod, Method, _Args, {value, {badrpc, Cause}}) ->
-    ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
-          [Node, Mod, Method, Cause]),
+    ?warn("handle_error/5",
+          [{node, Node}, {mod, Mod},
+           {method, Method}, {cause, Cause}]),
     ?ERR_TYPE_INTERNAL_ERROR;
-handle_error(Node, Mod, Method, _Args, timeout = Error) ->
-    ?warn("handle_error/5", "node:~w, mod:~w, method:~w, cause:~p",
-          [Node, Mod, Method, Error]),
-    Error.
+handle_error(Node, Mod, Method, _Args, timeout = Cause) ->
+    ?warn("handle_error/5",
+          [{node, Node}, {mod, Mod},
+           {method, Method}, {cause, Cause}]),
+    Cause.
 
 
 %% @doc Timeout depends on length of an object

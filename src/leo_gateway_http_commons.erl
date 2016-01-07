@@ -50,6 +50,11 @@
           reading_chunked_size :: pos_integer()
          }).
 
+-record(transport_record, {
+          transport :: module(),
+          socket    :: inet:socket(),
+          sending_chunked_obj_len :: pos_integer()
+         }).
 
 %%--------------------------------------------------------------------
 %% API
@@ -65,6 +70,7 @@ start(#http_options{handler                = Handler,
                     max_keepalive          = MaxKeepAlive,
                     headers_config_file    = CustomHeaderConf,
                     timeout_for_header     = Timeout4Header,
+                    sending_chunked_obj_len= SendChunkLen,
                     cache_method           = CacheMethod,
                     cache_expire           = CacheExpire,
                     cache_max_content_len  = CacheMaxContentLen,
@@ -78,7 +84,8 @@ start(#http_options{handler                = Handler,
                                {error, enoent} ->
                                    undefined;
                                {error, Reason} ->
-                                   ?error("start/1", "read http custom header file failed. cause:~p", [Reason]),
+                                   ?error("start/1", [{simple_cause, "reading http custom header file failed"},
+                                                      {cause, Reason}]),
                                    undefined
                            end,
     InternalCache = (CacheMethod == 'inner'),
@@ -97,7 +104,8 @@ start(#http_options{handler                = Handler,
                      CacheCondition = #cache_condition{expire          = CacheExpire,
                                                        max_content_len = CacheMaxContentLen,
                                                        content_types   = CachableContentTypes,
-                                                       path_patterns   = CachablePathPatterns},
+                                                       path_patterns   = CachablePathPatterns,
+                                                       sending_chunked_obj_len = SendChunkLen},
                      [{env,        [{dispatch, Dispatch}]},
                       {max_keepalive, MaxKeepAlive},
                       {onrequest,     Handler:onrequest(CacheCondition)},
@@ -134,28 +142,29 @@ start(Sup, Options) ->
 %%
 -spec(onrequest(#cache_condition{}, function()) ->
              any()).
-onrequest(#cache_condition{expire = Expire}, FunGenKey) ->
+onrequest(#cache_condition{expire = Expire, sending_chunked_obj_len = SendChunkLen}, FunGenKey) ->
     fun(Req) ->
             Method = cowboy_req:get(method, Req),
-            onrequest_1(Method, Req, Expire, FunGenKey)
+            onrequest_1(Method, Req, Expire, FunGenKey, SendChunkLen)
     end.
 
-onrequest_1(?HTTP_GET, Req, Expire, FunGenKey) ->
+onrequest_1(?HTTP_GET, Req, Expire, FunGenKey, SendChunkLen) ->
     {_Bucket, Key} = FunGenKey(Req),
     Ret = (catch leo_cache_api:get(Key)),
-    onrequest_2(Req, Expire, Key, Ret);
-onrequest_1(_, Req,_,_) ->
+    onrequest_2(Req, Expire, Key, Ret, SendChunkLen);
+onrequest_1(_, Req,_,_,_) ->
     Req.
 
-onrequest_2(Req,_Expire,_Key, not_found) ->
+onrequest_2(Req,_Expire,_Key, not_found, _) ->
     Req;
-onrequest_2(Req,_Expire,_Key, {'EXIT', _Cause}) ->
+onrequest_2(Req,_Expire,_Key, {'EXIT', _Cause}, _) ->
     Req;
-onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
+onrequest_2(Req, Expire, Key, {ok, CachedObj}, SendChunkLen) ->
     #cache{mtime        = MTime,
            content_type = ContentType,
            etag         = Checksum,
-           body         = Body} = binary_to_term(CachedObj),
+           body         = Body,
+           size         = Size} = binary_to_term(CachedObj),
 
     Now = leo_date:now(),
     Diff = Now - MTime,
@@ -184,7 +193,10 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}) ->
                     {ok, Req2} = ?reply_not_modified(Header, Req),
                     Req2;
                 _ ->
-                    {ok, Req2} = ?reply_ok([?SERVER_HEADER], Body, Req),
+                    BodyFunc = fun(Socket, Transport) ->
+                                       leo_net:chunked_send(Transport, Socket, Body, SendChunkLen)
+                               end,
+                    {ok, Req2} = ?reply_ok([?SERVER_HEADER], {Size, BodyFunc}, Req),
                     Req2
             end
     end.
@@ -238,7 +250,8 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
              {ok, cowboy_req:req()}).
 get_object(Req, Key, #req_params{bucket                 = Bucket,
                                  custom_header_settings = CustomHeaderSettings,
-                                 has_inner_cache        = HasInnerCache}) ->
+                                 has_inner_cache        = HasInnerCache,
+                                 sending_chunked_obj_len= SendChunkLen}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -263,7 +276,10 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            ?reply_ok(Headers2, RespObject, Req);
+            BodyFunc = fun(Socket, Transport) ->
+                               leo_net:chunked_send(Transport, Socket, RespObject, SendChunkLen)
+                       end,
+            ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% For a chunked object.
         {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
@@ -275,7 +291,7 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket, SendChunkLen}),
                                try
                                    leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta),
                                    ok
@@ -303,7 +319,8 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
 -spec(get_object_with_cache(cowboy_req:req(), binary(), #cache{}, #req_params{}) ->
              {ok, cowboy_req:req()}).
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = Bucket,
-                                                      custom_header_settings = CustomHeaderSettings}) ->
+                                                      custom_header_settings = CustomHeaderSettings,
+                                                      sending_chunked_obj_len= SendChunkLen}) ->
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
         {ok, match} when CacheObj#cache.file_path /= [] ->
@@ -316,7 +333,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, _Transport) ->
-                               file:sendfile(CacheObj#cache.file_path, Socket),
+                               file:sendfile(CacheObj#cache.file_path, Socket, 0, 0, [{chunk_size, SendChunkLen}]),
                                ok
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
@@ -331,7 +348,10 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
                        {?HTTP_HEAD_X_FROM_CACHE,       <<"True/via memory">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            ?reply_ok(Headers2, CacheObj#cache.body, Req);
+            BodyFunc = fun(Socket, Transport) ->
+                               leo_net:chunked_send(Transport, Socket, CacheObj#cache.body, SendChunkLen)
+                       end,
+            ?reply_ok(Headers2, {CacheObj#cache.size, BodyFunc}, Req);
 
         %% MISS: get an object from storage (small-size)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -351,7 +371,10 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            ?reply_ok(Headers2, RespObject, Req);
+            BodyFunc = fun(Socket, Transport) ->
+                               leo_net:chunked_send(Transport, Socket, RespObject, SendChunkLen)
+                       end,
+            ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% MISS: get an object from storage (large-size)
         {ok, #?METADATA{cnumber = TotalChunkedObjs} = Meta, _RespObject} ->
@@ -363,7 +386,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket, SendChunkLen}),
                                try
                                    leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta)
                                after
@@ -427,15 +450,18 @@ move_large_object_1({ok, Data},
               leo_large_object_move_handler:get_chunk_obj(ReadHandler),
               ReqLargeObj, ReadHandler);
         {'EXIT', Cause} ->
-            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("move_large_object_1/3",
+                   [{key, binary_to_list(Key)}, {cause, Cause}]),
             {error, ?ERROR_FAIL_PUT_OBJ};
         {error, Cause} ->
-            ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("move_large_object_1/3", [{key, binary_to_list(Key)},
+                                             {cause, Cause}]),
             {error, ?ERROR_FAIL_PUT_OBJ}
     end;
 move_large_object_1({error, Cause},
                     #req_large_obj{key = Key}, _) ->
-    ?error("move_large_object_1/3", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    ?error("move_large_object_1/3", [{key, binary_to_list(Key)},
+                                     {cause, Cause}]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                                          bucket = Bucket,
@@ -617,17 +643,20 @@ put_large_object_1({more, Data, Req},
                         {read_length, ReadingChunkedSize}],
             put_large_object_1(cowboy_req:body(Req, BodyOpts), ReqLargeObj);
         {'EXIT', Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}};
         {error, Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
     end;
 
 %% An error occurred while reading the body, connection is gone.
 %% @private
 put_large_object_1({error, Cause}, #req_large_obj{key = Key}) ->
-    ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+    ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                    {cause, Cause}]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
 
 %% @private
@@ -662,10 +691,12 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                     {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
             end;
         {'EXIT', Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}};
         {error, Cause} ->
-            ?error("put_large_object_1/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("put_large_object_1/2", [{key, binary_to_list(Key)},
+                                            {cause, Cause}]),
             {error, {Req, ?ERROR_FAIL_PUT_OBJ}}
     end.
 
@@ -733,15 +764,17 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
 -spec(range_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 range_object(Req, Key, #req_params{bucket = Bucket,
-                                   range_header = RangeHeader}) ->
+                                   range_header = RangeHeader,
+                                   sending_chunked_obj_len = SendChunkLen}) ->
     Range = cowboy_http:range(RangeHeader),
-    get_range_object(Req, Bucket, Key, Range).
+    get_range_object(Req, Bucket, Key, Range, SendChunkLen).
 
-get_range_object(Req, Bucket, Key, {error, badarg}) ->
+get_range_object(Req, Bucket, Key, {error, badarg}, _) ->
     ?access_log_get(Bucket, Key, 0, ?HTTP_ST_BAD_RANGE),
     ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
-get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
+get_range_object(Req, Bucket, Key, {_Unit, Range}, SendChunkLen) when is_list(Range) ->
     Mime = leo_mime:guess_mime(Key),
+
     case get_body_length_1(Key, Range) of
         {ok, Length} ->
             Header = [?SERVER_HEADER,
@@ -750,8 +783,11 @@ get_range_object(Req, Bucket, Key, {_Unit, Range}) when is_list(Range) ->
             Req2 = cowboy_req:set_resp_body_fun(
                      Length,
                      fun(Socket, Transport) ->
-                             get_range_object_1(Req, Bucket, Key, Range, undefined, Socket, Transport)
-                     end, 
+                             get_range_object_1(Req, Bucket, Key, Range, undefined,
+                                                #transport_record{transport = Transport,
+                                                                  socket    = Socket,
+                                                                  sending_chunked_obj_len = SendChunkLen})
+                     end,
                      Req),
             ?reply_partial_content(Header, Req2);
         {error, bad_range} ->
@@ -789,34 +825,26 @@ get_body_length([End|Rest], ObjectSize, Acc) when End < ObjectSize ->
 get_body_length(_, _, _) ->
     {error, bad_range}.
 
-get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, Socket, Transport) ->
+get_range_object_1(_Req, _Bucket, _Key, _, {error, _Reason}, #transport_record{socket = Socket,
+                                                                               transport = Transport}) ->
     Transport:close(Socket);
-%    Transport:close(Socket),
-%    case Reason of
-%        unavailable ->
-%            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-%        not_found ->
-%            ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
-%        _ ->
-%            ?reply_internal_error_without_body([?SERVER_HEADER], Req)
-%    end;
-get_range_object_1(Req,_Bucket,_Key, [], _, _Socket, _Transport) ->
+get_range_object_1(Req,_Bucket,_Key, [], _, _TransportRec) ->
     {ok, Req};
-get_range_object_1(Req, Bucket, Key, [{Start, infinity}|Rest], _, Socket, Transport) ->
-    Ret = get_range_object_2(Req, Bucket, Key, Start, 0, Socket, Transport),
-    get_range_object_1(Req, Bucket, Key, Rest, Ret, Socket, Transport);
-get_range_object_1(Req, Bucket, Key, [{Start, End}|Rest], _, Socket, Transport) ->
-    Ret = get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport),
-    get_range_object_1(Req, Bucket, Key, Rest, Ret, Socket, Transport);
-get_range_object_1(Req, Bucket, Key, [End|Rest], _, Socket, Transport) ->
-    Ret = get_range_object_2(Req, Bucket, Key, 0, End, Socket, Transport),
-    get_range_object_1(Req, Bucket, Key, Rest, Ret, Socket, Transport).
+get_range_object_1(Req, Bucket, Key, [{Start, infinity}|Rest], _, TransportRec) ->
+    Ret = get_range_object_2(Req, Bucket, Key, Start, 0, TransportRec),
+    get_range_object_1(Req, Bucket, Key, Rest, Ret, TransportRec);
+get_range_object_1(Req, Bucket, Key, [{Start, End}|Rest], _, TransportRec) ->
+    Ret = get_range_object_2(Req, Bucket, Key, Start, End, TransportRec),
+    get_range_object_1(Req, Bucket, Key, Rest, Ret, TransportRec);
+get_range_object_1(Req, Bucket, Key, [End|Rest], _, TransportRec) ->
+    Ret = get_range_object_2(Req, Bucket, Key, 0, End, TransportRec),
+    get_range_object_1(Req, Bucket, Key, Rest, Ret, TransportRec).
 
-get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
+get_range_object_2(Req, Bucket, Key, Start, End, TransportRec) ->
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{del = 0,
                         cnumber = 0}} ->
-            get_range_object_small(Req, Bucket, Key, Start, End, Socket, Transport);
+            get_range_object_small(Req, Bucket, Key, Start, End, TransportRec);
         {ok, #?METADATA{del = 0,
                         cnumber = N,
                         dsize = ObjectSize,
@@ -826,7 +854,7 @@ get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
 
             %% Retrieve the grand-child's metadata
             %% to get collect chunk size of the object
-            {CurPos, Index} = move_curpos2head(NewStartPos, CS, 0, 0),
+            {CurPos, Index} = move_current_pos_to_head(NewStartPos, CS, 0, 0),
 
             IndexBin = list_to_binary(integer_to_list(1)),
             Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
@@ -834,13 +862,13 @@ get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
                 case leo_gateway_rpc_handler:head(Key_1) of
                     {ok, #?METADATA{del = 0,
                                     dsize = ChildObjSize}} ->
-                        move_curpos2head(NewStartPos, ChildObjSize, 0, 0);
+                        move_current_pos_to_head(NewStartPos, ChildObjSize, 0, 0);
                     _ ->
                         {CurPos, Index}
                 end,
             get_range_object_large(Req, Bucket, Key,
                                    NewStartPos, NewEndPos, N, Index_1, CurPos_1,
-                                   Socket, Transport);
+                                   TransportRec);
         Error ->
             Error
     end.
@@ -848,14 +876,16 @@ get_range_object_2(Req, Bucket, Key, Start, End, Socket, Transport) ->
 
 %% @doc Retrieve the small object
 %% @private
-get_range_object_small(_Req, Bucket, Key, Start, End, Socket, Transport) ->
+get_range_object_small(_Req, Bucket, Key, Start, End, #transport_record{transport = Transport,
+                                                                        socket    = Socket,
+                                                                        sending_chunked_obj_len = SendChunkLen}) ->
     case leo_gateway_rpc_handler:get(Key, Start, End) of
         {ok, _Meta, <<>>} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_OK),
             ok;
         {ok, _Meta, Bin} ->
             ?access_log_get(Bucket, Key, byte_size(Bin), ?HTTP_ST_OK),
-            case Transport:send(Socket, Bin) of
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     ok;
                 {error, Cause} ->
@@ -867,9 +897,10 @@ get_range_object_small(_Req, Bucket, Key, Start, End, Socket, Transport) ->
 
 %% @doc
 %% @private
-move_curpos2head(Start, ChunkedSize, CurPos, Idx) when (CurPos + ChunkedSize - 1) < Start ->
-    move_curpos2head(Start, ChunkedSize, CurPos + ChunkedSize, Idx + 1);
-move_curpos2head(_Start, _ChunkedSize, CurPos, Idx) ->
+move_current_pos_to_head(Start, ChunkedSize, CurPos, Idx)
+  when (CurPos + ChunkedSize - 1) < Start ->
+    move_current_pos_to_head(Start, ChunkedSize, CurPos + ChunkedSize, Idx + 1);
+move_current_pos_to_head(_Start, _ChunkedSize, CurPos, Idx) ->
     {CurPos, Idx}.
 
 
@@ -887,13 +918,13 @@ calc_pos(StartPos, EndPos, _ObjectSize) ->
 
 %% @doc Retrieve the large object
 %% @private
-get_range_object_large(_Req,_Bucket,_Key,_Start,_End, _Total, _Index, {error, _} = Error, _Socket, _Transport) ->
+get_range_object_large(_Req,_Bucket,_Key,_Start,_End, _Total, _Index, {error, _} = Error, _TransportRec) ->
     Error;
-get_range_object_large(_Req,_Bucket,_Key,_Start,_End, Total, Total, CurPos, _Socket, _Transport) ->
+get_range_object_large(_Req,_Bucket,_Key,_Start,_End, Total, Total, CurPos, _TransportRec) ->
     {ok, CurPos};
-get_range_object_large(_Req,_Bucket,_Key,_Start, End,_Total,_Index, CurPos, _Socket, _Transport) when CurPos > End ->
+get_range_object_large(_Req,_Bucket,_Key,_Start, End,_Total,_Index, CurPos, _TransportRec) when CurPos > End ->
     {ok, CurPos};
-get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Socket, Transport) ->
+get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, TransportRec) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     Key2 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
 
@@ -901,13 +932,13 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Sock
         {ok, #?METADATA{cnumber = 0,
                         dsize = CS}} ->
             %% get and chunk an object
-            NewPos = send_chunk(Req, Bucket, Key2, Start, End, CurPos, CS, Socket, Transport),
-            get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, Socket, Transport);
+            NewPos = send_chunk(Req, Bucket, Key2, Start, End, CurPos, CS, TransportRec),
+            get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, TransportRec);
 
         {ok, #?METADATA{cnumber = GrandChildNum}} ->
-            case get_range_object_large(Req, Bucket, Key2, Start, End, GrandChildNum, 0, CurPos, Socket, Transport) of
+            case get_range_object_large(Req, Bucket, Key2, Start, End, GrandChildNum, 0, CurPos, TransportRec) of
                 {ok, NewPos} ->
-                    get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, Socket, Transport);
+                    get_range_object_large(Req, Bucket, Key, Start, End, Total, Index + 1, NewPos, TransportRec);
                 {error, Cause} ->
                     {error, Cause}
             end;
@@ -917,17 +948,19 @@ get_range_object_large( Req, Bucket, Key, Start, End, Total, Index, CurPos, Sock
 
 %% @doc
 %% @private
-send_chunk(_Req,_,_Key, Start,_End, CurPos, ChunkSize, _Socket, _Transport) when (CurPos + ChunkSize - 1) < Start ->
+send_chunk(_Req,_,_Key, Start,_End, CurPos, ChunkSize, _TransportRec) when (CurPos + ChunkSize - 1) < Start ->
     %% skip proc
     CurPos + ChunkSize;
-send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) when CurPos >= Start andalso
-                                                                 (CurPos + ChunkSize - 1) =< End ->
+send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, #transport_record{transport = Transport,
+                                                                               socket    = Socket,
+                                                                               sending_chunked_obj_len = SendChunkLen}) when CurPos >= Start andalso
+                                                                                                                             (CurPos + ChunkSize - 1) =< End ->
     %% whole get
     case leo_gateway_rpc_handler:get(Key) of
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand children
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            case Transport:send(Socket, Bin) of
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     CurPos + ChunkSize;
                 {error, Cause} ->
@@ -936,7 +969,9 @@ send_chunk(_Req,_Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) 
         Error ->
             Error
     end;
-send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport) ->
+send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, #transport_record{transport = Transport,
+                                                                                socket    = Socket,
+                                                                                sending_chunked_obj_len = SendChunkLen}) ->
     %% partial get
     StartPos = case Start =< CurPos of
                    true -> 0;
@@ -952,7 +987,7 @@ send_chunk(_Req, _Bucket, Key, Start, End, CurPos, ChunkSize, Socket, Transport)
         {ok, _Meta, Bin} ->
             %% @FIXME current impl can't handle a file which consist of grand childs
             %% ?access_log_get(Bucket, Key, ChunkSize, ?HTTP_ST_OK),
-            case Transport:send(Socket, Bin) of
+            case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     CurPos + ChunkSize;
                 {error, Cause} ->

@@ -147,7 +147,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                       try
                           list_to_integer(binary_to_list(Val_2))
                       catch _:_ ->
-                          badarg
+                              badarg
                       end
               end,
 
@@ -158,7 +158,7 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             ?reply_ok(Header, XML, Req);
         {error, badarg} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
@@ -314,7 +314,7 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
     case catch cowboy_req:body_length(Req) of
         {'EXIT', _} ->
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {Size, _} ->
             case (Size >= Params#req_params.threshold_of_chunk_len) of
                 true when Size >= Params#req_params.max_len_of_obj ->
@@ -353,9 +353,9 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
           end,
     case Key =:= CS2 of
         true ->
-            % 400
+            %% 400
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidRequest,
-                                ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
+                               ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
         false ->
             case leo_gateway_rpc_handler:get(CS2) of
                 {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -527,6 +527,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                              custom_header_settings  = CustomHeaderSettings,
                              timeout_for_header      = Props#http_options.timeout_for_header,
                              timeout_for_body        = Props#http_options.timeout_for_body,
+                             sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
                              reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                              threshold_of_chunk_len  = Props#http_options.threshold_of_chunk_len}),
     AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
@@ -570,7 +571,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST, _, #req_params{path = Path,
             {error, timeout} ->
                 ?reply_timeout([?SERVER_HEADER], Path, <<>>, Req);
             {error, Cause} ->
-                ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+                ?error("handle_2/6", [{key, binary_to_list(Path)}, {cause, Cause}]),
                 ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
         end,
     {ok, Req_2, State};
@@ -644,7 +645,7 @@ handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
     case catch leo_gateway_http_req_handler:handle(
                  HTTPMethod, Req, Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', Cause} ->
-            ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_2/6", [{key, binary_to_list(Path)}, {cause, Cause}]),
             {ok, Req_2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req),
             {ok, Req_2, State};
         {ok, Req_2} ->
@@ -705,23 +706,23 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen) ->
                         {error, unavailable} ->
                             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
                         {error, Cause} ->
-                            ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
-                                   [binary_to_list(Path), Cause]),
+                            ?error("handle_multi_upload_2/4",
+                                   [{key, binary_to_list(Path)}, {cause, Cause}]),
                             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
                     end;
                 _ ->
-                    ?error("handle_multi_upload_2/4", "path:~s, cause:~p",
-                           [binary_to_list(Path), invalid_metadata]),
+                    ?error("handle_multi_upload_2/4",
+                           [{key, binary_to_list(Path)}, {cause, invalid_metadata}]),
                     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
             end;
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         {error, Cause} ->
-            ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_multi_upload_2/4", [{key, binary_to_list(Path)}, {cause, Cause}]),
             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
     end;
 handle_multi_upload_2({error, Cause}, Req, Path, _ChunkedLen) ->
-    ?error("handle_multi_upload_2/4", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+    ?error("handle_multi_upload_2/4", [{key, binary_to_list(Path)}, {cause, Cause}]),
     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 
 %% @doc Retrieve Metadatas for uploaded objects (Multipart)
@@ -1080,7 +1081,7 @@ delete_bucket_2([Node|Rest], AccessKeyId, Bucket) ->
         {error, not_found} ->
             not_found;
         {_, Cause} ->
-            ?warn("delete_bucket_2/3", "cause:~p", [Cause]),
+            ?warn("delete_bucket_2/3", [{cause, Cause}]),
             delete_bucket_2(Rest, AccessKeyId, Bucket)
     end.
 
@@ -1244,7 +1245,7 @@ delete_multi_objects_2(Req, Body, MD5, MD5, Params) ->
                                                [{space,normalize}, {acc_fun, Acc}]),
         delete_multi_objects_3(Req, Content, false, [], Params)
     catch _:Cause ->
-            ?error("delete_multi_objects_2/5", "req:~p, cause:~p", [Req, Cause]),
+            ?error("delete_multi_objects_2/5", [{req, Req}, {cause, Cause}]),
             ?reply_malformed_xml([?SERVER_HEADER], Req)
     end;
 delete_multi_objects_2(Req, _Body, _MD5, _, _Params) ->

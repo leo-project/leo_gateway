@@ -235,7 +235,7 @@ handle_info({async_notify, Key, Ret} = _Info, #state{errors = Errors} = State) -
         {ok, _CheckSum} ->
             {noreply, State};
         {error, Cause} ->
-            ?error("handle_info/2", "key:~s, cause:~p", [binary_to_list(Key), Cause]),
+            ?error("handle_info/2", [{key, binary_to_list(Key)}, {cause, Cause}]),
             {noreply, State#state{errors = [{error, Cause}|Errors]}}
     end.
 
@@ -263,14 +263,14 @@ wait_sub_process(MonitorSet, Errors) ->
                 {async_notify, _Key, {ok, _CheckSum}} ->
                     wait_sub_process(MonitorSet, Errors);
                 {async_notify, Key, {error, Cause}} ->
-                    ?error("wait_sub_process/2", "key:~s, cause:~p",
-                           [binary_to_list(Key), Cause]),
+                    ?error("wait_sub_process/2",
+                           [{key, binary_to_list(Key)}, {cause, Cause}]),
                     wait_sub_process(MonitorSet, [{error, Cause}|Errors]);
                 {'DOWN', MonitorRef, _Type, Pid, _Info} ->
                     NewMonitorSet = sets:del_element({Pid, MonitorRef}, MonitorSet),
                     wait_sub_process(NewMonitorSet, Errors);
                 Other ->
-                    ?error("wait_sub_process/2", "Unknown message msg:~p", [Other]),
+                    ?error("wait_sub_process/2", [{unknown_message, Other}]),
                     wait_sub_process(MonitorSet, Errors)
             end
     end.
