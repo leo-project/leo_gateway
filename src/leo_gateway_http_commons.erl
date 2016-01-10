@@ -52,11 +52,6 @@
           transfer_decode_state :: #aws_chunk_decode_state{}|undefined
          }).
 
--record(transport_record, {
-          transport :: module(),
-          socket    :: inet:socket(),
-          sending_chunked_obj_len :: pos_integer()
-         }).
 
 %%--------------------------------------------------------------------
 %% API
