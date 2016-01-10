@@ -26,10 +26,10 @@
 -define(DEF_LAYERS_OF_DIRS, {1, 64}).
 
 -ifdef(TEST).
--define(DEF_TIMEOUT,     1000).
+-define(DEF_TIMEOUT, 1000).
 -define(DEF_REQ_TIMEOUT, 1000).
 -else.
--define(DEF_TIMEOUT,      5000). %%  5 sec
+-define(DEF_TIMEOUT, 5000). %%  5 sec
 -define(DEF_REQ_TIMEOUT, 30000). %% 30 sec
 -endif.
 
@@ -50,49 +50,59 @@
 -define(TIMEOUT_L3_LEN,  524287).
 -define(TIMEOUT_L4_LEN, 1048576).
 
--define(TIMEOUT_L1_SEC,    5000).
--define(TIMEOUT_L2_SEC,    7000).
--define(TIMEOUT_L3_SEC,   10000).
--define(TIMEOUT_L4_SEC,   20000).
--define(TIMEOUT_L5_SEC,   30000).
+-define(TIMEOUT_L1_SEC,  5000).
+-define(TIMEOUT_L2_SEC,  7000).
+-define(TIMEOUT_L3_SEC, 10000).
+-define(TIMEOUT_L4_SEC, 20000).
+-define(TIMEOUT_L5_SEC, 30000).
 
 
 %% Protocol
--define(PROTO_HANDLER_S3,    'leo_gateway_s3_api').
--define(PROTO_HANDLER_REST,  'leo_gateway_rest_api').
+-define(PROTO_HANDLER_S3, 'leo_gateway_s3_api').
+-define(PROTO_HANDLER_REST, 'leo_gateway_rest_api').
 -define(PROTO_HANDLER_EMBED, 'leo_gateway_embed').
--define(PROTO_HANDLER_NFS,   'nfs').
+
+-define(PROTO_HANDLER_NFS, 'nfs').
+%% -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
 -define(DEF_PROTOCOL_HANDLER, ?PROTO_HANDLER_S3).
 
 -type(protocol_handler() :: ?PROTO_HANDLER_S3 |
                             ?PROTO_HANDLER_REST |
                             ?PROTO_HANDLER_EMBED |
                             ?PROTO_HANDLER_NFS).
--define(convert_to_handler(_V), case _V of
-                                    rest  -> ?PROTO_HANDLER_REST;
-                                    s3    -> ?PROTO_HANDLER_S3;
-                                    embed -> ?PROTO_HANDLER_EMBED;
-                                    nfs   -> ?PROTO_HANDLER_NFS;
-                                    _       -> ?PROTO_HANDLER_S3
-                                end).
+-define(convert_to_handler(_V),
+        case _V of
+            rest ->
+                ?PROTO_HANDLER_REST;
+            s3 ->
+                ?PROTO_HANDLER_S3;
+            embed ->
+                ?PROTO_HANDLER_EMBED;
+            nfs ->
+                ?PROTO_HANDLER_NFS;
+            _ ->
+                ?PROTO_HANDLER_S3
+        end).
+
 
 %%----------------------------------------------------------------------
 %% ERROR MESSAGES
 %%----------------------------------------------------------------------
 -define(ERROR_COULD_NOT_CONNECT, "Could not connect").
--define(ERROR_NOT_MATCH_LENGTH,  "Not match object length").
--define(ERROR_FAIL_PUT_OBJ,      "Fail put an object").
+-define(ERROR_NOT_MATCH_LENGTH, "Not match object length").
+-define(ERROR_FAIL_PUT_OBJ, "Fail put an object").
 -define(ERROR_FAIL_RETRIEVE_OBJ, "Fail retrieve an object").
 -define(ERROR_COULD_NOT_START_TRAN, "Could not start a transaction").
+-define(ERROR_COULD_NOT_UPDATE_LOG_LEVEL, "Could not update a log level").
 
 
 %%----------------------------------------------------------------------
 %% RECORDS
 %%----------------------------------------------------------------------
 %% large-object
--record(large_obj_info, {key = <<>>         :: binary(),
-                         length = 0         :: non_neg_integer(),
-                         num_of_chunks = 0  :: non_neg_integer(),
+-record(large_obj_info, {key = <<>> :: binary(),
+                         length = 0 :: non_neg_integer(),
+                         num_of_chunks = 0 :: non_neg_integer(),
                          md5_context = <<>> :: binary()
                         }).
 
@@ -219,10 +229,10 @@
         end).
 
 %% NFS related
--define(DEF_MOUNTD_PORT,        22050).
--define(DEF_MOUNTD_ACCEPTORS,   128).
--define(DEF_NFSD_PORT,          2049).
--define(DEF_NFSD_ACCEPTORS,     128).
+-define(DEF_MOUNTD_PORT, 22050).
+-define(DEF_MOUNTD_ACCEPTORS, 128).
+-define(DEF_NFSD_PORT, 2049).
+-define(DEF_NFSD_ACCEPTORS, 128).
 -define(DEF_NFSD_MAX_FILE_SIZE, 18446744073709551615). %% max value in 64bit
 -define(DEF_LOCKD_PORT,         22051).
 -define(DEF_LOCKD_ACCEPTORS,    128).
@@ -257,32 +267,32 @@
 %% FOR QoS
 %%----------------------------------------------------------------------
 -define(QOS_METRIC_BUCKET_SCHEMA, << "leo_bucket" >>).
--define(QOS_METRIC_BUCKET_COL_1,  << "cnt_r" >>). %% num of reads
--define(QOS_METRIC_BUCKET_COL_2,  << "cnt_w" >>). %% num of writes
--define(QOS_METRIC_BUCKET_COL_3,  << "cnt_d" >>). %% num of deletes
--define(QOS_METRIC_BUCKET_COL_4,  << "sum_len_r" >>). %% summary of length of an object at read
--define(QOS_METRIC_BUCKET_COL_5,  << "sum_len_w" >>). %% summary of length of an object at write
--define(QOS_METRIC_BUCKET_COL_6,  << "sum_len_d" >>). %% summary of length of an object at delete
--define(QOS_METRIC_BUCKET_COL_7,  << "his_len_r" >>). %% histogram of length of an object at read
--define(QOS_METRIC_BUCKET_COL_8,  << "his_len_w" >>). %% histogram of length of an object at write
--define(QOS_METRIC_BUCKET_COL_9,  << "his_len_d" >>). %% histogram of length of an object at delete
+-define(QOS_METRIC_BUCKET_COL_1, << "cnt_r" >>). %% num of reads
+-define(QOS_METRIC_BUCKET_COL_2, << "cnt_w" >>). %% num of writes
+-define(QOS_METRIC_BUCKET_COL_3, << "cnt_d" >>). %% num of deletes
+-define(QOS_METRIC_BUCKET_COL_4, << "sum_len_r" >>). %% summary of length of an object at read
+-define(QOS_METRIC_BUCKET_COL_5, << "sum_len_w" >>). %% summary of length of an object at write
+-define(QOS_METRIC_BUCKET_COL_6, << "sum_len_d" >>). %% summary of length of an object at delete
+-define(QOS_METRIC_BUCKET_COL_7, << "his_len_r" >>). %% histogram of length of an object at read
+-define(QOS_METRIC_BUCKET_COL_8, << "his_len_w" >>). %% histogram of length of an object at write
+-define(QOS_METRIC_BUCKET_COL_9, << "his_len_d" >>). %% histogram of length of an object at delete
 
 
 %%----------------------------------------------------------------------
 %% FOR STATISTICS
 %%----------------------------------------------------------------------
 -record(statistics, {
-          id        = 0        :: integer(),
-          read      = 0        :: integer(),
-          write     = 0        :: integer(),
-          delete    = 0        :: integer(),
-          head      = 0        :: integer(),
-          pending   = 0        :: integer(),
-          error     = 0        :: integer(),
-          total_mem_usage  = 0 :: integer(),
+          id = 0 :: integer(),
+          read = 0 :: integer(),
+          write = 0 :: integer(),
+          delete = 0 :: integer(),
+          head = 0 :: integer(),
+          pending = 0 :: integer(),
+          error = 0 :: integer(),
+          total_mem_usage = 0 :: integer(),
           system_mem_usage = 0 :: integer(),
-          proc_mem_usage   = 0 :: integer(),
-          num_of_procs     = 0 :: integer()
+          proc_mem_usage = 0 :: integer(),
+          num_of_procs = 0 :: integer()
          }).
 
 
@@ -291,7 +301,7 @@
 %%----------------------------------------------------------------------
 %% access-log
 -define(LOG_GROUP_ID_ACCESS, 'log_grp_access_log').
--define(LOG_ID_ACCESS,       'log_id_access_log').
+-define(LOG_ID_ACCESS, 'log_id_access_log').
 -define(LOG_FILENAME_ACCESS, "access").
 
 -define(notify_metrics(_Method,_Bucket,_Size),

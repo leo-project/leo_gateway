@@ -591,7 +591,6 @@ get_options() ->
     lists:foreach(fun({K, T}) ->
                           leo_misc:set_env(leo_gateway, K, T)
                   end, ?env_timeout()),
-
     HttpOptions = #http_options{handler = ?convert_to_handler(Protocol),
                                 port = Port,
                                 ssl_port = SSLPort,

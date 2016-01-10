@@ -692,7 +692,6 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                 _ ->
                     true
             end,
-
     ReqParams = request_params(Req_2,
                                #req_params{
                                   handler = ?MODULE,
