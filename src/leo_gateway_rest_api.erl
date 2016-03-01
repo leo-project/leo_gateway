@@ -63,7 +63,7 @@ init({_Any, http}, Req, Opts) ->
 %% @doc Handle a request
 %% @callback
 handle(Req, State) ->
-    Key = gen_key(Req),
+    {_Bucket, Key}= gen_key(Req),
     handle_1(Req, State, Key).
 
 
@@ -84,7 +84,7 @@ onrequest(CacheCondition) ->
 %% @doc Handle response
 %%
 onresponse(CacheCondition) ->
-    leo_gateway_http_commons:onrequest(CacheCondition, fun gen_key/1).
+    leo_gateway_http_commons:onresponse(CacheCondition, fun gen_key/1).
 
 
 %%--------------------------------------------------------------------
@@ -167,7 +167,7 @@ gen_key(Req) ->
                 _ ->
                     Path1
             end,
-    cow_qs:urldecode(Path3).
+    {void, cow_qs:urldecode(Path3)}.
 
 
 %% @doc Hande an http-request
