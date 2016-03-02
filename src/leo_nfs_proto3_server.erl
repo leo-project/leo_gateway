@@ -749,7 +749,7 @@ meta2fattr3(#?METADATA{dsize = -1, key = Key}) ->
     UT = get_dir_unix_timestamp(Path4S3Dir),
     {'NF3DIR',
      8#00777,    %% @todo determin based on ACL? protection mode bits
-     0,          %% # of hard links
+     2,          %% # of hard links
      0,          %% @todo determin base on ACL? uid
      0,          %% @todo gid
      4096,       %% file size
@@ -764,7 +764,7 @@ meta2fattr3(#?METADATA{key = Key, timestamp = TS, dsize = Size}) ->
     UT = leo_date:greg_seconds_to_unixtime(TS),
     {'NF3REG',
      8#00666,    %% @todo determin based on ACL? protection mode bits
-     0,          %% # of hard links
+     1,          %% # of hard links
      0,          %% @todo determin base on ACL? uid
      0,          %% @todo gid
      Size,       %% file size
@@ -786,7 +786,7 @@ s3dir2fattr3(Dir) ->
     UT = get_dir_unix_timestamp(Path4S3Dir),
     {'NF3DIR',
      8#00777,    %% @todo determin based on ACL? protection mode bits
-     0,          %% # of hard links
+     2,          %% # of hard links
      0,          %% @todo determin base on ACL? uid
      0,          %% @todo gid
      4096,       %% @todo how to calc?
@@ -807,7 +807,7 @@ bucket2fattr3(Bucket) ->
     UT = leo_date:greg_seconds_to_unixtime(Bucket#?BUCKET.last_modified_at),
     {'NF3DIR',
      8#00777, %% @todo determin based on ACL? protection mode bits
-     0,       %% # of hard links
+     3,       %% # of hard links
      0,       %% @todo determin base on ACL? uid
      0,       %% @todo gid
      4096,    %% @todo directory size
