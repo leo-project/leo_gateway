@@ -944,15 +944,6 @@
          end
  end}.
 
-%% @doc expiration time a metric server(sec)
-{mapping,
- "qos.server.expiration",
- "savanna_commons.proc_expiration_time",
- [
-  {datatype, integer},
-  {default, 60}
- ]}.
-
 
 %% --------------------------------------------------------------------
 %% Other Libs
