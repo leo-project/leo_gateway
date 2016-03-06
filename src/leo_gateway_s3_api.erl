@@ -519,6 +519,7 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, CustomHeaderSett
                              qs_prefix         = Prefix,
                              has_inner_cache   = HasInnerCache,
                              is_cached         = true,
+                             cache_expire      = Props#http_options.cache_expire,
                              is_dir            = IsDir,
                              is_acl            = IsACL,
                              max_chunked_objs  = Props#http_options.max_chunked_objs,

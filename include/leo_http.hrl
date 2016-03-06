@@ -397,6 +397,7 @@
           range_header               :: string(),               %% range header
           has_inner_cache = false    :: boolean(),              %% has inner-cache?
           is_cached = false          :: boolean(),              %% is cached?
+          cache_expire = 0           :: pos_integer(),          %% cache expire time (sec)
           is_dir = false             :: boolean(),              %% is directory?
           is_multi_delete = false    :: boolean(),              %% is multi delete request?
           %% for large-object
@@ -415,6 +416,7 @@
 -record(cache, {
           etag         = 0    :: non_neg_integer(),   %% actual value is checksum
           mtime        = 0    :: non_neg_integer(),   %% gregorian_seconds
+          last_sync    = 0    :: non_neg_integer(),   %% Last sync with Storage
           content_type = <<>> :: binary() | string(), %% from a Content-Type header
           body         = <<>> :: binary(),            %% body (value),
           size         = 0    :: non_neg_integer(),       %% body size

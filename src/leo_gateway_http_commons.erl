@@ -320,8 +320,27 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
              {ok, cowboy_req:req()}).
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = Bucket,
                                                       custom_header_settings = CustomHeaderSettings,
+                                                      cache_expire           = Expire,
                                                       sending_chunked_obj_len= SendChunkLen}) ->
-    case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
+    Now = leo_date:now(),
+    CacheCheck = case (Expire > 0) of
+                     true ->
+                         Diff = Now - CacheObj#cache.last_sync,
+                         case (Diff > Expire) of
+                             true ->
+                                 Ret2 = leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag),
+                                 CacheObj2 = CacheObj#cache{last_sync = Now},
+                                 NewVal = term_to_binary(CacheObj2),
+                                 catch leo_cache_api:put(Key, NewVal),
+                                 Ret2;
+                             _ ->
+                                 {ok, match}
+                         end;
+                     _ ->
+                         leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag)
+                 end,
+
+    case CacheCheck of
         %% HIT: get an object from disc-cache
         {ok, match} when CacheObj#cache.file_path /= [] ->
             ?access_log_get(Bucket, Key, CacheObj#cache.size, ?HTTP_ST_OK),
@@ -358,6 +377,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             Mime = leo_mime:guess_mime(Key),
             Val = term_to_binary(#cache{etag  = Meta#?METADATA.checksum,
                                         mtime = Meta#?METADATA.timestamp,
+                                        last_sync = Now,
                                         content_type = Mime,
                                         body = RespObject,
                                         size = byte_size(RespObject)
@@ -556,8 +576,10 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
                   andalso binary_is_contained(Key, 10) == false) of
                 true  ->
                     Mime = leo_mime:guess_mime(Key),
+                    Now = leo_date:now(),
                     Val  = term_to_binary(#cache{etag = ETag,
                                                  mtime = leo_date:now(),
+                                                 last_sync = Now,
                                                  content_type = Mime,
                                                  body = Bin,
                                                  size = byte_size(Bin)
