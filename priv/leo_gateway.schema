@@ -352,7 +352,7 @@
   {default, "./cache/journal"}
  ]}.
 
-%% @doc Cache Expire in seconds
+%% @doc Cache Expire in seconds for the http-cache feature
 {mapping,
  "cache.cache_expire",
  "leo_gateway.cache.cache_expire",
@@ -362,6 +362,7 @@
  ]}.
 
 %% @doc Cache Max Content Length in bytes
+%%       for the http-cache feature
 {mapping,
  "cache.cache_max_content_len",
  "leo_gateway.cache.cache_max_content_len",
@@ -372,6 +373,7 @@
 
 %% @doc Cache Content Type(s)
 %%      In case of "empty", all objects are cached.
+%%      for the http-cache feature
 {mapping,
  "cache.cachable_content_types",
  "leo_gateway.cache.cachable_content_type",
@@ -388,6 +390,7 @@
 
 %% @doc Cache Content Pattern(s)
 %%      In case of "empty", all objects are cached.
+%%      for the http-cache feature
 {mapping,
  "cache.cachable_path_patterns",
  "leo_gateway.cache.cachable_path_pattern",
