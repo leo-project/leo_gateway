@@ -78,6 +78,7 @@ start() ->
     application:ensure_started(ssl),
     application:ensure_started(ranch),
     application:ensure_started(asn1),
+    application:ensure_started(mnesia),
     application:start(leo_gateway).
 
 
@@ -241,10 +242,12 @@ after_process_1(Pid, Managers) ->
     application:ensure_started(leo_tran),
 
     %% Launch SNMPA
+    application:ensure_started(mnesia),
+    application:ensure_started(snmp),
     ok = leo_statistics_api:start_link(leo_gateway),
     ok = leo_statistics_api:create_tables(ram_copies, [node()]),
     ok = leo_metrics_vm:start_link(?SNMP_SYNC_INTERVAL_10S),
-    ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_10S),
+    ok = leo_metrics_req:start_link(?SNMP_SYNC_INTERVAL_60S),
     ok = leo_gateway_cache_statistics:start_link(?SNMP_SYNC_INTERVAL_60S),
 
     %% Retrieve http-options
