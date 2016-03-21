@@ -22,7 +22,12 @@
 %% LeoFS Gateway
 %%
 %%====================================================================
--author('Yosuke Hara').
+-ifdef(namespaced_types).
+-type gw_set() :: sets:set().
+-else.
+-type gw_set() :: set().
+-endif.
+
 
 %%----------------------------------------------------------------------
 %% DEFAULT VALUES
