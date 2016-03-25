@@ -55,7 +55,7 @@
                 total_len = 0 :: non_neg_integer(),
                 md5_context = <<>> :: any(),
                 errors = [] :: list(),
-                monitor_set :: set()
+                monitor_set :: gw_set()
                }).
 
 

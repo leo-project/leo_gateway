@@ -18,6 +18,12 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%====================================================================
+-ifdef(namespaced_types).
+-type gw_set() :: sets:set().
+-else.
+-type gw_set() :: set().
+-endif.
+
 %%----------------------------------------------------------------------
 %% DEFAULT VALUES
 %%----------------------------------------------------------------------
