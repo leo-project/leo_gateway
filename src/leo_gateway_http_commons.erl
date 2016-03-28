@@ -318,12 +318,16 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
 %% @doc GET an object with Etag
 -spec(get_object_with_cache(cowboy_req:req(), binary(), #cache{}, #req_params{}) ->
              {ok, cowboy_req:req()}).
-get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = Bucket,
+get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
                                                       custom_header_settings = CustomHeaderSettings,
-                                                      sending_chunked_obj_len= SendChunkLen}) ->
+                                                      sending_chunked_obj_len = SendChunkLen}) ->
+    Path = CacheObj#cache.file_path,
+    IsExistCache = filelib:is_file(Path),
+
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
-        {ok, match} when CacheObj#cache.file_path /= [] ->
+        {ok, match} when Path /= []
+                         andalso IsExistCache == true ->
             ?access_log_get(Bucket, Key, CacheObj#cache.size, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,   CacheObj#cache.content_type},
@@ -332,22 +336,30 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
                        {?HTTP_HEAD_X_FROM_CACHE,        <<"True/via disk">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            BodyFunc = fun(Socket, _Transport) ->
-                               case file:open(CacheObj#cache.file_path, [raw, read]) of
+            BodyFunc = fun(Socket,_Transport) ->
+                               case file:open(Path, [raw, read]) of
                                    {ok, Fd} ->
-                                       {ok, _} = file:sendfile(Fd, Socket, 0, 0, [{chunk_size, SendChunkLen}]),
-                                       file:close(Fd),
+                                       case file:sendfile(Fd, Socket, 0, 0,
+                                                          [{chunk_size, SendChunkLen}]) of
+                                           {ok,_} ->
+                                               void;
+                                           {error, Cause} ->
+                                               ?warn("get_object_with_cache/4",
+                                                     [{key, Path}, {cause, Cause}])
+                                       end,
+                                       _ = file:close(Fd),
                                        ok;
-                                   Err ->
+                                   {error, Reason} ->
                                        catch leo_cache_api:delete(Key),
-                                       ?error("get_object_with_cache/4", "Disk Cache ~p errored with ~p", [CacheObj#cache.file_path, Err]),
-                                       Err
+                                       ?warn("get_object_with_cache/4",
+                                             [{key, Path}, {cause, Reason}]),
+                                       ok
                                end
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
 
         %% HIT: get an object from memory-cache
-        {ok, match} when CacheObj#cache.file_path == [] ->
+        {ok, match} when Path == [] ->
             ?access_log_get(Bucket, Key, CacheObj#cache.size, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  CacheObj#cache.content_type},
@@ -408,12 +420,15 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+        {error, timeout} ->
+            ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, timeout} ->
-            ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+        _ ->
+            ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 %% @doc MOVE/COPY an object
