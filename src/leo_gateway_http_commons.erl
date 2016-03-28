@@ -350,14 +350,18 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
                                                void;
                                            {error, Cause} ->
                                                ?warn("get_object_with_cache/4",
-                                                     [{key, Path}, {cause, Cause}])
+                                                     [{key, Path},
+                                                      {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
+                                                      {cause, Cause}])
                                        end,
                                        _ = file:close(Fd),
                                        ok;
                                    {error, Reason} ->
                                        catch leo_cache_api:delete(Key),
                                        ?warn("get_object_with_cache/4",
-                                             [{key, Path}, {cause, Reason}]),
+                                             [{key, Path},
+                                              {summary, ?ERROR_COULD_NOT_OPEN_DISK_CACHE},
+                                              {cause, Reason}]),
                                        ok
                                end
                        end,
