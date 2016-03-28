@@ -322,12 +322,17 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
                                                       custom_header_settings = CustomHeaderSettings,
                                                       sending_chunked_obj_len = SendChunkLen}) ->
     Path = CacheObj#cache.file_path,
-    IsExistCache = filelib:is_file(Path),
+    HasDiskCache = case Path of
+                       [] ->
+                           false;
+                       _ ->
+                           filelib:is_file(Path)
+                   end,
 
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
         {ok, match} when Path /= []
-                         andalso IsExistCache == true ->
+                         andalso HasDiskCache ->
             ?access_log_get(Bucket, Key, CacheObj#cache.size, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,   CacheObj#cache.content_type},
