@@ -333,8 +333,16 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, _Transport) ->
-                               file:sendfile(CacheObj#cache.file_path, Socket, 0, 0, [{chunk_size, SendChunkLen}]),
-                               ok
+                               case file:open(CacheObj#cache.file_path, [raw, read]) of
+                                   {ok, Fd} ->
+                                       {ok, _} = file:sendfile(Fd, Socket, 0, 0, [{chunk_size, SendChunkLen}]),
+                                       file:close(Fd),
+                                       ok;
+                                   Err ->
+                                       catch leo_cache_api:delete(Key),
+                                       ?error("get_object_with_cache/4", "Disk Cache ~p errored with ~p", [CacheObj#cache.file_path, Err]),
+                                       Err
+                               end
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
 
