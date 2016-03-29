@@ -333,7 +333,6 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
         %% HIT: get an object from disc-cache
         {ok, match} when Path /= []
                          andalso HasDiskCache ->
-            ?access_log_get(Bucket, Key, CacheObj#cache.size, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,   CacheObj#cache.content_type},
                        {?HTTP_HEAD_RESP_ETAG,           ?http_etag(CacheObj#cache.etag)},
@@ -341,31 +340,34 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
                        {?HTTP_HEAD_X_FROM_CACHE,        <<"True/via disk">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            BodyFunc = fun(Socket,_Transport) ->
-                               case file:open(Path, [raw, read]) of
-                                   {ok, Fd} ->
+            case file:open(Path, [raw, read]) of
+                {ok, Fd} ->
+                    ?access_log_get(Bucket, Key, CacheObj#cache.size, ?HTTP_ST_OK),
+                    BodyFunc = fun(Socket,_Transport) ->
                                        case file:sendfile(Fd, Socket, 0, 0,
                                                           [{chunk_size, SendChunkLen}]) of
                                            {ok,_} ->
-                                               void;
+                                               _ = file:close(Fd),
+                                               ok;
                                            {error, Cause} ->
                                                ?warn("get_object_with_cache/4",
                                                      [{key, Path},
                                                       {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
-                                                      {cause, Cause}])
-                                       end,
-                                       _ = file:close(Fd),
-                                       ok;
-                                   {error, Reason} ->
-                                       catch leo_cache_api:delete(Key),
-                                       ?warn("get_object_with_cache/4",
-                                             [{key, Path},
-                                              {summary, ?ERROR_COULD_NOT_OPEN_DISK_CACHE},
-                                              {cause, Reason}]),
-                                       ok
-                               end
-                       end,
-            cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
+                                                      {cause, Cause}]),
+                                               ok
+                                       end
+                               end,
+                    cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
+                {error, Reason} ->
+                    ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
+
+                    catch leo_cache_api:delete(Key),
+                    ?warn("get_object_with_cache/4",
+                          [{key, Path},
+                           {summary, ?ERROR_COULD_NOT_OPEN_DISK_CACHE},
+                           {cause, Reason}]),
+                    ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
+            end;
 
         %% HIT: get an object from memory-cache
         {ok, match} when Path == [] ->
@@ -384,6 +386,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
 
         %% MISS: get an object from storage (small-size)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
+            ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Mime = leo_mime:guess_mime(Key),
             Val = term_to_binary(#cache{etag  = Meta#?METADATA.checksum,
                                         mtime = Meta#?METADATA.timestamp,
@@ -392,8 +395,6 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
                                         size = byte_size(RespObject)
                                        }),
             catch leo_cache_api:put(Key, Val),
-
-            ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
                        {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
