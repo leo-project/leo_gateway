@@ -103,6 +103,8 @@
 -define(ERROR_FAIL_PUT_OBJ, "Fail put an object").
 -define(ERROR_FAIL_RETRIEVE_OBJ, "Fail retrieve an object").
 -define(ERROR_COULD_NOT_UPDATE_LOG_LEVEL, "Could not update a log level").
+-define(ERROR_COULD_NOT_SEND_DISK_CACHE, "Could not send a disk cache").
+-define(ERROR_COULD_NOT_OPEN_DISK_CACHE, "Could not open a disk cache").
 
 
 %%----------------------------------------------------------------------
