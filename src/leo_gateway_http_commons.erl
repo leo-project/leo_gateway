@@ -347,15 +347,15 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
                                        case file:sendfile(Fd, Socket, 0, 0,
                                                           [{chunk_size, SendChunkLen}]) of
                                            {ok,_} ->
-                                               _ = file:close(Fd),
-                                               ok;
+                                               void;
                                            {error, Cause} ->
                                                ?warn("get_object_with_cache/4",
                                                      [{key, Path},
                                                       {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
-                                                      {cause, Cause}]),
-                                               ok
-                                       end
+                                                      {cause, Cause}])
+                                       end,
+                                       _ = file:close(Fd),
+                                       ok
                                end,
                     cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
                 {error, Reason} ->
