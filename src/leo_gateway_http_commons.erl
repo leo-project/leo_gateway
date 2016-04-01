@@ -319,10 +319,18 @@ get_object(Req, Key, #req_params{bucket_name = BucketName,
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                                                       custom_header_settings = CustomHeaderSettings,
                                                       sending_chunked_obj_len = SendChunkLen}) ->
+    Path = CacheObj#cache.file_path,
+    HasDiskCache = case Path of
+                       [] ->
+                           false;
+                       _ ->
+                           filelib:is_file(Path)
+                   end,
+
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
-        {ok, match} when CacheObj#cache.file_path /= [] ->
-            ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK),
+        {ok, match} when Path /= []
+                         andalso HasDiskCache ->
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, CacheObj#cache.content_type},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(CacheObj#cache.etag)},
@@ -330,15 +338,38 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                        {?HTTP_HEAD_X_FROM_CACHE, <<"True/via disk">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
-            BodyFunc = fun(Socket, _Transport) ->
-                               file:sendfile(CacheObj#cache.file_path,
-                                             Socket, 0, 0, [{chunk_size, SendChunkLen}]),
-                               ok
-                       end,
-            cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
+
+            case file:open(Path, [raw, read]) of
+                {ok, Fd} ->
+                    ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK),
+                    BodyFunc = fun(Socket,_Transport) ->
+                                       case file:sendfile(Fd, Socket, 0, 0,
+                                                          [{chunk_size, SendChunkLen}]) of
+                                           {ok,_} ->
+                                               void;
+                                           {error, Cause} ->
+                                               ?warn("get_object_with_cache/4",
+                                                     [{key, Path},
+                                                      {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
+                                                      {cause, Cause}])
+                                       end,
+                                       _ = file:close(Fd),
+                                       ok
+                               end,
+                    cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
+                {error, Reason} ->
+                    ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
+
+                    catch leo_cache_api:delete(Key),
+                    ?warn("get_object_with_cache/4",
+                          [{key, Path},
+                           {summary, ?ERROR_COULD_NOT_OPEN_DISK_CACHE},
+                           {cause, Reason}]),
+                    ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
+            end;
 
         %% HIT: get an object from memory-cache
-        {ok, match} when CacheObj#cache.file_path == [] ->
+        {ok, match} when Path == [] ->
             ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, CacheObj#cache.content_type},
@@ -354,6 +385,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
 
         %% MISS: get an object from storage (small-size)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
+            ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Mime = leo_mime:guess_mime(Key),
             Val = term_to_binary(#cache{etag = Meta#?METADATA.checksum,
                                         mtime = Meta#?METADATA.timestamp,
@@ -361,8 +393,6 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                                         body = RespObject,
                                         size = byte_size(RespObject)}),
             catch leo_cache_api:put(Key, Val),
-
-            ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, Mime},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
@@ -401,12 +431,15 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
+        {error, timeout} ->
+            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
+            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, timeout} ->
-            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
-            ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
+        _ ->
+            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
+            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
 %% @doc MOVE/COPY an object
