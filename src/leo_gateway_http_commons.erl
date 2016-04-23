@@ -248,9 +248,9 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
 %% @doc GET an object
 -spec(get_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
-get_object(Req, Key, #req_params{bucket                 = Bucket,
+get_object(Req, Key, #req_params{bucket = Bucket,
                                  custom_header_settings = CustomHeaderSettings,
-                                 has_inner_cache        = HasInnerCache,
+                                 has_inner_cache = HasInnerCache,
                                  sending_chunked_obj_len= SendChunkLen}) ->
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
@@ -259,7 +259,7 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
 
             case HasInnerCache of
                 true ->
-                    Val = term_to_binary(#cache{etag  = Meta#?METADATA.checksum,
+                    Val = term_to_binary(#cache{etag = Meta#?METADATA.checksum,
                                                 mtime = Meta#?METADATA.timestamp,
                                                 content_type = Mime,
                                                 body = RespObject,
@@ -272,7 +272,7 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
             ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-                       {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
@@ -286,17 +286,21 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
             Mime = leo_mime:guess_mime(Key),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-                       {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket, SendChunkLen}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link(
+                                             {Key, Transport, Socket, SendChunkLen}),
                                try
-                                   leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta),
+                                   leo_large_object_get_handler:get(
+                                     Pid, TotalChunkedObjs, Req, Meta),
                                    ok
                                after
-                                   ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
+                                   ?debug("get_object/3", [{key, Key},
+                                                           {cnumber, TotalChunkedObjs}]),
+                                   %% ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
                                    catch leo_large_object_get_handler:stop(Pid)
                                end
                        end,
@@ -335,9 +339,9 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
                          andalso HasDiskCache ->
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,   CacheObj#cache.content_type},
-                       {?HTTP_HEAD_RESP_ETAG,           ?http_etag(CacheObj#cache.etag)},
+                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(CacheObj#cache.etag)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED,  leo_http:rfc1123_date(CacheObj#cache.mtime)},
-                       {?HTTP_HEAD_X_FROM_CACHE,        <<"True/via disk">>}],
+                       {?HTTP_HEAD_X_FROM_CACHE, <<"True/via disk">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             case file:open(Path, [raw, read]) of
@@ -374,9 +378,9 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
             ?access_log_get(Bucket, Key, CacheObj#cache.size, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  CacheObj#cache.content_type},
-                       {?HTTP_HEAD_RESP_ETAG,          ?http_etag(CacheObj#cache.etag)},
+                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(CacheObj#cache.etag)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
-                       {?HTTP_HEAD_X_FROM_CACHE,       <<"True/via memory">>}],
+                       {?HTTP_HEAD_X_FROM_CACHE, <<"True/via memory">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
@@ -388,7 +392,7 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
             ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Mime = leo_mime:guess_mime(Key),
-            Val = term_to_binary(#cache{etag  = Meta#?METADATA.checksum,
+            Val = term_to_binary(#cache{etag = Meta#?METADATA.checksum,
                                         mtime = Meta#?METADATA.timestamp,
                                         content_type = Mime,
                                         body = RespObject,
@@ -397,12 +401,13 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
             catch leo_cache_api:put(Key, Val),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-                       {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               leo_net:chunked_send(Transport, Socket, RespObject, SendChunkLen)
+                               leo_net:chunked_send(
+                                 Transport, Socket, RespObject, SendChunkLen)
                        end,
             ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
@@ -411,16 +416,20 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket = Bucket,
             Mime = leo_mime:guess_mime(Key),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
-                       {?HTTP_HEAD_RESP_ETAG,          ?http_etag(Meta#?METADATA.checksum)},
+                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
             Headers2 = Headers ++ CustomHeaders,
             BodyFunc = fun(Socket, Transport) ->
-                               {ok, Pid} = leo_large_object_get_handler:start_link({Key, Transport, Socket, SendChunkLen}),
+                               {ok, Pid} = leo_large_object_get_handler:start_link(
+                                             {Key, Transport, Socket, SendChunkLen}),
                                try
-                                   leo_large_object_get_handler:get(Pid, TotalChunkedObjs, Req, Meta)
+                                   leo_large_object_get_handler:get(
+                                     Pid, TotalChunkedObjs, Req, Meta)
                                after
-                                   ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
+                                   ?debug("get_object_with_cache/4", [{key, Key},
+                                                                      {cnumber, TotalChunkedObjs}]),
+                                   %% ?access_log_get(Bucket, Key, Meta#?METADATA.dsize, 0),
                                    catch leo_large_object_get_handler:stop(Pid)
                                end
                        end,
