@@ -115,21 +115,23 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
-            #state{key = Key, transport = Transport, socket = Socket, sending_chunked_obj_len = SendChunkLen} = State) ->
+            #state{key = Key, transport = Transport,
+                   socket = Socket, sending_chunked_obj_len = SendChunkLen} = State) ->
     Ref_1 = case catch leo_cache_api:put_begin_tran(Key) of
                 {ok, Ref} -> Ref;
                 _ -> undefined
             end,
-    Reply = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
-                                                      chunk_key = Key,
-                                                      request = Req,
-                                                      metadata = Meta,
-                                                      reference = Ref_1,
-                                                      transport = Transport,
-                                                      socket = Socket,
-                                                      sending_chunked_obj_len = SendChunkLen}),
+    Reply = handle_loop(TotalOfChunkedObjs,
+                        #req_info{key = Key,
+                                  chunk_key = Key,
+                                  request = Req,
+                                  metadata = Meta,
+                                  reference = Ref_1,
+                                  transport = Transport,
+                                  socket = Socket,
+                                  sending_chunked_obj_len = SendChunkLen}),
     case Reply of
-        {ok, _Req} ->
+        {ok,_Req} ->
             CacheMeta = #cache_meta{
                            md5 = Meta#?METADATA.checksum,
                            mtime = Meta#?METADATA.timestamp,
