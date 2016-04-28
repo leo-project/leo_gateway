@@ -462,23 +462,20 @@
 
 -define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len),
         case _Cause of
-            %% Not found
             not_found ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND);
-            %% Unavailable
             unavailable ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE);
-            %% Timeout
             timeout ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT);
-            %% Other
+            bad_range ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE);
             _ ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR)
         end).
 
 -define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len,_Req),
         case _Cause of
-            %% Not found
             not_found ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND),
                 case _Method of
@@ -489,18 +486,15 @@
                     _ ->
                         ?reply_not_found([?SERVER_HEADER],_Key, <<>>,_Req)
                 end;
-            %% Unavailable
             unavailable ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE),
                 ?reply_service_unavailable_error([?SERVER_HEADER],_Key, <<>>,_Req);
-            %% Timeout
             timeout ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT),
                 ?reply_timeout([?SERVER_HEADER],_Key, <<>>,_Req);
             bad_range ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE),
                 ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
-            %% Other
             _ ->
                 ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR),
                 ?reply_internal_error([?SERVER_HEADER],_Key, <<>>,_Req)
