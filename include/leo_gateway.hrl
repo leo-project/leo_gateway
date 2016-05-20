@@ -331,7 +331,7 @@
             end
         end).
 
--define(access_log_get(_Bucket, _Path, _Size, _Response),
+-define(access_log_get(_Bucket,_Path,_Size,_Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_base:append(
@@ -346,7 +346,7 @@
                                        _Response]}})
             %% ?notify_metrics(<<"GET">>,_Bucket,_Size)
         end).
--define(access_log_put(_Bucket, _Path, _Size, _Response),
+-define(access_log_put(_Bucket,_Path,_Size,_Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_base:append(
@@ -363,7 +363,7 @@
               })
             %% ?notify_metrics(<<"PUT">>,_Bucket,_Size)
         end).
--define(access_log_delete(_Bucket, _Path, _Size, _Response),
+-define(access_log_delete(_Bucket,_Path,_Size,_Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_base:append(
@@ -380,7 +380,7 @@
               })
             %% ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
         end).
--define(access_log_head(_Bucket, _Path, _Response),
+-define(access_log_head(_Bucket,_Path,_Response),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_base:append(
@@ -397,8 +397,22 @@
               })
         end).
 
+-define(access_log(_Method,_Bucket,_Path,_Size,_Response),
+        begin
+            case _Method of
+                get ->
+                    ?access_log_get(_Bucket,_Path,_Size,_Response);
+                put ->
+                    ?access_log_put(_Bucket,_Path,_Size,_Response);
+                delete ->
+                    ?access_log_delete(_Bucket,_Path,_Size,_Response);
+                head ->
+                    ?access_log_head(_Bucket,_Path,_Response)
+            end
+        end).
+
 %% access-log for buckets
--define(access_log_bucket_put(_Bucket, _Response),
+-define(access_log_bucket_put(_Bucket,_Response),
         begin
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
@@ -414,7 +428,7 @@
               })
             %% ?notify_metrics(<<"PUT">>,_Bucket,_Size)
         end).
--define(access_log_bucket_delete(_Bucket, _Response),
+-define(access_log_bucket_delete(_Bucket,_Response),
         begin
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
@@ -430,7 +444,7 @@
               })
             %% ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
         end).
--define(access_log_bucket_head(_Bucket, _Response),
+-define(access_log_bucket_head(_Bucket,_Response),
         begin
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
@@ -444,4 +458,44 @@
                                        _Response
                                       ]}
               })
+        end).
+
+-define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len),
+        case _Cause of
+            not_found ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND);
+            unavailable ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE);
+            timeout ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT);
+            bad_range ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE);
+            _ ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR)
+        end).
+
+-define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len,_Req),
+        case _Cause of
+            not_found ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND),
+                case _Method of
+                    delete ->
+                        ?reply_no_content([?SERVER_HEADER], Req);
+                    head ->
+                        ?reply_not_found_without_body([?SERVER_HEADER], Req);
+                    _ ->
+                        ?reply_not_found([?SERVER_HEADER],_Key, <<>>,_Req)
+                end;
+            unavailable ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE),
+                ?reply_service_unavailable_error([?SERVER_HEADER],_Key, <<>>,_Req);
+            timeout ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT),
+                ?reply_timeout([?SERVER_HEADER],_Key, <<>>,_Req);
+            bad_range ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE),
+                ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
+            _ ->
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR),
+                ?reply_internal_error([?SERVER_HEADER],_Key, <<>>,_Req)
         end).

@@ -2,7 +2,7 @@
 %%
 %% Leo Gateway Large Object GET Handler
 %%
-%% Copyright (c) 2012-2015 Rakuten, Inc.
+%% Copyright (c) 2012-2016 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -31,7 +31,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Application APIs
--export([start_link/1, stop/1, get/4]).
+-export([start_link/4, stop/1, get/4]).
 
 %% get_server callbacks
 -export([init/1,
@@ -48,31 +48,34 @@
 -define(DEF_TIMEOUT, 30000).
 
 -record(state, {
-          key = <<>>            :: binary(),
-          socket = undefined    :: any(),
+          key = <<>> :: binary(),
+          socket = undefined :: any(),
           transport = undefined :: undefined | module(),
           sending_chunked_obj_len :: pos_integer(),
-          iterator              :: leo_large_object_commons:iterator()
+          iterator :: leo_large_object_commons:iterator()
          }).
 
 -record(req_info, {
           key = <<>> :: binary(),
-          chunk_key = <<>>      :: binary(),
-          request    :: any(),
-          metadata   :: #?METADATA{},
-          reference  :: reference(),
-          transport  :: any(),
-          socket     :: any(),
-          sending_chunked_obj_len :: pos_integer()
+          chunk_key = <<>> :: binary(),
+          request :: any(),
+          metadata = #?METADATA{} :: #?METADATA{},
+          reference :: reference(),
+          transport :: any(),
+          socket :: any(),
+          sending_chunked_obj_len = 0 :: non_neg_integer()
          }).
 
 
 %%====================================================================
 %% API
 %%====================================================================
--spec(start_link(Args) ->
-             ok | {error, any()} when Args::tuple()).
-start_link({Key, Transport, Socket, SendChunkLen}) ->
+-spec(start_link(Key, Transport, Socket, SendChunkLen) ->
+             ok | {error, any()} when Key::binary(),
+                                      Transport::any(),
+                                      Socket::pid(),
+                                      SendChunkLen::non_neg_integer()).
+start_link(Key, Transport, Socket, SendChunkLen) ->
     gen_server:start_link(?MODULE, [Key, Transport, Socket, SendChunkLen], []).
 
 
@@ -103,7 +106,7 @@ get(Pid, TotalOfChunkedObjs, Req, Meta) ->
 init([Key, Transport, Socket, SendChunkLen]) ->
     State = #state{key = Key,
                    transport = Transport,
-                   socket    = Socket,
+                   socket = Socket,
                    sending_chunked_obj_len = SendChunkLen
                   },
     {ok, State}.
@@ -112,23 +115,25 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call({get, TotalOfChunkedObjs, Req, Meta}, _From,
-            #state{key = Key, transport = Transport, socket = Socket, sending_chunked_obj_len = SendChunkLen} = State) ->
+            #state{key = Key, transport = Transport,
+                   socket = Socket, sending_chunked_obj_len = SendChunkLen} = State) ->
     Ref_1 = case catch leo_cache_api:put_begin_tran(Key) of
                 {ok, Ref} -> Ref;
                 _ -> undefined
             end,
-    Reply = handle_loop(TotalOfChunkedObjs, #req_info{key = Key,
-                                                      chunk_key = Key,
-                                                      request = Req,
-                                                      metadata = Meta,
-                                                      reference = Ref_1,
-                                                      transport = Transport,
-                                                      socket = Socket,
-                                                      sending_chunked_obj_len = SendChunkLen}),
+    Reply = handle_loop(TotalOfChunkedObjs,
+                        #req_info{key = Key,
+                                  chunk_key = Key,
+                                  request = Req,
+                                  metadata = Meta,
+                                  reference = Ref_1,
+                                  transport = Transport,
+                                  socket = Socket,
+                                  sending_chunked_obj_len = SendChunkLen}),
     case Reply of
-        {ok, _Req} ->
+        {ok,_Req} ->
             CacheMeta = #cache_meta{
-                           md5   = Meta#?METADATA.checksum,
+                           md5 = Meta#?METADATA.checksum,
                            mtime = Meta#?METADATA.timestamp,
                            content_type = leo_mime:guess_mime(Key)},
             catch leo_cache_api:put_end_tran(Ref_1, Key, CacheMeta, true);
@@ -168,7 +173,7 @@ handle_loop(TotalChunkObjs, TotalChunkObjs, #req_info{request = Req}) ->
 handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
                                              chunk_key = ChunkObjKey,
                                              reference = Ref,
-                                             socket    = Socket,
+                                             socket = Socket,
                                              transport = Transport,
                                              sending_chunked_obj_len = SendChunkLen
                                             } = ReqInfo) ->
