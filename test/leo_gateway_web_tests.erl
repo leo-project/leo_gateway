@@ -285,7 +285,7 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
                                                       ":8080/a/b?prefix=pre"]), []},
                                   [], [{full_result, false}]),
                 ?assertEqual(200, SC),
-                Xml = io_lib:format(?XML_OBJ_LIST, ["pre", "", "1000", "false" "", ""]),
+                Xml = io_lib:format(?XML_OBJ_LIST, ["a", "pre", "", "1000", "false" "", ""]),
                 ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body))
             catch
                 throw:Reason ->
