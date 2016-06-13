@@ -259,7 +259,7 @@
 -define(XML_OBJ_LIST,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                       "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
-                      "<Name>standalone</Name>",
+                      "<Name>~s</Name>",
                       "<Prefix>~s</Prefix>",
                       "<Marker></Marker>",
                       "<NextMarker>~s</NextMarker>",
