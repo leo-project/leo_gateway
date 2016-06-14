@@ -1008,7 +1008,7 @@ get_bucket_1(_AccessKeyId, Bucket, _Delimiter, _Marker, 0, Prefix) ->
                    _    -> Prefix
                end,
     Key = << Bucket/binary, Prefix_1/binary >>,
-    {ok, [], generate_bucket_xml(Key, Prefix_1, [], 0)};
+    {ok, [], generate_bucket_xml(Bucket, Key, Prefix_1, [], 0)};
 get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
     Prefix_1 = case Prefix of
                    none -> <<>>;
@@ -1025,7 +1025,7 @@ get_bucket_1(_AccessKeyId, Bucket, Delimiter, Marker, MaxKeys, Prefix) ->
                                         [Key, Delimiter, Marker, MaxKeys],
                                         []) of
         {ok, Meta} when is_list(Meta) =:= true ->
-            {ok, Meta, generate_bucket_xml(Key, Prefix_1, Meta, MaxKeys)};
+            {ok, Meta, generate_bucket_xml(Bucket, Key, Prefix_1, Meta, MaxKeys)};
         {ok, _} ->
             {error, invalid_format};
         Error ->
@@ -1097,10 +1097,12 @@ head_bucket_1(AccessKeyId, Bucket) ->
 
 %% @doc Generate XML from matadata-list
 %% @private
-generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
-    Len    = byte_size(KeyBin),
-    Key    = binary_to_list(KeyBin),
-    Prefix = binary_to_list(PrefixBin),
+generate_bucket_xml(BucketBin, KeyBin, PrefixBin, MetadataList, MaxKeys) ->
+    FormalizedBucket = formalize_bucket(BucketBin),
+    Bucket           = binary_to_list(FormalizedBucket),
+    Len              = byte_size(KeyBin),
+    Key              = binary_to_list(KeyBin),
+    Prefix           = binary_to_list(PrefixBin),
     TruncatedStr = case length(MetadataList) =:= MaxKeys andalso MaxKeys =/= 0 of
                        true -> "true";
                        false -> "false"
@@ -1153,7 +1155,8 @@ generate_bucket_xml(KeyBin, PrefixBin, MetadataList, MaxKeys) ->
           end,
     {List, NextMarker}= lists:foldl(Fun, {[], <<>>}, MetadataList),
     io_lib:format(?XML_OBJ_LIST,
-                  [xmerl_lib:export_text(Prefix),
+                  [xmerl_lib:export_text(Bucket),
+                   xmerl_lib:export_text(Prefix),
                    xmerl_lib:export_text(NextMarker),
                    integer_to_list(MaxKeys), TruncatedStr, List]).
 
