@@ -1098,21 +1098,21 @@ head_bucket_1(AccessKeyId, Bucket) ->
 %% @doc Generate XML from matadata-list
 %% @private
 generate_bucket_xml(BucketBin, KeyBin, PrefixBin, MetadataList, MaxKeys) ->
-    FormalizedBucket = formalize_bucket(BucketBin),
-    Bucket           = binary_to_list(FormalizedBucket),
-    Len              = byte_size(KeyBin),
-    Key              = binary_to_list(KeyBin),
-    Prefix           = binary_to_list(PrefixBin),
+    Bucket = erlang:hd(leo_misc:binary_tokens(BucketBin, <<"/">>)),
+    Len = byte_size(KeyBin),
+    Key = binary_to_list(KeyBin),
+    Prefix = binary_to_list(PrefixBin),
+
     TruncatedStr = case length(MetadataList) =:= MaxKeys andalso MaxKeys =/= 0 of
                        true -> "true";
                        false -> "false"
                    end,
 
-    Fun = fun(#?METADATA{key       = EntryKeyBin,
-                         dsize     = Length,
+    Fun = fun(#?METADATA{key = EntryKeyBin,
+                         dsize = Length,
                          timestamp = TS,
-                         checksum  = CS,
-                         del       = 0} , {Acc, _NextMarker}) ->
+                         checksum = CS,
+                         del = 0} , {Acc, _NextMarker}) ->
                   EntryKey = binary_to_list(EntryKeyBin),
 
                   case string:equal(Key, EntryKey) of
