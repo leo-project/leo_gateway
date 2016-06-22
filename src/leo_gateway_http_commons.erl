@@ -210,7 +210,9 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}, SendChunkLen) ->
 -spec(onresponse(#cache_condition{}, function()) ->
              any()).
 onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
-    fun(?HTTP_ST_OK, Header1, Body, Req) ->
+    fun(Status, Header1, Body, Req) when 100 > (Status - ?HTTP_ST_OK) andalso
+                                               (Status - ?HTTP_ST_OK) >= 0 ->
+            %% for 20x
             case cowboy_req:get(method, Req) of
                 ?HTTP_GET ->
                     {_Bucket, Key} = FunGenKey(Req),
@@ -241,7 +243,10 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                     end;
                 _ ->
                     cowboy_req:set_resp_body(<<>>, Req)
-            end
+            end;
+        (_Status, _Header1, _Body, Req) ->
+            %% for other status like 40x, 50x
+            cowboy_req:set_resp_body(<<>>, Req)
     end.
 
 
