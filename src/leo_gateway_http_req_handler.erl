@@ -25,8 +25,6 @@
 %%======================================================================
 -module(leo_gateway_http_req_handler).
 
--author('Yosuke Hara').
-
 -include("leo_http.hrl").
 -include_lib("leo_dcerl/include/leo_dcerl.hrl").
 -include_lib("eunit/include/eunit.hrl").

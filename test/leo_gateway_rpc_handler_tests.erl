@@ -24,7 +24,6 @@
 %% @end
 %%====================================================================
 -module(leo_gateway_rpc_handler_tests).
--author('Yoshiyuki Kanno').
 
 -include("leo_gateway.hrl").
 -include("leo_http.hrl").
@@ -135,10 +134,10 @@ head_object_normal1_([_Node0, Node1]) ->
                                         fun(_Addr, Key) ->
                                                 {ok,
                                                  #?METADATA{
-                                                    key = Key,
-                                                    dsize = 10,
-                                                    del = 0
-                                                   }
+                                                     key = Key,
+                                                     dsize = 10,
+                                                     del = 0
+                                                    }
                                                 }
                                         end]),
     KEY = <<"bucket/key">>,
@@ -182,10 +181,10 @@ get_object_normal1_([_Node0, Node1]) ->
                                         fun(_Addr, Key, _ReqId) ->
                                                 {ok,
                                                  #?METADATA{
-                                                    key = Key,
-                                                    dsize = 4,
-                                                    del = 0
-                                                   },
+                                                     key = Key,
+                                                     dsize = 4,
+                                                     del = 0
+                                                    },
                                                  <<"body">>
                                                 }
                                         end]),
@@ -231,10 +230,10 @@ get_object_with_etag_normal1_([_Node0, Node1]) ->
                                         fun(_Addr, Key, _Etag, _ReqId) ->
                                                 {ok,
                                                  #?METADATA{
-                                                    key = Key,
-                                                    dsize = 4,
-                                                    del = 0
-                                                   },
+                                                     key = Key,
+                                                     dsize = 4,
+                                                     del = 0
+                                                    },
                                                  <<"body">>
                                                 }
                                         end]),
@@ -307,7 +306,9 @@ put_object_notfound_([Node0, Node1]) ->
                                         fun(_, _) ->
                                                 {error, not_found}
                                         end]),
-    Res = leo_gateway_rpc_handler:put(<<"bucket/key">>, <<"body">>, 4),
+    Res = leo_gateway_rpc_handler:put(#put_req_params{path = <<"bucket/key">>,
+                                                      body =  <<"body">>,
+                                                      dsize = 4}),
     ?assertEqual({error, not_found}, Res),
     ok = rpc:call(Node0, meck, unload, [leo_storage_handler_object]),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
@@ -316,10 +317,12 @@ put_object_notfound_([Node0, Node1]) ->
 put_object_error_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link, non_strict]]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, put,
-                                        fun(_, _) ->
+                                        fun(_,_) ->
                                                 {error, internal_server_error}
                                         end]),
-    Res = leo_gateway_rpc_handler:put(<<"bucket/key">>, <<"body">>, 4),
+    Res = leo_gateway_rpc_handler:put(#put_req_params{path = <<"bucket/key">>,
+                                                      body =  <<"body">>,
+                                                      dsize = 4}),
     ?assertEqual({error, internal_server_error}, Res),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.
@@ -330,7 +333,9 @@ put_object_normal1_([_Node0, Node1]) ->
                                         fun(_, _) ->
                                                 ok
                                         end]),
-    Res = leo_gateway_rpc_handler:put(<<"bucket/key">>, <<"body">>, 4),
+    Res = leo_gateway_rpc_handler:put(#put_req_params{path = <<"bucket/key">>,
+                                                      body =  <<"body">>,
+                                                      dsize = 4}),
     ?assertEqual(ok, Res),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.

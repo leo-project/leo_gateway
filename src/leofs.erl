@@ -20,7 +20,6 @@
 %%
 %%====================================================================
 -module(leofs).
--author('Yosuke Hara').
 
 -include("leo_http.hrl").
 -include_lib("leo_object_storage/include/leo_object_storage.hrl").
@@ -71,15 +70,17 @@ get(Key) ->
 -spec(put(binary(), binary()) ->
              {ok, pos_integer()} | {error, any()}).
 put(Key, Body) ->
-    case leo_gateway_rpc_handler:put(Key, Body) of
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = Body,
+                                                     dsize = byte_size(Body)}) of
         {ok, ETag} = Ret ->
             Mime = leo_mime:guess_mime(Key),
-            Val  = term_to_binary(#cache{etag = ETag,
-                                         mtime = leo_date:now(),
-                                         content_type = Mime,
-                                         body = Body,
-                                         size = byte_size(Body)
-                                        }),
+            Val= term_to_binary(#cache{etag = ETag,
+                                       mtime = leo_date:now(),
+                                       content_type = Mime,
+                                       body = Body,
+                                       size = byte_size(Body)
+                                      }),
             _ = (catch leo_cache_api:put(Key, Val)),
             Ret;
         Error ->

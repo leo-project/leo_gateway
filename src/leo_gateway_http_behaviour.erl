@@ -24,7 +24,6 @@
 %% @end
 %%======================================================================
 -module(leo_gateway_http_behaviour).
--author('Yosuke Hara').
 
 -include("leo_http.hrl").
 
