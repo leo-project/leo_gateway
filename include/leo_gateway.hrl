@@ -479,6 +479,21 @@
                                       ]}
               })
         end).
+-define(access_log_bucket_get(_Bucket, _Prefix, _Response),
+		begin
+			leo_logger_client_base:append(
+			  {?LOG_ID_ACCESS,
+               #message_log{format  = "[BUCKET-GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       binary_to_list(_Prefix),
+                                       0,
+                                       0,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+		end).
 
 -define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len),
         case _Cause of

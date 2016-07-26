@@ -252,18 +252,34 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                         Val
                 end,
 
+	PrefixBin = case Prefix of
+					none ->
+						<<>>;
+					_ ->
+						Prefix
+				end,
+
     case get_bucket_1(AccessKeyId, Key, Delimiter, NormalizedMarker, MaxKeys, Prefix) of
         {ok, XMLRet} ->
+			?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_OK),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XMLRet, Req);
+        {error, badarg} ->
+			?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_BAD_REQ),
+            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                               ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
+			?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
+			?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_SERVICE_UNAVAILABLE),
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+			?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
+			?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_SERVICE_UNAVAILABLE),
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end;
 get_bucket(Req, Bucket, #req_params{access_key_id = _AccessKeyId,
