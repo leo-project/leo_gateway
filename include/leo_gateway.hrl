@@ -17,17 +17,12 @@
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
-%%
-%% -------------------------------------------------------------------
-%% LeoFS Gateway
-%%
 %%====================================================================
 -ifdef(namespaced_types).
 -type gw_set() :: sets:set().
 -else.
 -type gw_set() :: set().
 -endif.
-
 
 %%----------------------------------------------------------------------
 %% DEFAULT VALUES
@@ -72,6 +67,7 @@
 -define(PROTO_HANDLER_S3, 'leo_gateway_s3_api').
 -define(PROTO_HANDLER_REST, 'leo_gateway_rest_api').
 -define(PROTO_HANDLER_EMBED, 'leo_gateway_embed').
+
 -define(PROTO_HANDLER_NFS, 'nfs').
 %% -define(HTTP_HANDLER_SWIFT, 'leo_gateway_swift_api').
 -define(DEF_PROTOCOL_HANDLER, ?PROTO_HANDLER_S3).
@@ -102,6 +98,7 @@
 -define(ERROR_NOT_MATCH_LENGTH, "Not match object length").
 -define(ERROR_FAIL_PUT_OBJ, "Fail put an object").
 -define(ERROR_FAIL_RETRIEVE_OBJ, "Fail retrieve an object").
+-define(ERROR_COULD_NOT_START_TRAN, "Could not start a transaction").
 -define(ERROR_COULD_NOT_UPDATE_LOG_LEVEL, "Could not update a log level").
 -define(ERROR_COULD_NOT_SEND_DISK_CACHE, "Could not send a disk cache").
 -define(ERROR_COULD_NOT_OPEN_DISK_CACHE, "Could not open a disk cache").
@@ -116,6 +113,8 @@
                          num_of_chunks = 0 :: non_neg_integer(),
                          md5_context = <<>> :: binary()
                         }).
+
+
 
 
 %%----------------------------------------------------------------------
@@ -243,12 +242,33 @@
 -define(DEF_NFSD_PORT, 2049).
 -define(DEF_NFSD_ACCEPTORS, 128).
 -define(DEF_NFSD_MAX_FILE_SIZE, 18446744073709551615). %% max value in 64bit
+-define(DEF_LOCKD_PORT,         22051).
+-define(DEF_LOCKD_ACCEPTORS,    128).
 
 -define(env_nfs_options(),
         case application:get_env(leo_gateway, nfs) of
             {ok, _NFS_Options} -> _NFS_Options;
             _ -> []
         end).
+
+%% NLM related
+-define(DEF_NLM_HANDLER, leo_nlm_lock_handler_ets).
+-define(env_nlm_options(),
+        case application:get_env(leo_gateway, nlm) of
+            {ok, _NLM_Options} -> _NLM_Options;
+            _ -> []
+        end).
+
+-record(lock_record,{
+          start :: non_neg_integer(),
+          till  :: integer(),
+          len   :: non_neg_integer(),
+          owner :: binary(),
+          uppid :: integer(),
+          excl  :: boolean()
+         }).
+
+-define(NLM_LOCK_ETS, nlm_lock_ets).
 
 
 %%----------------------------------------------------------------------
@@ -459,6 +479,21 @@
                                       ]}
               })
         end).
+-define(access_log_bucket_get(_Bucket, _Prefix, _Response),
+		begin
+			leo_logger_client_base:append(
+			  {?LOG_ID_ACCESS,
+               #message_log{format  = "[BUCKET-GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Bucket),
+                                       binary_to_list(_Prefix),
+                                       0,
+                                       0,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+		end).
 
 -define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len),
         case _Cause of

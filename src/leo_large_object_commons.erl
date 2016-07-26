@@ -32,10 +32,10 @@
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
--record(iterator, {origin_key = <<>>     :: binary(),
-                   origin_total_len = 0  :: non_neg_integer(),
-                   origin_cur_idx   = 0  :: non_neg_integer(),
-                   chunked_key = <<>>    :: binary(),
+-record(iterator, {origin_key = <<>> :: binary(),
+                   origin_total_len = 0 :: non_neg_integer(),
+                   origin_cur_idx = 0 :: non_neg_integer(),
+                   chunked_key = <<>> :: binary(),
                    chunked_total_len = 0 :: non_neg_integer(),
                    chunked_cur_idx   = 0 :: non_neg_integer()
                   }).
@@ -85,14 +85,14 @@ iterator_next(#iterator{chunked_key = <<>>, origin_key = Key,
 iterator_next(#iterator{origin_cur_idx = Total,
                         origin_total_len = Total,
                         chunked_total_len = ChunkedTotal,
-                        chunked_cur_idx   = ChunkedTotal} = Iterator) ->
+                        chunked_cur_idx = ChunkedTotal} = Iterator) ->
     {<<>>, Iterator};
 
 iterator_next(#iterator{origin_key = Key,
                         origin_cur_idx = Index,
                         chunked_key = _Chunked_key,
                         chunked_total_len = ChunkedTotal,
-                        chunked_cur_idx   = ChunkedTotal} = Iterator) ->
+                        chunked_cur_idx = ChunkedTotal} = Iterator) ->
     IndexBin = list_to_binary(integer_to_list(Index + 1)),
     {<< Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
      Iterator#iterator{origin_cur_idx = Index + 1,

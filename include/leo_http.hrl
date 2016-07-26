@@ -18,11 +18,8 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
-%% Leo S3 HTTP
-%% @doc
-%% @end
 %%======================================================================
+
 %% HTTP METHODS
 -define(HTTP_GET,    <<"GET">>).
 -define(HTTP_POST,   <<"POST">>).
@@ -40,6 +37,7 @@
 -undef(DEF_SEPARATOR).
 -define(DEF_SEPARATOR, <<"\n">>).
 
+-define(DEF_DELIMITER, <<"/">>).
 -define(ERR_TYPE_INTERNAL_ERROR, internal_server_error).
 
 %% HTTP HEADER
@@ -55,6 +53,7 @@
 -define(HTTP_HEAD_LAST_MODIFIED,      <<"last-modified">>).
 -define(HTTP_HEAD_PREFIX,             <<"prefix">>).
 -define(HTTP_HEAD_RANGE,              <<"range">>).
+-define(HTTP_HEAD_CONTENT_ENCODING,   <<"content-encoding">>).
 
 -define(HTTP_HEAD_RESP_AGE,               <<"Age">>).
 -define(HTTP_HEAD_RESP_CACHE_CTRL,        <<"Cache-Control">>).
@@ -70,9 +69,23 @@
 -define(HTTP_HEAD_X_AMZ_ID_2,                   <<"x-amz-id-2">>).
 -define(HTTP_HEAD_X_AMZ_REQ_ID,                 <<"x-amz-request-id">>).
 -define(HTTP_HEAD_X_AMZ_ACL,                    <<"x-amz-acl">>).
+-define(HTTP_HEAD_X_AMZ_CONTENT_SHA256,         <<"x-amz-content-sha256">>).
+-define(HTTP_HEAD_X_AMZ_DECODED_CONTENT_LENGTH, <<"x-amz-decoded-content-length">>).
+-define(HTTP_HRAD_X_AMZ_DATE,                   <<"x-amz-date">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY,    <<"COPY">>).
 -define(HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE, <<"REPLACE">>).
 -define(HTTP_HEAD_X_FROM_CACHE,                 <<"x-from-cache">>).
+
+
+%% @see: http://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+-define(HTTP_HEAD_X_VAL_AWS4_SHA256, <<"STREAMING-AWS4-HMAC-SHA256-PAYLOAD">>).
+-define(HTTP_HEAD_X_AWS_SIGNATURE_V2, <<"AWS ">>).
+-define(HTTP_HEAD_X_AWS_SIGNATURE_V4, <<"AWS4">>).
+
+-define(AWS_SIGNATURE_V4_SHA256_KEY,  <<"AWS4-HMAC-SHA256-PAYLOAD">>).
+-define(AWS_SIGNATURE_V4_SHA256_HASH, <<"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855">>).
+%% leo_hex:binary_to_hex(crypto:hash(sha256, <<"">>))
+
 
 -define(HTTP_CTYPE_OCTET_STREAM, <<"application/octet-stream">>).
 -define(HTTP_CTYPE_XML,          <<"application/xml">>).
@@ -84,6 +97,7 @@
 -define(HTTP_QS_BIN_MARKER,      <<"marker">>).
 -define(HTTP_QS_BIN_MAXKEYS,     <<"max-keys">>).
 -define(HTTP_QS_BIN_MULTI_DELETE,<<"delete">>).
+-define(HTTP_QS_BIN_DELIMITER,   <<"delimiter">>).
 
 -define(HTTP_ST_OK,                  200).
 -define(HTTP_ST_NO_CONTENT,          204).
@@ -97,6 +111,8 @@
 -define(HTTP_ST_INTERNAL_ERROR,      500).
 -define(HTTP_ST_SERVICE_UNAVAILABLE, 503).
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).
+
+-define(HTTP_MAXKEYS_LIMIT,          1000).
 
 -define(CACHE_HTTP,  'http').
 -define(CACHE_INNER, 'inner').
@@ -127,15 +143,17 @@
 -define(DEF_LOBJ_CHUNK_OBJ_LEN,          5242880).
 -define(DEF_LOBJ_READING_CHUNK_OBJ_LEN,  5242880). %% since v0.16.8
 -define(DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN, 5767168).
+-define(DEF_S3API_MAX_KEYS, 1000).
+-define(DEF_MAX_NUM_OF_METADATAS, 50).
 
 %% error codes used in a error response
--define(XML_ERROR_CODE_EntityTooLarge,  "EntityTooLarge").
+-define(XML_ERROR_CODE_EntityTooLarge, "EntityTooLarge").
 -define(XML_ERROR_CODE_InvalidArgument, "InvalidArgument").
--define(XML_ERROR_CODE_InvalidRequest,  "InvalidRequest").
--define(XML_ERROR_CODE_AccessDenied,    "AccessDenied").
--define(XML_ERROR_CODE_NoSuchKey,       "NoSuchKey").
--define(XML_ERROR_CODE_InvalidRange,    "InvalidRange").
--define(XML_ERROR_CODE_InternalError,   "InternalError").
+-define(XML_ERROR_CODE_InvalidRequest, "InvalidRequest").
+-define(XML_ERROR_CODE_AccessDenied, "AccessDenied").
+-define(XML_ERROR_CODE_NoSuchKey, "NoSuchKey").
+-define(XML_ERROR_CODE_InvalidRange, "InvalidRange").
+-define(XML_ERROR_CODE_InternalError, "InternalError").
 -define(XML_ERROR_CODE_ServiceUnavailable, "ServiceUnavailable").
 -define(XML_ERROR_CODE_SlowDown, "SlowDown").
 -define(XML_ERROR_CODE_BucketAlreadyExists, "BucketAlreadyExists").
@@ -144,37 +162,59 @@
 -define(XML_ERROR_CODE_BadDigest, "BadDigest").
 -define(XML_ERROR_CODE_InvalidBucketName, "InvalidBucketName").
 -define(XML_ERROR_CODE_SignatureDoesNotMatch, "SignatureDoesNotMatch").
+-define(XML_ERROR_CODE_RequestTimeTooSkewed, "RequestTimeTooSkewed").
 
 %% error messages used in a error response
--define(XML_ERROR_MSG_EntityTooLarge,  "Your proposed upload exceeds the maximum allowed object size.").
+-define(XML_ERROR_MSG_EntityTooLarge, "Your proposed upload exceeds the maximum allowed object size.").
 -define(XML_ERROR_MSG_InvalidArgument, "Invalid Argument").
 -define(XML_ERROR_MSG_InvalidRequest, "SOAP requests must be made over an HTTPS connection.").
--define(XML_ERROR_MSG_AccessDenied,    "Access Denied").
--define(XML_ERROR_MSG_NoSuchKey,       "The specified key does not exist.").
--define(XML_ERROR_MSG_InvalidRange,    "The requested range cannot be satisfied.").
--define(XML_ERROR_MSG_InternalError,   "We encountered an internal error. Please try again.").
--define(XML_ERROR_MSG_ServiceUnavailable,   "Please reduce your request rate.").
--define(XML_ERROR_MSG_SlowDown,   "Please reduce your request rate.").
--define(XML_ERROR_MSG_BucketAlreadyExists,     "Please select a different name and try again.").
+-define(XML_ERROR_MSG_AccessDenied, "Access Denied").
+-define(XML_ERROR_MSG_NoSuchKey, "The specified key does not exist.").
+-define(XML_ERROR_MSG_InvalidRange, "The requested range cannot be satisfied.").
+-define(XML_ERROR_MSG_InternalError, "We encountered an internal error. Please try again.").
+-define(XML_ERROR_MSG_ServiceUnavailable, "Please reduce your request rate.").
+-define(XML_ERROR_MSG_SlowDown, "Please reduce your request rate.").
+-define(XML_ERROR_MSG_BucketAlreadyExists, "Please select a different name and try again.").
 -define(XML_ERROR_MSG_BucketAlreadyOwnedByYou, "Your previous request to create the named bucket succeeded and you already own it.").
 -define(XML_ERROR_MSG_MalformedXML, "The XML you provided was not well-formed or did not alidate against our published schema").
 -define(XML_ERROR_MSG_BadDigest, "The Content-MD5 you specified did not match what we received.").
 -define(XML_ERROR_MSG_InvalidBucketName, "The specified bucket is not valid.").
 -define(XML_ERROR_MSG_SignatureDoesNotMatch, "The request signature we calculated does not match the signature you provided. Check your AWS secret access key and signing method.").
+-define(XML_ERROR_MSG_RequestTimeTooSkewed, "The difference between the request time and the server's time is too large.").
 
 %% Macros
--define(reply_ok(_H,_R),                 cowboy_req:reply(?HTTP_ST_OK,              _H,_R)).    %% 200
--define(reply_ok(_H,_B,_R),              cowboy_req:reply(?HTTP_ST_OK,              _H,_B,_R)). %% 200 with body
--define(reply_no_content(_H,_R),         cowboy_req:reply(?HTTP_ST_NO_CONTENT,      _H,_R)).    %% 204
--define(reply_partial_content(_H,_R),    cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_R)).    %% 206
--define(reply_partial_content(_H,_B,_R), cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT, _H,_B,_R)). %% 206 with body
--define(reply_not_modified(_H,_R),       cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,    _H,_R)). %% 304
+%% - code:200
+-define(reply_ok(_H,_R),
+        cowboy_req:reply(?HTTP_ST_OK,_H,_R)).
+%% - code:200 with body
+-define(reply_ok(_H,_B,_R),
+        cowboy_req:reply(?HTTP_ST_OK,_H,_B,_R)).
+%% - code:204
+-define(reply_no_content(_H,_R),
+        cowboy_req:reply(?HTTP_ST_NO_CONTENT,_H,_R)).
+%% - code:206
+-define(reply_partial_content(_H,_R),
+        cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT,_H,_R)).
+%% - code:206 with body
+-define(reply_partial_content(_H,_B,_R),
+        cowboy_req:reply(?HTTP_ST_PARTIAL_CONTENT,_H,_B,_R)).
+%% - code:304
+-define(reply_not_modified(_H,_R),
+        cowboy_req:reply(?HTTP_ST_NOT_MODIFIED,_H,_R)).
 
 %% for HEAD(without body)
--define(reply_bad_request_without_body(_H,_R),    cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,_R)).             %% 403
--define(reply_not_found_without_body(_H,_R),      cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,_R)).           %% 404
--define(reply_internal_error_without_body(_H,_R), cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,_R)).      %% 500
--define(reply_timeout_without_body(_H,_R),        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE, _H,_R)). %% 503
+%% - code:403
+-define(reply_bad_request_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_BAD_REQ,_H,_R)).
+%% - code:404
+-define(reply_not_found_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_NOT_FOUND, _H,_R)).
+%% - code:500
+-define(reply_internal_error_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_INTERNAL_ERROR, _H,_R)).
+%% - code:503
+-define(reply_timeout_without_body(_H,_R),
+        cowboy_req:reply(?HTTP_ST_SERVICE_UNAVAILABLE,_H,_R)).
 
 %% for GET/PUT/DELETE(with body)
 -define(reply_bad_request(_H, _Code, _Msg, _Key, _ReqId, _R),
@@ -225,23 +265,32 @@
                                                     ?XML_ERROR_MSG_BadDigest,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
--define(http_header(_R, _K),   case cowboy_req:header(_K, _R) of
-                                   {undefined, _} -> ?BIN_EMPTY;
-                                   {Bin, _}       -> Bin
-                               end).
--define(http_etag(_E),         lists:append(["\"", leo_hex:integer_to_hex(_E,32), "\""])).
--define(http_date(_D),         leo_http:rfc1123_date(_D)).
--define(httP_cache_ctl(_C),    lists:append(["max-age=",integer_to_list(_C)])).
--define(http_content_type(_H), case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE,1,_H) of
-                                   false     -> ?HTTP_CTYPE_OCTET_STREAM;
-                                   {_, Val} -> Val
-                               end).
+-define(http_header(_R, _K),
+        case cowboy_req:header(_K, _R) of
+            {undefined, _} ->
+                ?BIN_EMPTY;
+            {Bin, _} ->
+                Bin
+        end).
+-define(http_etag(_E),
+        lists:append(["\"", leo_hex:integer_to_hex(_E,32), "\""])).
+-define(http_date(_D),
+        leo_http:rfc1123_date(_D)).
+-define(httP_cache_ctl(_C),
+        lists:append(["max-age=",integer_to_list(_C)])).
+-define(http_content_type(_H),
+        case lists:keyfind(?HTTP_HEAD_CONTENT_TYPE,1,_H) of
+            false     ->
+                ?HTTP_CTYPE_OCTET_STREAM;
+            {_, Val} ->
+                Val
+        end).
 
 %% canned ACLs
--define(acl_read,         "READ").
--define(acl_read_acp,     "READ_ACP").
--define(acl_write,        "WRITE").
--define(acl_write_acp,    "WRITE_ACP").
+-define(acl_read, "READ").
+-define(acl_read_acp, "READ_ACP").
+-define(acl_write, "WRITE").
+-define(acl_write_acp, "WRITE_ACP").
 -define(acl_full_control, "FULL_CONTROL").
 
 %% S3 Response XML
@@ -262,12 +311,63 @@
                       "<Name>~s</Name>",
                       "<Prefix>~s</Prefix>",
                       "<Marker></Marker>",
-                      "<NextMarker>~s</NextMarker>",
                       "<MaxKeys>~s</MaxKeys>",
                       "<Delimiter>/</Delimiter>",
-                      "<IsTruncated>~s</IsTruncated>",
                       "~s",
+                      "<IsTruncated>~s</IsTruncated>",
+                      "<NextMarker>~s</NextMarker>",
                       "</ListBucketResult>"])).
+
+-define(XML_OBJ_LIST_HEAD,
+        lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                      "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
+                      "<Name>~s</Name>",
+                      "<Prefix>~s</Prefix>",
+                      "<Marker></Marker>",
+                      "<MaxKeys>~s</MaxKeys>",
+                      "<Delimiter>~s</Delimiter>"])).
+
+-define(XML_OBJ_LIST_FILE_1,
+
+        lists:append(["<Contents>",
+                      "<Key>~s</Key>",
+                      "<LastModified>~s</LastModified>",
+                      "<ETag>~s</ETag>",
+                      "<Size>~s</Size>",
+                      "<StorageClass>STANDARD</StorageClass>",
+                      "<Owner>",
+                      "<ID>leofs</ID>",
+                      "<DisplayName>leofs</DisplayName>",
+                      "</Owner>",
+                      "</Contents>"])).
+
+-define(XML_OBJ_LIST_FILE_2,
+        lists:append(["<Contents>",
+                      "<Key>~s~s</Key>",
+                      "<LastModified>~s</LastModified>",
+                      "<ETag>~s</ETag>",
+                      "<Size>~s</Size>",
+                      "<StorageClass>STANDARD</StorageClass>",
+                      "<Owner>",
+                      "<ID>leofs</ID>",
+                      "<DisplayName>leofs</DisplayName>",
+                      "</Owner>",
+                      "</Contents>"])).
+
+-define(XML_OBJ_LIST_FOOT,
+        lists:append(["<IsTruncated>~s</IsTruncated>",
+                      "<NextMarker>~s</NextMarker>",
+                      "</ListBucketResult>"])).
+
+-define(XML_BUCKET,
+        lists:append(["<Bucket><Name>~s</Name>",
+                      "<CreationDate>~s</CreationDate></Bucket>"])).
+
+-define(XML_DIR_PREFIX,
+        lists:append(["<CommonPrefixes><Prefix>",
+                      "~s",
+                      "~s",
+                      "</Prefix></CommonPrefixes>"])).
 
 -define(XML_COPY_OBJ_RESULT,
         lists:append(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
@@ -347,6 +447,23 @@
                       "</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"])).
 
 %% Records
+-type aws_chunk_state() ::  wait_size | wait_head | read_chunk | error | done.
+
+-record(aws_chunk_sign_params, {sign_head       :: binary(),
+                                sign_key        :: binary(),
+                                prev_sign       :: binary(),
+                                chunk_sign      :: binary(),
+                                chunk_size      :: non_neg_integer(),
+                                hash_context    :: undefined | {crypto:digest_type(), binary()}
+                               }).
+
+-record(aws_chunk_decode_state, {buffer         :: binary(),
+                                 dec_state      :: aws_chunk_state(),
+                                 chunk_offset   :: non_neg_integer(),
+                                 sign_params    :: #aws_chunk_sign_params{},
+                                 total_len      :: non_neg_integer()
+                                }).
+
 -record(http_options, {
           %% for basic
           handler                      :: atom(),         %% http-handler
@@ -384,7 +501,11 @@
           %% basic info
           handler                    :: atom(),                 %% http-handler
           path = <<>>                :: binary(),               %% path (uri)
-          bucket = <<>>              :: binary(),               %% bucket (for s3-api)
+          bucket_name = <<>>         :: binary(),               %% bucket-name (for s3-api)
+          bucket_info = undefined    :: term(),                 %% bucket (for s3-api)
+          redundancy_method          :: atom(),                 %% redundancy method
+          ec_method                  :: atom(),                 %% erasure-coding method
+          ec_params                  :: {pos_integer(), pos_integer()}|undefined, %% erasure-coding params
           access_key_id = <<>>       :: binary(),               %% s3's access-key-id
           token_length = 0           :: non_neg_integer(),      %% length of tokened path
           min_layers = 0             :: non_neg_integer(),      %% acceptable # of min layers
@@ -401,6 +522,7 @@
           is_multi_delete = false    :: boolean(),              %% is multi delete request?
           %% for large-object
           is_upload = false            :: boolean(),            %% is upload operation? (for multipart upload)
+          is_aws_chunked = false       :: boolean(),            %% is AWS Chunked? (Signature V4)
           is_acl = false               :: boolean(),            %% is acl operation?
           upload_id = <<>>             :: binary(),             %% upload id for multipart upload
           upload_part_num = 0          :: non_neg_integer(),    %% upload part number for multipart upload
@@ -409,7 +531,26 @@
           max_len_of_obj = 0           :: non_neg_integer(),    %% max length a object (byte)
           chunked_obj_len = 0          :: non_neg_integer(),    %% chunked object length for large-object (byte)
           reading_chunked_obj_len = 0  :: non_neg_integer(),    %% creading hunked object length for large object (byte)
-          threshold_of_chunk_len = 0   :: non_neg_integer()     %% threshold of chunk length for large-object (byte)
+          threshold_of_chunk_len = 0   :: non_neg_integer(),    %% threshold of chunk length for large-object (byte)
+          transfer_decode_fun       :: function() | undefined,  %% transfer decode function
+          transfer_decode_state     :: #aws_chunk_decode_state{} | undefined    %% transfer decode state
+         }).
+
+-record(put_req_params, {
+          path = <<>> :: binary(),
+          body = <<>> :: binary(),
+          dsize = 0 :: non_neg_integer(),
+          total_chunks = 0 :: non_neg_integer(),
+          cindex = 0 :: non_neg_integer(),
+          csize = 0 :: non_neg_integer(),
+          digest = 0 :: non_neg_integer(),
+          bucket_info = undefined :: term()|undefined
+          }).
+
+-record(transport_record, {
+          transport :: module(),
+          socket    :: inet:socket(),
+          sending_chunked_obj_len :: pos_integer()
          }).
 
 -record(cache, {
