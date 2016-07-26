@@ -21,7 +21,9 @@
 %%======================================================================
 -module(leo_nfs_mount3_server).
 
+-include("leo_gateway.hrl").
 -include("leo_nfs_mount3.hrl").
+-include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
 -include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -73,11 +75,11 @@ mountproc_mnt_3(MountDir0, Clnt, State) ->
                     {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
                     {IP1, IP2, IP3, IP4} = Addr,
                     AddrStr = io_lib:format("~p.~p.~p.~p", [IP1, IP2, IP3, IP4]),
-                    Ret = leo_s3_bucket:gen_nfs_mnt_key(Bucket, AccessKey, list_to_binary(AddrStr)),
+                    TokenStr = binary_to_list(Token),
+                    Ret = get_mount_key(Bucket, AccessKey, list_to_binary(AddrStr)),
                     ?debug("mountproc_mnt_3", "Addr: ~s, Token Ret: ~p", [AddrStr, Ret]),
-                    {ok, MntToken} = Ret,
-                    case Token of
-                        MntToken ->
+                    case Ret of
+                        {ok, TokenStr} ->
                             mount_add_entry(MountDir, Addr),
                             <<$/, MountDir4S3/binary>> = MountDir,
                             {ok, UID} = leo_nfs_state_ets:add_path(MountDir4S3),
@@ -122,14 +124,36 @@ mountproc_export_3(Clnt, State) ->
 
 
 %% @private
+get_mount_key(Bucket, AccessKey, IP) ->
+    ManagerNodes = ?env_manager_nodes(leo_gateway),
+    get_mount_key_1(ManagerNodes, Bucket, AccessKey, IP).
+
+get_mount_key_1([],_,_,_) ->
+    ?error("get_mount_key_1/4", "No reply from Manager"),
+    {error, not_found};
+
+get_mount_key_1([Node|Rest], Bucket, AccessKey, IP) ->
+    Node_1 = case is_list(Node) of
+                 true ->
+                     list_to_atom(Node);
+                 false ->
+                     Node
+             end,
+    case rpc:call(Node_1, leo_manager_api, gen_nfs_mnt_key,
+                  [Bucket, AccessKey, IP], ?DEF_TIMEOUT) of
+        {ok, MntKey} ->
+            {ok, MntKey};
+        {_, Cause} ->
+            ?warn("get_mount_key_1/4", [{cause, Cause}]),
+            get_mount_key_1(Rest, Bucket, AccessKey, IP)
+    end.
+
 tokenize_path(Path) ->
     Path1 = formalize_path(Path),
     Tokenized = binary:split(Path1, <<"/">>, [global, trim]),
     case length(Tokenized) of
         Len when Len == 4 ->
-            Token = lists:nth(4, Tokenized),
-            AccessKey = lists:nth(3, Tokenized),
-            Bucket = lists:nth(2, Tokenized),
+            [_, Bucket, AccessKey, Token] = Tokenized,
             ?debug("tokenize_path", "Token: ~s, AccessKey: ~s, Bucket: ~s", [Token, AccessKey, Bucket]),
             {ok, {Bucket, AccessKey, Token}};
         _ ->
