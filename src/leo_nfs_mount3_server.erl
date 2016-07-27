@@ -104,11 +104,15 @@ mountproc_dump_3(Clnt, State) ->
 %% @doc
 mountproc_umnt_3(MountDir0, Clnt, State) ->
     ?debug("mountproc_umnt_3", "mount:~p clnt:~p", [MountDir0, Clnt]),
-    MountDir = formalize_path(MountDir0),
-    {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
-    catch mount_del_entry(MountDir, Addr),
-    {reply, void, State}.
-
+    case tokenize_path(MountDir0) of
+        {ok, {Bucket, _AccessKey, _Token}} ->
+            MountDir = <<"/", Bucket/binary>>,
+            {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
+            catch mount_del_entry(MountDir, Addr),
+            {reply, void, State};
+        _ ->
+            {reply, void, State}
+    end.
 
 %% @doc
 mountproc_umntall_3(Clnt, State) ->
