@@ -286,7 +286,8 @@ get_bucket_list_empty_([_TermFun, _Node0, Node1]) ->
                 {ok, {SC, Body}} =
                     httpc:request(get, {lists:append(["http://",
                                                       ?TARGET_HOST,
-                                                      ":8080/a/b?prefix=pre"]), []},
+                                                      ":8080/a/b?prefix=pre&delimiter=/"]),
+                                                      [{"Date", Date}]},
                                   [], [{full_result, false}]),
                 ?assertEqual(200, SC),
 
