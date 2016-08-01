@@ -141,27 +141,34 @@ put(#put_req_params{path = Key,
                     total_chunks = TotalChunks,
                     cindex = ChunkIndex,
                     csize = ChunkedSize,
-                    digest = Digest,
-                    bucket_info = BucketInfo}) ->
+                    digest = Digest
+                    %% === NOTE: for 1.4.0 >>>
+                    %% bucket_info = BucketInfo
+                    %% <<<
+                   }) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_PUT),
-    #?BUCKET{redundancy_method = RedMethod,
-             cp_params = CPParams,
-             ec_lib = ECLib,
-             ec_params = ECParams} =
-        case BucketInfo of
-            undefined ->
-                BucketName =
-                    erlang:hd(
-                      leo_misc:binary_tokens(Key, <<"/">>)),
-                case catch leo_s3_bucket:get_latest_bucket(BucketName) of
-                    {ok, #?BUCKET{} = BucketInfo_1} ->
-                        BucketInfo_1;
-                    _ ->
-                        #?BUCKET{name = BucketName}
-                end;
-            _ ->
-                BucketInfo
-        end,
+
+    %% === NOTE: for 1.4.0 >>>
+    %% #?BUCKET{redundancy_method = RedMethod,
+    %%          cp_params = CPParams,
+    %%          ec_lib = ECLib,
+    %%          ec_params = ECParams} =
+    %%     case BucketInfo of
+    %%         undefined ->
+    %%             BucketName =
+    %%                 erlang:hd(
+    %%                   leo_misc:binary_tokens(Key, <<"/">>)),
+    %%             case catch leo_s3_bucket:get_latest_bucket(BucketName) of
+    %%                 {ok, #?BUCKET{} = BucketInfo_1} ->
+    %%                     BucketInfo_1;
+    %%                 _ ->
+    %%                     #?BUCKET{name = BucketName}
+    %%             end;
+    %%         _ ->
+    %%             BucketInfo
+    %%     end,
+    %% <<<
+
     #rpc_params{addr_id = AddrId,
                 redundancies = Redundancies,
                 timestamp = Timestamp,
@@ -175,11 +182,14 @@ put(#put_req_params{path = Key,
                      csize = ChunkedSize,
                      cnumber = TotalChunks,
                      cindex = ChunkIndex,
-                     checksum = Digest,
-                     redundancy_method = RedMethod,
-                     cp_params = CPParams,
-                     ec_lib = ECLib,
-                     ec_params = ECParams}, ReqId], []).
+                     checksum = Digest
+                     %% === NOTE: for 1.4.0 >>>
+                     %% redundancy_method = RedMethod,
+                     %% cp_params = CPParams,
+                     %% ec_lib = ECLib,
+                     %% ec_params = ECParams
+                     %% <<<
+                    }, ReqId], []).
 
 
 %% @doc Do invoke rpc calls with handling retries
