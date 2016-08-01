@@ -21,8 +21,12 @@
 %%======================================================================
 -module(leo_nfs_mount3_server).
 
+-include("leo_gateway.hrl").
 -include("leo_nfs_mount3.hrl").
+-include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").
+-include_lib("leo_s3_libs/include/leo_s3_auth.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([mountproc_null_3/2,
@@ -63,16 +67,31 @@ mountproc_null_3(_Clnt, State) ->
 mountproc_mnt_3(MountDir0, Clnt, State) ->
     ?debug("mountproc_mnt_3", "mount:~p clnt:~p", [MountDir0, Clnt]),
     %% validate path
-    MountDir = formalize_path(MountDir0),
-    case is_valid_mount_dir(MountDir) of
-        true ->
-            {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
-            mount_add_entry(MountDir, Addr),
-            <<$/, MountDir4S3/binary>> = MountDir,
-            {ok, UID} = leo_nfs_state_ets:add_path(MountDir4S3),
-            {reply, {'MNT3_OK', {UID, []}}, State};
-        _ ->
-            {reply, {'MNT3ERR_NOTDIR', []}, State}
+    case tokenize_path(MountDir0) of
+        {ok, {Bucket, AccessKey, Token}} ->
+            MountDir = <<"/", Bucket/binary>>,
+            case is_valid_mount_dir(MountDir) of
+                true ->
+                    {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
+                    {IP1, IP2, IP3, IP4} = Addr,
+                    AddrStr = io_lib:format("~p.~p.~p.~p", [IP1, IP2, IP3, IP4]),
+                    TokenStr = binary_to_list(Token),
+                    Ret = get_mount_key(Bucket, AccessKey, list_to_binary(AddrStr)),
+                    ?debug("mountproc_mnt_3", "Addr: ~s, Token Ret: ~p", [AddrStr, Ret]),
+                    case Ret of
+                        {ok, TokenStr} ->
+                            mount_add_entry(MountDir, Addr),
+                            <<$/, MountDir4S3/binary>> = MountDir,
+                            {ok, UID} = leo_nfs_state_ets:add_path(MountDir4S3),
+                            {reply, {'MNT3_OK', {UID, []}}, State};
+                        _ ->
+                            {reply, {'MNT3ERR_ACCES', []}, State}
+                    end;
+                _ ->
+                    {reply, {'MNT3ERR_NOTDIR', []}, State}
+            end;
+        {error, _Reason} ->
+            {reply, {'MNT3ERR_ACCES', []}, State}
     end.
 
 
@@ -85,11 +104,15 @@ mountproc_dump_3(Clnt, State) ->
 %% @doc
 mountproc_umnt_3(MountDir0, Clnt, State) ->
     ?debug("mountproc_umnt_3", "mount:~p clnt:~p", [MountDir0, Clnt]),
-    MountDir = formalize_path(MountDir0),
-    {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
-    catch mount_del_entry(MountDir, Addr),
-    {reply, void, State}.
-
+    case tokenize_path(MountDir0) of
+        {ok, {Bucket, _AccessKey, _Token}} ->
+            MountDir = <<"/", Bucket/binary>>,
+            {ok, {Addr, _Port}}= nfs_rpc_proto:client_ip(Clnt),
+            catch mount_del_entry(MountDir, Addr),
+            {reply, void, State};
+        _ ->
+            {reply, void, State}
+    end.
 
 %% @doc
 mountproc_umntall_3(Clnt, State) ->
@@ -105,6 +128,42 @@ mountproc_export_3(Clnt, State) ->
 
 
 %% @private
+get_mount_key(Bucket, AccessKey, IP) ->
+    ManagerNodes = ?env_manager_nodes(leo_gateway),
+    get_mount_key_1(ManagerNodes, Bucket, AccessKey, IP).
+
+get_mount_key_1([],_,_,_) ->
+    ?error("get_mount_key_1/4", "No reply from Manager"),
+    {error, not_found};
+
+get_mount_key_1([Node|Rest], Bucket, AccessKey, IP) ->
+    Node_1 = case is_list(Node) of
+                 true ->
+                     list_to_atom(Node);
+                 false ->
+                     Node
+             end,
+    case rpc:call(Node_1, leo_manager_api, gen_nfs_mnt_key,
+                  [Bucket, AccessKey, IP], ?DEF_TIMEOUT) of
+        {ok, MntKey} ->
+            {ok, MntKey};
+        {_, Cause} ->
+            ?warn("get_mount_key_1/4", [{cause, Cause}]),
+            get_mount_key_1(Rest, Bucket, AccessKey, IP)
+    end.
+
+tokenize_path(Path) ->
+    Path1 = formalize_path(Path),
+    Tokenized = binary:split(Path1, <<"/">>, [global, trim]),
+    case length(Tokenized) of
+        Len when Len == 4 ->
+            [_, Bucket, AccessKey, Token] = Tokenized,
+            ?debug("tokenize_path", "Token: ~s, AccessKey: ~s, Bucket: ~s", [Token, AccessKey, Bucket]),
+            {ok, {Bucket, AccessKey, Token}};
+        _ ->
+            {error, badarg}
+    end.
+
 formalize_path(Path) ->
     case (binary:last(Path) == $/) of
         true ->
@@ -174,3 +233,18 @@ mount_del_entry(MountDir, Addr, MountPointDict) ->
         error ->
             void
     end.
+
+
+%% ---------------------------------------------------------------------
+%% UNIT TESTS
+%% ---------------------------------------------------------------------
+-ifdef(EUNIT).
+tokenize_path_test() ->
+    ?debugMsg("===== Testing Tokenize Path ====="),
+    {ok, _} = tokenize_path(<<"/bucket_here/access_key_here/token_here">>),
+    {error, _} = tokenize_path(<<"/bucket_here/directoy_here/access_key_here/token_here">>),
+    {error, _} = tokenize_path(<<"/bucket_here/access_key_here">>),
+    {error, _} = tokenize_path(<<"/bucket_here">>),
+    ok.
+
+-endif.
