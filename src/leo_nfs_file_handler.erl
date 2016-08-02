@@ -63,13 +63,21 @@ is_file(Path) ->
 %% Returns true if Path refers to a directory, and false otherwise.
 -spec(is_dir(binary()) -> boolean()).
 is_dir(Path) ->
-    {ok, #redundancies{nodes = Redundancies}} =
-        leo_redundant_manager_api:get_redundancies_by_key(get, Path),
-    leo_gateway_rpc_handler:invoke(Redundancies,
-                                   leo_storage_handler_directory,
-                                   is_dir,
-                                   [Path],
-                                   []).
+    %% === For 1.4
+    %% {ok, #redundancies{nodes = Redundancies}} =
+    %%     leo_redundant_manager_api:get_redundancies_by_key(get, Path),
+    %% leo_gateway_rpc_handler:invoke(Redundancies,
+    %%                                leo_storage_handler_directory,
+    %%                                is_dir,
+    %%                                [Path],
+    %%                                []).
+
+    case list_dir(Path, false) of
+        {ok, Meta} when is_list(Meta) =:= true andalso length(Meta) > 0 ->
+            true;
+        _Error ->
+            false
+    end.
 
 %% @doc
 %%
