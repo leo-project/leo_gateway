@@ -822,11 +822,15 @@ bucket2fattr3(Bucket) ->
 
 %% @private
 get_dir_unix_timestamp(Dir) ->
-    case leo_gateway_rpc_handler:get_dir_meta(Dir) of
-        {ok, MetaBin} ->
-            Meta = binary_to_term(MetaBin),
-            leo_date:greg_seconds_to_unixtime(Meta#?METADATA.timestamp);
-        _Error ->
-            Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
-            leo_date:greg_seconds_to_unixtime(Now)
-    end.
+    %% === For 1.4
+    %% case leo_gateway_rpc_handler:get_dir_meta(Dir) of
+    %%     {ok, MetaBin} ->
+    %%         Meta = binary_to_term(MetaBin),
+    %%         leo_date:greg_seconds_to_unixtime(Meta#?METADATA.timestamp);
+    %%     _Error ->
+    %%         Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+    %%         leo_date:greg_seconds_to_unixtime(Now)
+    %% end.
+
+    Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+    leo_date:greg_seconds_to_unixtime(Now).
