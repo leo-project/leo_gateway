@@ -821,7 +821,7 @@ bucket2fattr3(Bucket) ->
 
 
 %% @private
-get_dir_unix_timestamp(Dir) ->
+get_dir_unix_timestamp(_Dir) ->
     %% === For 1.4
     %% case leo_gateway_rpc_handler:get_dir_meta(Dir) of
     %%     {ok, MetaBin} ->
