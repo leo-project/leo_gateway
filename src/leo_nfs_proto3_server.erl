@@ -69,8 +69,8 @@
           {false, void}
          }).
 
--define(NFS_DUMMY_FILE4S3DIR, <<"$$_dir_$$">>).
--define(NFS_READDIRPLUS_NUM_OF_RESPONSE, 10).
+-define(NFS_DUMMY_FILE4S3DIR, << "$$_dir_$$" >>).
+-define(NFS_READDIR_NUM_OF_RESPONSE, 10).
 
 -define(NFS3_OK,          'NFS3_OK').
 -define(NFS3_NG,          'NFS3_NG').
@@ -89,8 +89,8 @@ init(_Args) ->
     leo_nfs_state_ets:add_write_verfier(crypto:rand_bytes(8)),
     {ok, void}.
 
-handle_call(Req, _From, S) ->
-    ?debug("handle_call", "req:~p from:~p", [Req, _From]),
+handle_call(Req,_From, S) ->
+    ?debug("handle_call", "req:~p from:~p", [Req,_From]),
     {reply, [], S}.
 
 handle_cast(Req, S) ->
@@ -101,7 +101,7 @@ handle_info(Req, S) ->
     ?debug("handle_info", "req:~p", [Req]),
     {noreply, S}.
 
-terminate(_Reason, _S) ->
+terminate(_Reason,_S) ->
     ok.
 
 
@@ -112,40 +112,20 @@ terminate(_Reason, _S) ->
 nfsproc3_null_3(_Clnt, State) ->
     {reply, [], State}.
 
+
 %% @doc
 nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
-    ?debug("nfsproc3_getattr_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
-    case leo_nfs_file_handler:binary_is_contained(Path, $/) of
-        %% object
-        true ->
-            %% @todo emulate directories
-            case leo_gateway_rpc_handler:head(Path) of
-                {ok, Meta} ->
-                    {reply, {?NFS3_OK, {meta2fattr3(Meta)}}, State};
-                {error, not_found} ->
-                    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
-                    case leo_nfs_file_handler:is_dir(Path4S3Dir) of
-                        true ->
-                            {reply, {?NFS3_OK, {s3dir2fattr3(Path)}}, State};
-                        false ->
-                            {reply, {?NFS3ERR_NOENT, void}, State}
-                    end;
-                {error, Reason} ->
-                    {reply, {?NFS3ERR_IO, Reason}, State}
-            end;
-        %% bucket
-        false ->
-            case leo_s3_bucket:find_bucket_by_name(Path) of
-                {ok, Bucket} ->
-                    Attr = bucket2fattr3(Bucket),
-                    {reply, {?NFS3_OK, {Attr}}, State};
-                {error, Reason} ->
-                    {reply, {?NFS3ERR_IO, Reason}, State};
-                not_found ->
-                    {reply, {?NFS3ERR_NOENT, void}, State}
-            end
+    ?debug("nfsproc3_getattr_3", "path:~p client:~p", [Path, Clnt]),
+    case getattr(Path) of
+        {ok, Meta} ->
+            {reply, {?NFS3_OK, {Meta}}, State};
+        not_found ->
+            {reply, {?NFS3ERR_NOENT, void}, State};
+        {error, Reason} ->
+            {reply, {?NFS3ERR_IO, Reason}, State}
     end.
+
 
 %% @doc
 %% @todo for now do nothing
@@ -154,7 +134,7 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
                                 _GID,
                                 SattrSize,
                                 _ATime,
-                                _MTime}, _Guard} = _1, Clnt, State) ->
+                                _MTime},_Guard} = _1, Clnt, State) ->
     ?debug("nfsproc3_setattr_3", "args:~p client:~p", [_1, Clnt]),
     Size = sattr_size_to_file_info(SattrSize),
     case Size of
@@ -173,37 +153,39 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
 
 %% @doc
 nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
-    ?debug("nfsproc3_lookup_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
-    Path4S3 = filename:join(Dir, Name),
-    %% A path for directory must be trailing with '/'
-    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
-    case leo_nfs_file_handler:is_file(Path4S3) orelse
-        leo_nfs_file_handler:is_dir(Path4S3Dir) of
-        true ->
-            {ok, FileUID} = leo_nfs_state_ets:add_path(Path4S3),
-            {reply, {?NFS3_OK, {{FileUID},     %% nfs_fh3
-                                {false, void}, %% post_op_attr for obj
-                                {false, void}  %% post_op_attr for dir
+    Path = leo_nfs_file_handler:path_relative_to_abs(filename:join(Dir, Name)),
+    ?debug("nfsproc3_lookup_3", "path:~p client:~p", [Path, Clnt]),
+    case getattr(Path) of
+        {ok, Meta} ->
+            {ok, FileUID} = leo_nfs_state_ets:add_path(Path),
+            {reply, {?NFS3_OK, {{FileUID},
+                                {true, Meta},
+                                {false, void}
                                }}, State};
-        false ->
-            {reply, {?NFS3ERR_NOENT, {{false, void}  %% post_op_attr for dir
-                                     }}, State}
+        not_found ->
+            {reply, {?NFS3ERR_NOENT, {{false, void}}}, State};
+        {error,_Reason} ->
+            {reply, {?NFS3ERR_IO, {{false, void}}}, State}
     end.
 
+
 %% @doc
-nfsproc3_access_3(_1, Clnt, State) ->
-    ?debug("nfsproc3_access_3", "args:~p client:~p", [_1, Clnt]),
+nfsproc3_access_3({{UID}, AccessBitMask} = _1, Clnt, State) ->
+    {ok, Path} = leo_nfs_state_ets:get_path(UID),
+    ?debug("nfsproc3_access_3", "path:~p mask:~p client:~p", [Path, AccessBitMask, Clnt]),
     {reply, {?NFS3_OK, {{false, void}, %% post_op_attr for obj
-                        63             %% access bits(up all)
+                        AccessBitMask  %% access bits(up all)
                        }}, State}.
+
 
 %% @doc
 nfsproc3_readlink_3(_1, Clnt, State) ->
     ?debug("nfsproc3_readlink_3", "args:~p client:~p", [_1, Clnt]),
     {reply, {?NFS3_OK, {{false, void}, %% post_op_attr for obj
-                        <<"link path">>}
+                        << "link path" >>}
             }, State}.
+
 
 %% @doc
 nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
@@ -223,8 +205,9 @@ nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
                                   }}, State}
     end.
 
+
 %% @doc
-nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, State) ->
+nfsproc3_write_3({{UID}, Offset, Count,_HowStable, Data} = _1, Clnt, State) ->
     ?debug("nfsproc3_write_3", "uid:~p offset:~p count:~p client:~p",
            [UID, Offset, Count, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
@@ -241,14 +224,18 @@ nfsproc3_write_3({{UID}, Offset, Count, _HowStable, Data} = _1, Clnt, State) ->
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
+
 %% @doc
-nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, State) ->
+nfsproc3_create_3({{{UID}, Name}, {_CreateMode,_How}} = _1, Clnt, State) ->
     ?debug("nfsproc3_create_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
-    FilePath4S3 = filename:join(Dir, Name),
-    case leo_gateway_rpc_handler:put(FilePath4S3, <<>>) of
-        {ok, _}->
-            {ok, FileUID} = leo_nfs_state_ets:add_path(FilePath4S3),
+    Key = filename:join(Dir, Name),
+
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = ?BIN_EMPTY,
+                                                     dsize = 0}) of
+        {ok,_}->
+            {ok, FileUID} = leo_nfs_state_ets:add_path(Key),
             {reply, {?NFS3_OK, {{true, {FileUID}}, %% post_op file handle
                                 {false, void},      %% post_op_attr
                                 ?SIMPLENFS_WCC_EMPTY}
@@ -258,14 +245,18 @@ nfsproc3_create_3({{{UID}, Name}, {_CreateMode, _How}} = _1, Clnt, State) ->
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
+
 %% @doc
-nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, State) ->
+nfsproc3_mkdir_3({{{UID}, Name},_How} = _1, Clnt, State) ->
     ?debug("nfsproc3_mkdir_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
     DirPath = filename:join(Dir, Name),
-    DummyFile4S3Dir = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
-    case leo_gateway_rpc_handler:put(DummyFile4S3Dir, <<>>) of
-        {ok, _}->
+    Key = filename:join(DirPath, ?NFS_DUMMY_FILE4S3DIR),
+
+    case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
+                                                     body = ?BIN_EMPTY,
+                                                     dsize = 0}) of
+        {ok,_}->
             {reply, {?NFS3_OK, {{false, void}, %% post_op file handle
                                 {false, void}, %% post_op_attr
                                 ?SIMPLENFS_WCC_EMPTY
@@ -280,6 +271,7 @@ nfsproc3_mkdir_3({{{UID}, Name}, _How} = _1, Clnt, State) ->
                     }, State}
     end.
 
+
 %% @doc
 nfsproc3_symlink_3(_1, Clnt, State) ->
     ?debug("nfsproc3_symlink_3", "args:~p client:~p", [_1, Clnt]),
@@ -287,6 +279,7 @@ nfsproc3_symlink_3(_1, Clnt, State) ->
                         {false, void}, %% post_op_attr
                         ?SIMPLENFS_WCC_EMPTY}
             }, State}.
+
 
 %% @doc
 nfsproc3_mknod_3(_1, Clnt, State) ->
@@ -296,18 +289,20 @@ nfsproc3_mknod_3(_1, Clnt, State) ->
                         ?SIMPLENFS_WCC_EMPTY}
             }, State}.
 
+
 %% @doc
 nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, State) ->
     ?debug("nfsproc3_remove_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Dir} = leo_nfs_state_ets:get_path(UID),
-    FilePath4S3 = filename:join(Dir, Name),
-    case leo_gateway_rpc_handler:delete(FilePath4S3) of
+    Key = filename:join(Dir, Name),
+    case leo_gateway_rpc_handler:delete(Key) of
         ok ->
             {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
         {error, Reason} ->
             io:format(user, "[remove]reason:~p~n",[Reason]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
+
 
 %% @doc
 nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
@@ -317,12 +312,13 @@ nfsproc3_rmdir_3({{{UID}, Name}} = _1, Clnt, State) ->
     Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path4S3),
     case is_empty_dir(Path4S3Dir) of
         true ->
-            DummyFile4S3Dir = filename:join(Path4S3Dir, ?NFS_DUMMY_FILE4S3DIR),
-            catch leo_gateway_rpc_handler:delete(DummyFile4S3Dir),
+            Key = filename:join(Path4S3Dir, ?NFS_DUMMY_FILE4S3DIR),
+            catch leo_gateway_rpc_handler:delete(Key),
             {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
         false ->
             {reply, {?NFS3ERR_NOTEMPTY, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
+
 
 %% @doc
 nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) ->
@@ -347,6 +343,7 @@ nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) -
                                   }}, State}
     end.
 
+
 %% @doc
 nfsproc3_link_3(_1, Clnt, State) ->
     ?debug("nfsproc3_link_3", "args:~p client:~p", [_1, Clnt]),
@@ -355,56 +352,20 @@ nfsproc3_link_3(_1, Clnt, State) ->
                        }
             }, State}.
 
-%% @doc
-nfsproc3_readdir_3(_1, Clnt, State) ->
-    ?debug("nfsproc3_readdir_3", "args:~p client:~p", [_1, Clnt]),
-    {reply, {?NFS3_OK, {{false, void},  %% post_op_attr
-                        <<"12345678">>, %% cookie verfier
-                        {               %% dir_list(empty)
-                          void,         %% pre_op_attr
-                          true          %% eof
-                        }}
-            }, State}.
 
 %% @doc
-nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf, _DirCnt, _MaxCnt} = _1, Clnt, State) ->
+nfsproc3_readdir_3({{UID}, Cookie, CookieVerf, MaxCnt} = _1, Clnt, State) ->
+    ?debug("nfsproc3_readdir_3", "args:~p client:~p", [_1, Clnt]),
+    {ok, Path} = leo_nfs_state_ets:get_path(UID),
+    readdir(Path, Cookie, CookieVerf, MaxCnt, false, State).
+
+
+%% @doc
+nfsproc3_readdirplus_3({{UID}, Cookie, CookieVerf,_DirCnt, MaxCnt} = _1, Clnt, State) ->
     ?debug("nfsproc3_readdirplus_3", "args:~p client:~p", [_1, Clnt]),
     {ok, Path} = leo_nfs_state_ets:get_path(UID),
-    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
-    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
-                                       <<0,0,0,0,0,0,0,0>> ->
-                                           readdir_add_entry(Path4S3Dir);
-                                       CookieVerf ->
-                                           readdir_get_entry(CookieVerf)
-                                   end,
-    case ReadDir of
-        undefined ->
-            %% empty response
-            readdir_del_entry(NewCookieVerf),
-            {reply, {?NFS3_OK, {{false, void}, %% post_op_attr
-                                NewCookieVerf, %% cookie verfier
-                                {              %% dir_list(empty)
-                                  void,        %% pre_op_attr
-                                  true         %% eof
-                                }}}, State};
-        ReadDir ->
-            %% create response
-            %% @TODO
-            %% # of entries should be determinted by _MaxCnt
-            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIRPLUS_NUM_OF_RESPONSE),
-            %% ?debug("nfsproc3_readdirplus_3", "eof:~p resp:~p~n", [EOF, Resp]),
-            case EOF of
-                true ->
-                    readdir_del_entry(NewCookieVerf);
-                false ->
-                    void
-            end,
-            {reply, {?NFS3_OK, {{false, void}, %% post_op_attr
-                                NewCookieVerf, %% cookie verfier
-                                {Resp,         %% pre_op_attr
-                                 EOF}
-                               }}, State}
-    end.
+    readdir(Path, Cookie, CookieVerf, MaxCnt, true, State).
+
 
 %% @doc
 nfsproc3_fsstat_3(_1, Clnt, State) ->
@@ -419,6 +380,7 @@ nfsproc3_fsstat_3(_1, Clnt, State) ->
                         8,             %% # of free file slots(for auth user)
                         10             %% invarsec
                        }}, State}.
+
 
 %% @doc
 nfsproc3_fsinfo_3(_1, Clnt, State) ->
@@ -437,6 +399,7 @@ nfsproc3_fsinfo_3(_1, Clnt, State) ->
                         0              %% properties
                        }}, State}.
 
+
 %% @doc
 nfsproc3_pathconf_3(_1, Clnt, State) ->
     ?debug("nfsproc3_pathconf_3", "args:~p client:~p", [_1, Clnt]),
@@ -449,6 +412,7 @@ nfsproc3_pathconf_3(_1, Clnt, State) ->
                         true           %% case_preserving
                        }}, State}.
 
+
 %% @doc
 nfsproc3_commit_3(_1, Clnt, State) ->
     ?debug("nfsproc3_commit_3", "args:~p client:~p", [_1, Clnt]),
@@ -459,35 +423,94 @@ nfsproc3_commit_3(_1, Clnt, State) ->
 
 
 %% @doc
-sattr_mode_to_file_info({0, _})   -> undefined;
-sattr_mode_to_file_info({true, Mode}) -> Mode.
+sattr_mode_to_file_info({0,_}) ->
+    undefined;
+sattr_mode_to_file_info({true, Mode}) ->
+    Mode.
+
 
 %% @doc
-sattr_uid_to_file_info({0, _})   -> undefined;
-sattr_uid_to_file_info({true, UID}) -> UID.
+sattr_uid_to_file_info({0,_}) ->
+    undefined;
+sattr_uid_to_file_info({true, UID}) ->
+    UID.
+
 
 %% @doc
-sattr_gid_to_file_info({0, _})   -> undefined;
-sattr_gid_to_file_info({true, GID}) -> GID.
+sattr_gid_to_file_info({0,_}) ->
+    undefined;
+sattr_gid_to_file_info({true, GID}) ->
+    GID.
+
 
 %% @doc
-sattr_size_to_file_info({true, Size}) -> Size;
-sattr_size_to_file_info({_, _})   -> undefined.
+sattr_size_to_file_info({true, Size}) ->
+    Size;
+sattr_size_to_file_info({_,_}) ->
+    undefined.
+
 
 %% @doc
-sattr_atime_to_file_info({'DONT_CHANGE', _}) -> undefined;
-sattr_atime_to_file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
-sattr_atime_to_file_info({_, {ATime, _}})         -> ATime.
+sattr_atime_to_file_info({'DONT_CHANGE',_}) ->
+    undefined;
+sattr_atime_to_file_info({'SET_TO_SERVER_TIME',_}) ->
+    leo_date:unixtime();
+sattr_atime_to_file_info({_, {ATime,_}}) ->
+    ATime.
+
 
 %% @doc
-sattr_mtime_to_file_info({'DONT_CHANGE', _}) -> undefined;
-sattr_mtime_to_file_info({'SET_TO_SERVER_TIME', _}) -> leo_date:unixtime();
-sattr_mtime_to_file_info({_, {MTime, _}})         -> MTime.
+sattr_mtime_to_file_info({'DONT_CHANGE',_}) ->
+    undefined;
+sattr_mtime_to_file_info({'SET_TO_SERVER_TIME',_}) ->
+    leo_date:unixtime();
+sattr_mtime_to_file_info({_, {MTime,_}}) ->
+    MTime.
 
 
 %% ---------------------------------------------------------------------
 %% INNER FUNCTIONS
 %% ---------------------------------------------------------------------
+%% @doc
+%% @private
+readdir(Path, Cookie, CookieVerf,_MaxCnt, IsPlus, State) ->
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
+    {ok, NewCookieVerf, ReadDir} = case CookieVerf of
+                                       << 0,0,0,0,0,0,0,0 >> ->
+                                           readdir_add_entry(Path4S3Dir);
+                                       CookieVerf ->
+                                           readdir_get_entry(CookieVerf)
+                                   end,
+    case ReadDir of
+        undefined ->
+            %% empty response
+            readdir_del_entry(NewCookieVerf),
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
+                                NewCookieVerf, %% cookie verfier
+                                {              %% dir_list(empty)
+                                  void,        %% pre_op_attr
+                                  true         %% eof
+                                }}}, State};
+        ReadDir ->
+            %% create response
+            %% @TODO
+            %% # of entries should be determinted by _MaxCnt
+            {Resp, EOF} = readdir_create_resp(Path4S3Dir, Cookie, ReadDir, ?NFS_READDIR_NUM_OF_RESPONSE, IsPlus),
+
+            case EOF of
+                true ->
+                    readdir_del_entry(NewCookieVerf);
+                false ->
+                    void
+            end,
+            {reply, {?NFS3_OK, {{true, s3dir2fattr3(Path)}, %% post_op_attr
+                                NewCookieVerf, %% cookie verfier
+                                {Resp,         %% pre_op_attr
+                                 EOF}
+                               }}, State}
+    end.
+
+
 %% @doc Returns true if Path refers to a directory which have child files,
 %%      and false otherwise.
 %% @private
@@ -495,9 +518,31 @@ sattr_mtime_to_file_info({_, {MTime, _}})         -> MTime.
 is_empty_dir(Path) ->
     case leo_nfs_file_handler:list_dir(Path, false) of
         {ok, MetaList} when is_list(MetaList) ->
-            FilteredList = [Meta ||
-                               Meta <- MetaList,
-                               filename:basename(Meta#?METADATA.key) =/= ?NFS_DUMMY_FILE4S3DIR],
+            ?debug("is_empty_dir/1", "List Dir ~p, ~p", [Path, MetaList]),
+            FilteredList =
+                lists:foldl(
+                  fun(Meta, Acc) ->
+                          case Meta of
+                              #?METADATA{del = 1} ->
+                                  Acc;
+                              #?METADATA{dsize = -1} ->
+                                  DummyKey = filename:join(Meta#?METADATA.key,
+                                                           ?NFS_DUMMY_FILE4S3DIR),
+                                  case leo_gateway_rpc_handler:head(DummyKey) of
+                                      {ok, #?METADATA{del = 0}} ->
+                                          [Meta | Acc];
+                                      _ ->
+                                          Acc
+                                  end;
+                              _ ->
+                                  case filename:basename(Meta#?METADATA.key) of
+                                      ?NFS_DUMMY_FILE4S3DIR ->
+                                          Acc;
+                                      _ ->
+                                          [Meta | Acc]
+                                  end
+                          end
+                  end, [], MetaList),
             length(FilteredList) =:= 0;
         _Error ->
             false
@@ -510,6 +555,7 @@ is_empty_dir(Path) ->
 -spec(readdir_add_entry(binary()) ->
              {ok, binary(), #ongoing_readdir{}}).
 readdir_add_entry(Path) ->
+    %% @TODO READDIR does not need the attribute
     case leo_nfs_file_handler:list_dir(Path) of
         {ok, FileList}->
             %% gen cookie verfier
@@ -545,10 +591,10 @@ readdir_del_entry(CookieVerf) ->
 
 %% @doc Create a rpc response for a readdir3 request
 %% @private
--spec(readdir_create_resp(binary(), integer(), #ongoing_readdir{}, integer()) ->
+-spec(readdir_create_resp(binary(), integer(), #ongoing_readdir{}, integer(), boolean()) ->
              void | tuple()).
 readdir_create_resp(Path, Cookie,
-                    #ongoing_readdir{filelist = FileList} = ReadDir, NumEntry) ->
+                    #ongoing_readdir{filelist = FileList} = ReadDir, NumEntry, IsPlus) ->
     {StartCookie, EOF} = case length(FileList) =< (Cookie + NumEntry) of
                              true ->
                                  {length(FileList), true};
@@ -560,19 +606,21 @@ readdir_create_resp(Path, Cookie,
                         ReadDir,
                         Cookie,
                         EOF,
+                        IsPlus,
                         void).
 
+%% @private
 readdir_create_resp(_Path, CurCookie,
-                    _ReadDir,
-                    Cookie, EOF, Resp)
-  when CurCookie =:= Cookie ->
+                    _ReadDir, Cookie,
+                    EOF,_IsPlus, Resp) when CurCookie =:= Cookie ->
+    ?debug("readdir_create_resp", "resp:~p ~n", [Resp]),
     {Resp, EOF};
-
 readdir_create_resp(Path, CurCookie,
                     #ongoing_readdir{filelist = FileList} = ReadDir,
-                    Cookie, EOF, Resp) ->
+                    Cookie, EOF, IsPlus, Resp) ->
     Meta = lists:nth(CurCookie, FileList),
-    #?METADATA{key = Key, dsize = Size} = Meta,
+    #?METADATA{key = Key, dsize = Size, del = Del} = Meta,
+    ?debug("readdir_create_resp/7", "Meta ~p", [Meta]),
     NormalizedKey = case Size of
                         -1 ->
                             %% dir to be normalized(means expand .|.. chars)
@@ -581,26 +629,58 @@ readdir_create_resp(Path, CurCookie,
                             %% file
                             Key
                     end,
+    Del2 = case Size =:= -1 andalso
+               is_empty_dir(NormalizedKey) of
+               true ->
+                   DummyKey = filename:join(NormalizedKey, ?NFS_DUMMY_FILE4S3DIR),
+                   case leo_gateway_rpc_handler:head(DummyKey) of
+                       {ok, #?METADATA{del = 1}} ->
+                           1;
+                       _ ->
+                           Del
+                   end;
+               _ ->
+                   Del
+           end,
+
     FileName = filename:basename(Key),
-    case FileName of
-        ?NFS_DUMMY_FILE4S3DIR ->
+    case {Del2, FileName} of
+        {1,_} ->
             readdir_create_resp(Path,
                                 CurCookie - 1,
                                 ReadDir,
                                 Cookie,
                                 EOF,
+                                IsPlus,
+                                Resp);
+        {_, ?NFS_DUMMY_FILE4S3DIR} ->
+            readdir_create_resp(Path,
+                                CurCookie - 1,
+                                ReadDir,
+                                Cookie,
+                                EOF,
+                                IsPlus,
                                 Resp);
         _ ->
             {ok, UID} = leo_nfs_state_ets:add_path(NormalizedKey),
-            NewResp = {inode(NormalizedKey),
-                       FileName,
-                       CurCookie,
-                       {true, %% post_op_attr
-                        meta2fattr3(Meta#?METADATA{key = NormalizedKey})
-                       },
-                       {true, {UID}}, %% post_op_fh3
-                       Resp
-                      },
+            NewResp = case IsPlus of
+                          true ->
+                              {inode(NormalizedKey),
+                               FileName,
+                               CurCookie,
+                               {true, %% post_op_attr
+                                meta2fattr3(Meta#?METADATA{key = NormalizedKey})
+                               },
+                               {true, {UID}}, %% post_op_fh3
+                               Resp
+                              };
+                          _ ->
+                              {inode(NormalizedKey),
+                               FileName,
+                               CurCookie,
+                               Resp
+                              }
+                      end,
             ?debug("readdir_create_resp", "key:~p cookie:~p~n",
                    [NormalizedKey, CurCookie]),
             readdir_create_resp(Path,
@@ -608,7 +688,44 @@ readdir_create_resp(Path, CurCookie,
                                 ReadDir,
                                 Cookie,
                                 EOF,
+                                IsPlus,
                                 NewResp)
+    end.
+
+
+%% @private
+getattr(Path) ->
+    case leo_nfs_file_handler:binary_is_contained(Path, $/) of
+        %% object
+        true ->
+            %% @todo emulate directories
+            case leo_gateway_rpc_handler:head(Path) of
+                {ok, #?METADATA{del = 0} = Meta} ->
+                    {ok, meta2fattr3(Meta)};
+                {ok, #?METADATA{del = 1}} ->
+                    not_found;
+                {error, not_found} ->
+                    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Path),
+                    case leo_nfs_file_handler:is_dir(Path4S3Dir) of
+                        true ->
+                            {ok, s3dir2fattr3(Path)};
+                        false ->
+                            not_found
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        %% bucket
+        false ->
+            case leo_s3_bucket:find_bucket_by_name(Path) of
+                {ok, Bucket} ->
+                    Attr = bucket2fattr3(Bucket),
+                    {ok, Attr};
+                not_found ->
+                    not_found;
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 
@@ -618,7 +735,7 @@ readdir_create_resp(Path, CurCookie,
 -spec(inode(binary() | string()) ->
              integer()).
 inode(Path) ->
-    <<F8:8/binary, _/binary>> = erlang:md5(Path),
+    << F8:8/binary,_/binary >> = erlang:md5(Path),
     Hex = leo_hex:binary_to_hex(F8),
     leo_hex:hex_to_integer(Hex).
 
@@ -628,11 +745,11 @@ inode(Path) ->
 -spec(meta2fattr3(#?METADATA{}) ->
              tuple()).
 meta2fattr3(#?METADATA{dsize = -1, key = Key}) ->
-    Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
-    UT = leo_date:greg_seconds_to_unixtime(Now),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Key),
+    UT = get_dir_unix_timestamp(Path4S3Dir),
     {'NF3DIR',
      8#00777,    %% @todo determin based on ACL? protection mode bits
-     0,          %% # of hard links
+     2,          %% # of hard links
      0,          %% @todo determin base on ACL? uid
      0,          %% @todo gid
      4096,       %% file size
@@ -647,7 +764,7 @@ meta2fattr3(#?METADATA{key = Key, timestamp = TS, dsize = Size}) ->
     UT = leo_date:greg_seconds_to_unixtime(TS),
     {'NF3REG',
      8#00666,    %% @todo determin based on ACL? protection mode bits
-     0,          %% # of hard links
+     1,          %% # of hard links
      0,          %% @todo determin base on ACL? uid
      0,          %% @todo gid
      Size,       %% file size
@@ -665,11 +782,11 @@ meta2fattr3(#?METADATA{key = Key, timestamp = TS, dsize = Size}) ->
 -spec(s3dir2fattr3(binary()) ->
              tuple()).
 s3dir2fattr3(Dir) ->
-    Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
-    UT  = leo_date:greg_seconds_to_unixtime(Now),
+    Path4S3Dir = leo_nfs_file_handler:path_to_dir(Dir),
+    UT = get_dir_unix_timestamp(Path4S3Dir),
     {'NF3DIR',
      8#00777,    %% @todo determin based on ACL? protection mode bits
-     0,          %% # of hard links
+     2,          %% # of hard links
      0,          %% @todo determin base on ACL? uid
      0,          %% @todo gid
      4096,       %% @todo how to calc?
@@ -690,7 +807,7 @@ bucket2fattr3(Bucket) ->
     UT = leo_date:greg_seconds_to_unixtime(Bucket#?BUCKET.last_modified_at),
     {'NF3DIR',
      8#00777, %% @todo determin based on ACL? protection mode bits
-     0,       %% # of hard links
+     3,       %% # of hard links
      0,       %% @todo determin base on ACL? uid
      0,       %% @todo gid
      4096,    %% @todo directory size
@@ -701,3 +818,19 @@ bucket2fattr3(Bucket) ->
      {UT, 0}, %% last access
      {UT, 0}, %% last modification
      {UT, 0}}.%% last change
+
+
+%% @private
+get_dir_unix_timestamp(_Dir) ->
+    %% === For 1.4
+    %% case leo_gateway_rpc_handler:get_dir_meta(Dir) of
+    %%     {ok, MetaBin} ->
+    %%         Meta = binary_to_term(MetaBin),
+    %%         leo_date:greg_seconds_to_unixtime(Meta#?METADATA.timestamp);
+    %%     _Error ->
+    %%         Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+    %%         leo_date:greg_seconds_to_unixtime(Now)
+    %% end.
+
+    Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+    leo_date:greg_seconds_to_unixtime(Now).

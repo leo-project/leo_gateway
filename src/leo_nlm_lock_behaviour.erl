@@ -1,6 +1,6 @@
 %%======================================================================
 %%
-%% Leo Gateway
+%% Network Lock Manager written in Erlang
 %%
 %% Copyright (c) 2012-2015 Rakuten, Inc.
 %%
@@ -18,30 +18,19 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
-%% Leo Gateway - Supervisor
-%%
-%% @doc
-%% @end
 %%======================================================================
--module(leo_gateway_sup).
-
--behaviour(supervisor).
+-module(leo_nlm_lock_behaviour).
 
 -include("leo_gateway.hrl").
 
-%% External exports
--export([start_link/0]).
+-callback(start_link(Args::any()) ->
+                {ok, any()}).
 
-%% supervisor callbacks
--export([init/1]).
+-callback(test(FileHandler::binary(), Lock::#lock_record{}) ->
+                ok | {error, #lock_record{}} | {error, any()}).
 
-%% @spec start_link() -> ServerRet
-%% @doc API for starting the supervisor.
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-callback(lock(FileHandler::binary(), Lock::#lock_record{}) ->
+                ok | {error, #lock_record{}} | {error, any()}).
 
-%% @spec init([]) -> SupervisorTree
-%% @doc supervisor callback.
-init([]) ->
-    {ok, {_SupFlags = {one_for_one, 5, 60}, []}}.
+-callback(unlock(FileHandler::binary(), Owner::binary(), Start::non_neg_integer(), End::integer()) ->
+                ok).

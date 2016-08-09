@@ -24,7 +24,6 @@
 %% @end
 %%====================================================================
 -module(leo_nginx_conf_parser_tests).
--author('Yoshiyuki Kanno').
 
 -include_lib("leo_commons/include/leo_commons.hrl").
 -include_lib("leo_logger/include/leo_logger.hrl").

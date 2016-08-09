@@ -24,7 +24,6 @@
 %% @end
 %%====================================================================
 -module(leo_gateway_qos_stat).
--author('Yosuke Hara').
 
 -behaviour(gen_server).
 
@@ -140,7 +139,7 @@ init([SVManagers, IsEnabled]) ->
         false ->
             void
     end,
-    {ok, #state{managers   = SVManagers,
+    {ok, #state{managers = SVManagers,
                 is_enabled = IsEnabled}}.
 
 handle_call(_Msg,_From, State) ->
