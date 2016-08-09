@@ -3,7 +3,7 @@
 %%
 %% LeoFS
 %%
-%% Copyright (c) 2012-2015 Rakuten, Inc.
+%% Copyright (c) 2012-2016 Rakuten, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -266,6 +266,18 @@
   {datatype, bytesize},
   {default, 5242880}
  ]}.
+
+{translation, "leo_gateway.large_object.chunked_obj_len",
+ fun(Conf) ->
+         Protocol = cuttlefish_util:conf_get_value("protocol", Conf),
+         case Protocol of
+             'nfs' ->
+                 1048576; %% 1MB
+             _ ->
+                 cuttlefish_util:conf_get_value("large_object.chunked_obj_len", Conf)
+         end
+ end}.
+
 
 %% @doc Threshold of length of a chunked object
 {mapping,
@@ -716,41 +728,6 @@
   {default, 128}
  ]}.
 
-%% %% @doc Application parameters for Mount/NFS server
-%% {translation, "rpc_server.args",
-%%  fun(Conf) ->
-%%          MountPort      = cuttlefish_util:conf_get_value("mount.port", Conf),
-%%          MountAcceptors = cuttlefish_util:conf_get_value("mount.num_of_acceptors", Conf),
-%%          NFSPort        = cuttlefish_util:conf_get_value("nfs.port", Conf),
-%%          NFSAcceptors   = cuttlefish_util:conf_get_value("nfs.num_of_acceptors", Conf),
-%%          [
-%%           {nfs_rpc_app_arg,
-%%            mountd3,
-%%            MountAcceptors,
-%%            [{port, MountPort}],
-%%            100005,
-%%            mountprog,
-%%            [],
-%%            3,
-%%            3,
-%%            true,
-%%            leo_nfs_mount3_svc,
-%%            [],
-%%            []},
-%%           {nfs_rpc_app_arg,
-%%            nfsd3,
-%%            NFSAcceptors,
-%%            [{port, NFSPort}],
-%%            100003,
-%%            nfs3_program,
-%%            [],
-%%            3,
-%%            3,
-%%            true,
-%%            leo_nfs_proto3_svc,
-%%            [],
-%%            []}]
-%%  end}.
 
 %% --------------------------------------------------------------------
 %% GATEWAY - NLM-related configuration
@@ -763,6 +740,7 @@
   {datatype, atom},
   {default, leo_nlm_lock_handler_ets}
  ]}.
+
 
 %% --------------------------------------------------------------------
 %% GATEWAY - Timeout
