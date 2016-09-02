@@ -49,7 +49,7 @@ get(Key) ->
             case leo_gateway_rpc_handler:get(Key) of
                 {error,not_found} ->
                     not_found;
-                {ok, #?METADATA{checksum = Checksum}, Body} ->
+                {ok, #?METADATA{checksum = Checksum}, Body, _} ->
                     {ok, {Checksum, Body}};
                 Error ->
                     Error
