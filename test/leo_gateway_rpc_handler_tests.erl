@@ -185,14 +185,16 @@ get_object_normal1_([_Node0, Node1]) ->
                                                      dsize = 4,
                                                      del = 0
                                                     },
-                                                 <<"body">>
+                                                 <<"body">>,
+                                                 term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}])
                                                 }
                                         end]),
     KEY = <<"bucket/key">>,
-    {ok, Meta, Body} = leo_gateway_rpc_handler:get(KEY),
+    {ok, Meta, Body, CMetaBin} = leo_gateway_rpc_handler:get(KEY),
     ?assertEqual(4, Meta#?METADATA.dsize),
     ?assertEqual(KEY, Meta#?METADATA.key),
     ?assertEqual(<<"body">>, Body),
+    ?assertEqual(term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]), CMetaBin),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.
 
@@ -234,14 +236,16 @@ get_object_with_etag_normal1_([_Node0, Node1]) ->
                                                      dsize = 4,
                                                      del = 0
                                                     },
-                                                 <<"body">>
+                                                 <<"body">>,
+                                                 term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}])
                                                 }
                                         end]),
     KEY = <<"bucket/key">>,
-    {ok, Meta, Body} = leo_gateway_rpc_handler:get(KEY, 123),
+    {ok, Meta, Body, CMetaBin} = leo_gateway_rpc_handler:get(KEY, 123),
     ?assertEqual(4, Meta#?METADATA.dsize),
     ?assertEqual(KEY, Meta#?METADATA.key),
     ?assertEqual(<<"body">>, Body),
+    ?assertEqual(term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]), CMetaBin),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.
 
