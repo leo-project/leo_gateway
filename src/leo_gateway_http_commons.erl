@@ -252,6 +252,10 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
                                  custom_header_settings = CustomHeaderSettings,
                                  has_inner_cache        = HasInnerCache,
                                  sending_chunked_obj_len= SendChunkLen}) ->
+    %% @TEST >>
+    _Begin = erlang:statistics(scheduler_wall_time),
+    %% <<
+
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
         {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
@@ -279,6 +283,12 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
             BodyFunc = fun(Socket, Transport) ->
                                leo_net:chunked_send(Transport, Socket, RespObject, SendChunkLen)
                        end,
+
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, Meta#?METADATA.ver,
+                           Meta#?METADATA.dsize, (_End - _Begin), ?HTTP_ST_OK),
+            %% <<
             ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% For a chunked object.
@@ -302,14 +312,30 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
         {error, unavailable} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_SERVICE_UNAVAILABLE),
+            %% <<
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, not_found} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_NOT_FOUND),
+            %% <<
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_INTERNAL_ERROR),
+            %% <<
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_GATEWAY_TIMEOUT),
+            %% <<
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
@@ -321,6 +347,10 @@ get_object(Req, Key, #req_params{bucket                 = Bucket,
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = Bucket,
                                                       custom_header_settings = CustomHeaderSettings,
                                                       sending_chunked_obj_len= SendChunkLen}) ->
+    %% @TEST >>
+    _Begin = erlang:statistics(scheduler_wall_time),
+    %% <<
+
     case leo_gateway_rpc_handler:get(Key, CacheObj#cache.etag) of
         %% HIT: get an object from disc-cache
         {ok, match} when CacheObj#cache.file_path /= [] ->
@@ -336,6 +366,12 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
                                file:sendfile(CacheObj#cache.file_path, Socket, 0, 0, [{chunk_size, SendChunkLen}]),
                                ok
                        end,
+
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1,
+                           CacheObj#cache.size, (_End - _Begin), ?HTTP_ST_OK),
+            %% <<
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
 
         %% HIT: get an object from memory-cache
@@ -351,6 +387,12 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             BodyFunc = fun(Socket, Transport) ->
                                leo_net:chunked_send(Transport, Socket, CacheObj#cache.body, SendChunkLen)
                        end,
+
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1,
+                           CacheObj#cache.size, (_End - _Begin), ?HTTP_ST_OK),
+            %% <<
             ?reply_ok(Headers2, {CacheObj#cache.size, BodyFunc}, Req);
 
         %% MISS: get an object from storage (small-size)
@@ -374,6 +416,12 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
             BodyFunc = fun(Socket, Transport) ->
                                leo_net:chunked_send(Transport, Socket, RespObject, SendChunkLen)
                        end,
+
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, Meta#?METADATA.ver,
+                           Meta#?METADATA.dsize, (_End - _Begin), ?HTTP_ST_OK),
+            %% <<
             ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% MISS: get an object from storage (large-size)
@@ -394,16 +442,38 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket                 = B
                                    catch leo_large_object_get_handler:stop(Pid)
                                end
                        end,
+
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, Meta#?METADATA.ver,
+                           Meta#?METADATA.dsize, (_End - _Begin), ?HTTP_ST_OK),
+            %% <<
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
         {error, not_found} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_NOT_FOUND),
+            %% <<
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_SERVICE_UNAVAILABLE),
+            %% <<
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_INTERNAL_ERROR),
+            %% <<
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_get(Key, -1, -1, (_End - _Begin), ?HTTP_ST_GATEWAY_TIMEOUT),
+            %% <<
             ?access_log_get(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
@@ -550,6 +620,10 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
                                                           upload_part_num = UploadPartNum,
                                                           has_inner_cache = HasInnerCache
                                                          }) ->
+    %% @TEST >>
+    _Begin = erlang:statistics(scheduler_wall_time),
+    %% <<
+
     case leo_gateway_rpc_handler:put(Key, Bin, Size, UploadPartNum) of
         {ok, ETag} ->
             case (HasInnerCache
@@ -570,13 +644,30 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket = Bucket,
             ?access_log_put(Bucket, Key, Size, ?HTTP_ST_OK),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(ETag)}],
+
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_put(Key, Size, (_End - _Begin), ?HTTP_ST_OK),
+            %% <<
             ?reply_ok(Header, Req);
         {error, unavailable} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_put(Key, Size, (_End - _Begin), ?HTTP_ST_SERVICE_UNAVAILABLE),
+            %% <<
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_put(Key, Size, (_End - _Begin), ?HTTP_ST_INTERNAL_ERROR),
+            %% <<
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_put(Key, Size, (_End - _Begin), ?HTTP_ST_GATEWAY_TIMEOUT),
+            %% <<
             ?access_log_put(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
@@ -704,6 +795,10 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
 -spec(delete_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 delete_object(Req, Key, #req_params{bucket = Bucket}) ->
+    %% @TEST >>
+    _Begin = erlang:statistics(scheduler_wall_time),
+    %% <<
+
     Size1 = case leo_gateway_rpc_handler:head(Key) of
                 {ok, #?METADATA{del = 0, dsize = Size}} ->
                     Size;
@@ -713,17 +808,37 @@ delete_object(Req, Key, #req_params{bucket = Bucket}) ->
 
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_delete(Key, Size1, (_End - _Begin), ?HTTP_ST_NO_CONTENT),
+            %% <<
             ?access_log_delete(Bucket, Key, Size1, ?HTTP_ST_NO_CONTENT),
             ?reply_no_content([?SERVER_HEADER], Req);
         {error, not_found} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_delete(Key, Size1, (_End - _Begin), ?HTTP_ST_NOT_FOUND),
+            %% <<
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_NOT_FOUND),
             ?reply_no_content([?SERVER_HEADER], Req);
         {error, unavailable} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_delete(Key, Size1, (_End - _Begin), ?HTTP_ST_SERVICE_UNAVAILABLE),
+            %% <<
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_delete(Key, Size1, (_End - _Begin), ?HTTP_ST_INTERNAL_ERROR),
+            %% <<
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_delete(Key, Size1, (_End - _Begin), ?HTTP_ST_GATEWAY_TIMEOUT),
+            %% <<
             ?access_log_delete(Bucket, Key, 0, ?HTTP_ST_GATEWAY_TIMEOUT),
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end.
@@ -733,6 +848,10 @@ delete_object(Req, Key, #req_params{bucket = Bucket}) ->
 -spec(head_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 head_object(Req, Key, #req_params{bucket = Bucket}) ->
+    %% @TEST >>
+    _Begin = erlang:statistics(scheduler_wall_time),
+    %% <<
+
     case leo_gateway_rpc_handler:head(Key) of
         {ok, #?METADATA{del = 0} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#?METADATA.timestamp),
@@ -742,19 +861,43 @@ head_object(Req, Key, #req_params{bucket = Bucket}) ->
                          {?HTTP_HEAD_RESP_ETAG,           ?http_etag(Meta#?METADATA.checksum)},
                          {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
                          {?HTTP_HEAD_RESP_LAST_MODIFIED,  Timestamp}],
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_head(Key, Meta#?METADATA.dsize, (_End - _Begin), ?HTTP_ST_OK),
+            %% <<
             cowboy_req:reply(?HTTP_ST_OK, Headers, fun() -> void end, Req);
         {ok, #?METADATA{del = 1}} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_head(Key, -1, (_End - _Begin), ?HTTP_ST_NOT_FOUND),
+            %% <<
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, not_found} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_head(Key, -1, (_End - _Begin), ?HTTP_ST_NOT_FOUND),
+            %% <<
             ?access_log_head(Bucket, Key, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, unavailable} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_head(Key, -1, (_End - _Begin), ?HTTP_ST_SERVICE_UNAVAILABLE),
+            %% <<
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_head(Key, -1, (_End - _Begin), ?HTTP_ST_INTERNAL_ERROR),
+            %% <<
             ?access_log_head(Bucket, Key, ?HTTP_ST_INTERNAL_ERROR),
             ?reply_internal_error_without_body([?SERVER_HEADER], Req);
         {error, timeout} ->
+            %% @TEST >>
+            _End = erlang:statistics(scheduler_wall_time),
+            ?debug_log_head(Key, -1, (_End - _Begin), ?HTTP_ST_GATEWAY_TIMEOUT),
+            %% <<
             ?access_log_head(Bucket, Key, ?HTTP_ST_GATEWAY_TIMEOUT),
             ?reply_timeout_without_body([?SERVER_HEADER], Req)
     end.

@@ -438,3 +438,41 @@
                                       ]}
               })
         end).
+
+
+-define(debug_log_get(_Path,_ReqId,_Size,_Latency,_Response),
+        ?debug("[GET]", "~p", [[{'state',_Response},
+                                {'path',_Path},
+                                {'req_id',_ReqId},
+                                {'length',_Size},
+                                {'latency', _Latency},
+                                {'datetime', leo_date:date_format()}
+                               ]])
+       ).
+
+-define(debug_log_put(_Path,_Size,_Latency,_Response),
+        ?debug("[PUT]", "~p", [[{'state',_Response},
+                                {'path',_Path},
+                                {'length',_Size},
+                                {'latency', _Latency},
+                                {'datetime', leo_date:date_format()}
+                               ]])
+       ).
+
+-define(debug_log_delete(_Path,_Size,_Latency,_Response),
+        ?debug("[DELETE]", "~p", [[{'state',_Response},
+                                   {'path',_Path},
+                                   {'length',_Size},
+                                   {'latency', _Latency},
+                                   {'datetime', leo_date:date_format()}
+                                  ]])
+       ).
+
+-define(debug_log_head(_Path,_Size,_Latency,_Response),
+        ?debug("[HEAD]", "~p", [[{'state',_Response},
+                                 {'path',_Path},
+                                 {'length',_Size},
+                                 {'latency', _Latency},
+                                 {'datetime', leo_date:date_format()}
+                                ]])
+       ).
