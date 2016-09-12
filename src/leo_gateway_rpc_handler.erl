@@ -195,8 +195,8 @@ invoke([#redundant_node{node      = Node,
         {value, {ok, {etag, ETag}}} ->
             {ok, ETag};
         %% get-1
-        {value, {ok, _Meta, _Bin} = Ret} ->
-            Ret;
+        {value, {ok, _Meta, _Bin}} ->
+            {ok, _Meta#?METADATA{ver = lists:last(Args)}, _Bin};
         %% get-2
         {value, {ok, match} = Ret} ->
             Ret;
