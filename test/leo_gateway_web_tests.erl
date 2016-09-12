@@ -141,9 +141,11 @@ gen_tests_2(Arg) ->
             "-----END RSA PRIVATE KEY-----\n").
 
 setup(InitFun, TermFun) ->
-    ok = leo_logger_client_message:new("./", ?LOG_LEVEL_WARN),
+    ok = leo_logger_client_message:new("./", ?LOG_LEVEL_DEBUG),
     ok = leo_logger_client_base:new(?LOG_GROUP_ID_ACCESS, ?LOG_ID_ACCESS,
                                     "./", ?LOG_FILENAME_ACCESS),
+    ok = leo_logger_client_base:new(?LOG_GROUP_ID_TEST, ?LOG_ID_TEST,
+                                    "./", ?LOG_FILENAME_TEST),
 
     io:format(user, "cwd:~p~n",[os:cmd("pwd")]),
     [] = os:cmd("epmd -daemon"),

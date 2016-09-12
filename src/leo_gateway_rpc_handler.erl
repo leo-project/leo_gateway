@@ -195,16 +195,14 @@ invoke([#redundant_node{node      = Node,
         {value, {ok, {etag, ETag}}} ->
             {ok, ETag};
         %% get-1
-        {value, {ok, _Meta, _Bin}} ->
-            ReqId = lists:last(Args),
-            {ok,_Meta#?METADATA{ver = ReqId},_Bin};
+        {value, {ok, _Meta, _Bin} = Ret} ->
+            Ret;
         %% get-2
         {value, {ok, match} = Ret} ->
             Ret;
         %% head
-        {value, {ok, _Meta}} ->
-            ReqId = lists:last(Args),
-            {ok, _Meta#?METADATA{ver = ReqId}};
+        {value, {ok, _Meta} = Ret} ->
+            Ret;
         %% error
         {value, {error,_Cause}} = Error ->
             {error, handle_error(Node, Mod, Method, Args, Error)};

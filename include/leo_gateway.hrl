@@ -440,39 +440,79 @@
         end).
 
 
--define(debug_log_get(_Path,_ReqId,_Size,_Latency,_Response),
-        ?debug("[GET]", "~p", [[{'state',_Response},
-                                {'path',_Path},
-                                {'req_id',_ReqId},
-                                {'length',_Size},
-                                {'latency', _Latency},
-                                {'datetime', leo_date:date_format()}
-                               ]])
+%% For DEBUG, TEST
+-define(LOG_GROUP_ID_TEST, 'log_grp_test_log').
+-define(LOG_ID_TEST, 'log_id_test_log').
+-define(LOG_FILENAME_TEST, "test").
+
+-define(debug_log_get(_Path,_ReqId,_Size,_Response),
+        begin
+            {_,_Latency} = erlang:statistics(wall_clock),
+            leo_logger_client_base:append(
+              {?LOG_ID_TEST,
+               #message_log{format  = "[GET]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Path),
+                                       _ReqId,
+                                       _Size,
+                                       _Latency,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+       end
        ).
 
--define(debug_log_put(_Path,_Size,_Latency,_Response),
-        ?debug("[PUT]", "~p", [[{'state',_Response},
-                                {'path',_Path},
-                                {'length',_Size},
-                                {'latency', _Latency},
-                                {'datetime', leo_date:date_format()}
-                               ]])
+-define(debug_log_put(_Path,_Size,_Response),
+        begin
+            {_,_Latency} = erlang:statistics(wall_clock),
+            leo_logger_client_base:append(
+              {?LOG_ID_TEST,
+               #message_log{format  = "[PUT]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Path),
+                                       -1,
+                                       _Size,
+                                       _Latency,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+       end
        ).
 
--define(debug_log_delete(_Path,_Size,_Latency,_Response),
-        ?debug("[DELETE]", "~p", [[{'state',_Response},
-                                   {'path',_Path},
-                                   {'length',_Size},
-                                   {'latency', _Latency},
-                                   {'datetime', leo_date:date_format()}
-                                  ]])
+-define(debug_log_delete(_Path,_Size,_Response),
+        begin
+            {_,_Latency} = erlang:statistics(wall_clock),
+            leo_logger_client_base:append(
+              {?LOG_ID_TEST,
+               #message_log{format  = "[DELETE]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Path),
+                                       -1,
+                                       _Size,
+                                       _Latency,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+       end
        ).
 
--define(debug_log_head(_Path,_Size,_Latency,_Response),
-        ?debug("[HEAD]", "~p", [[{'state',_Response},
-                                 {'path',_Path},
-                                 {'length',_Size},
-                                 {'latency', _Latency},
-                                 {'datetime', leo_date:date_format()}
-                                ]])
+-define(debug_log_head(_Path,_Size,_Response),
+        begin
+            {_,_Latency} = erlang:statistics(wall_clock),
+            leo_logger_client_base:append(
+              {?LOG_ID_TEST,
+               #message_log{format  = "[HEAD]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
+                            message = [binary_to_list(_Path),
+                                       -1,
+                                       -1,
+                                       _Latency,
+                                       leo_date:date_format(),
+                                       leo_date:clock(),
+                                       _Response
+                                      ]}
+              })
+       end
        ).
