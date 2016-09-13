@@ -445,9 +445,9 @@
 -define(LOG_ID_TEST, 'log_id_test_log').
 -define(LOG_FILENAME_TEST, "test").
 
--define(debug_log_get(_Path,_ReqId,_Size,_Response),
+-define(debug_log_get(_Begin,_Path,_ReqId,_Size,_Response),
         begin
-            {_,_Latency} = erlang:statistics(wall_clock),
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_TEST,
                #message_log{format  = "[GET]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
@@ -463,9 +463,9 @@
        end
        ).
 
--define(debug_log_put(_Path,_Size,_Response),
+-define(debug_log_put(_Begin,_Path,_Size,_Response),
         begin
-            {_,_Latency} = erlang:statistics(wall_clock),
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_TEST,
                #message_log{format  = "[PUT]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
@@ -481,9 +481,9 @@
        end
        ).
 
--define(debug_log_delete(_Path,_Size,_Response),
+-define(debug_log_delete(_Begin,_Path,_Size,_Response),
         begin
-            {_,_Latency} = erlang:statistics(wall_clock),
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_TEST,
                #message_log{format  = "[DELETE]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
@@ -499,9 +499,9 @@
        end
        ).
 
--define(debug_log_head(_Path,_Size,_Response),
+-define(debug_log_head(_Begin,_Path,_Size,_Response),
         begin
-            {_,_Latency} = erlang:statistics(wall_clock),
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_TEST,
                #message_log{format  = "[HEAD]\t~s\t~w\t~w\t~w\t~s\t~w\t~w\n",
