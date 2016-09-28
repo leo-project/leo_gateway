@@ -219,7 +219,7 @@ handle_loop(Index, TotalChunkObjs, #req_info{key = AcctualKey,
         %%
         %% only children
         %%
-        {ok, #?METADATA{cnumber = 0}, Bin} ->
+        {ok, #?METADATA{cnumber = 0}, Bin, _} ->
             #transport_record{transport = Transport,
                               socket = Socket,
                               sending_chunked_obj_len = SendChunkLen} = TransportRec,

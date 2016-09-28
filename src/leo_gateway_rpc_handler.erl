@@ -57,7 +57,7 @@
 %% @doc Retrieve a metadata from the storage-cluster
 %%
 -spec(head(binary()) ->
-             {ok, #?METADATA{}}|{error, any()}).
+             {ok, #?METADATA{}, binary()}|{error, any()}).
 head(Key) ->
     ReqParams = get_request_parameters(head, Key),
     invoke(ReqParams#rpc_params.redundancies,
@@ -69,7 +69,7 @@ head(Key) ->
 %% @doc Retrieve an object from the storage-cluster
 %%
 -spec(get(binary()) ->
-             {ok, #?METADATA{}, binary()}|{error, any()}).
+             {ok, #?METADATA{}, binary(), binary()}|{error, any()}).
 get(Key) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -79,7 +79,7 @@ get(Key) ->
            [ReqParams#rpc_params.addr_id, Key, ReqParams#rpc_params.req_id],
            []).
 -spec(get(binary(), integer()) ->
-             {ok, match}|{ok, #?METADATA{}, binary()}|{error, any()}).
+             {ok, match}|{ok, #?METADATA{}, binary(), binary()}|{error, any()}).
 get(Key, ETag) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -90,7 +90,7 @@ get(Key, ETag) ->
            []).
 
 -spec(get(binary(), integer(), integer()) ->
-             {ok, #?METADATA{}, binary()}|{error, any()}).
+             {ok, #?METADATA{}, binary(), binary()}|{error, any()}).
 get(Key, StartPos, EndPos) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -138,6 +138,8 @@ delete(Key) ->
 put(#put_req_params{path = Key,
                     body = Body,
                     dsize = Size,
+                    meta = CMeta,
+                    msize = MSize,
                     total_chunks = TotalChunks,
                     cindex = ChunkIndex,
                     csize = ChunkedSize,
@@ -177,7 +179,9 @@ put(#put_req_params{path = Key,
            [#?OBJECT{addr_id = AddrId,
                      key = Key,
                      data = Body,
+                     meta = CMeta,
                      dsize = Size,
+                     msize = MSize,
                      timestamp = Timestamp,
                      csize = ChunkedSize,
                      cnumber = TotalChunks,
@@ -216,7 +220,7 @@ invoke([#redundant_node{node = Node,
         {value, {ok, {etag, ETag}}} ->
             {ok, ETag};
         %% get-1
-        {value, {ok, _Meta, _Bin} = Ret} ->
+        {value, {ok, _Meta, _Bin, _CMeta} = Ret} ->
             Ret;
         %% get-2
         {value, {ok, match} = Ret} ->

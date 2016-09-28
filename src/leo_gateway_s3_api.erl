@@ -49,7 +49,7 @@
 
 -compile({inline, [handle/2, handle_1/4, handle_2/6,
                    handle_multi_upload_1/8,
-                   handle_multi_upload_2/5,
+                   handle_multi_upload_2/6,
                    handle_multi_upload_3/3,
                    gen_upload_key/1, gen_upload_initiate_xml/3, gen_upload_completion_xml/4,
                    resp_copy_obj_xml/2, request_params/2, auth/5, auth/7, auth_1/7,
@@ -517,7 +517,8 @@ put_object(?BIN_EMPTY, Req, Key, Params) ->
 
 %% @doc POST/PUT operation on Objects. COPY/REPLACE
 %% @private
-put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Params) ->
+put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3,
+                                            custom_metadata = CMetaBin1} = Params) ->
     CS = cow_qs:urldecode(?http_header(Req, ?HTTP_HEAD_X_AMZ_COPY_SOURCE)),
 
     %% need to trim head '/' when cooperating with s3fs(-c)
@@ -535,10 +536,19 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
                                ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
         false ->
             case leo_gateway_rpc_handler:get(CS2) of
-                {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
-                    put_object_1(Directive, Req, Key, Meta, RespObject, Params);
-                {ok, #?METADATA{cnumber = _TotalChunkedObjs} = Meta, _RespObject} ->
-                    put_large_object_1(Directive, Req, Key, Meta, Params);
+                {ok, Meta, RespObject, CMetaBin2} ->
+                    CMetaBin = case Directive of
+                                    ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
+                                        CMetaBin2;
+                                    _ ->
+                                        CMetaBin1
+                                end,
+                    case Meta#?METADATA.cnumber of
+                        0 ->
+                            put_object_1(Directive, Req, Key, Meta, RespObject, Params#req_params{custom_metadata = CMetaBin});
+                        _TotalChunkedObjs ->
+                            put_large_object_1(Directive, Req, Key, Meta, Params#req_params{custom_metadata = CMetaBin})
+                    end;
                 {error, not_found} ->
                     ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
                 {error, unavailable} ->
@@ -553,11 +563,14 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3} = Param
 %% @doc POST/PUT operation on Objects. COPY
 %% @private
 put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket_name = BucketName,
-                                                         bucket_info = BucketInfo} = Params) ->
+                                                         bucket_info = BucketInfo,
+                                                         custom_metadata = CMetaBin} = Params) ->
     Size = size(Bin),
     case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
                                                      body = Bin,
+                                                     meta = CMetaBin,
                                                      dsize = Size,
+                                                     msize = byte_size(CMetaBin),
                                                      bucket_info = BucketInfo}) of
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
             ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
@@ -799,6 +812,7 @@ handle_2({error, _Cause}, Req,_HttpVerb, Key,_ReqParams,State) ->
 
 %% For Multipart Upload - Initiation
 handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key, #req_params{bucket_info = BucketInfo,
+                                                              custom_metadata = CMetaBin,
                                                               path = Path,
                                                               is_upload = true}, State) ->
     %% remove a registered object with 'touch-command'
@@ -815,7 +829,9 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key, #req_params{bucket_info = Buck
     {ok, Req_2} =
         case leo_gateway_rpc_handler:put(#put_req_params{path = UploadKey,
                                                          body = ?BIN_EMPTY,
+                                                         meta = CMetaBin,
                                                          dsize = 0,
+                                                         msize = byte_size(CMetaBin),
                                                          bucket_info = BucketInfo}) of
             {ok, _ETag} ->
                 %% Response xml to a client
@@ -898,6 +914,7 @@ handle_2({ok,_AccessKeyId}, Req, ?HTTP_POST,_Key,
                      transfer_decode_state = TransferDecodeState}, State) when UploadId /= <<>>,
                                                                                PartNum == 0 ->
     Res = cowboy_req:has_body(Req),
+
     {ok, Req_2} = handle_multi_upload_1(
                     Res, Req, Path, UploadId,
                     ChunkedLen, TransferDecodeFun, TransferDecodeState, BucketInfo),
@@ -1082,8 +1099,8 @@ handle_multi_upload_1(true, Req, Path, UploadId,
                       ChunkedLen, TransferDecodeFun, TransferDecodeState, BucketInfo) ->
     Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
 
-    case leo_gateway_rpc_handler:head(Path4Conf) of
-        {ok, _} ->
+    case leo_gateway_rpc_handler:get(Path4Conf) of
+        {ok, _, _, CMetaBin} ->
             _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
             BodyOpts = case TransferDecodeFun of
@@ -1093,7 +1110,7 @@ handle_multi_upload_1(true, Req, Path, UploadId,
                                [{transfer_decode, TransferDecodeFun, TransferDecodeState}]
                        end,
             Ret = cowboy_req:body(Req, BodyOpts),
-            handle_multi_upload_2(Ret, Req, Path, ChunkedLen, BucketInfo);
+            handle_multi_upload_2(Ret, Req, Path, ChunkedLen, BucketInfo, CMetaBin);
         {error, unavailable} ->
             ?reply_service_unavailable_error([?SERVER_HEADER], Path, <<>>, Req);
         _ ->
@@ -1105,14 +1122,15 @@ handle_multi_upload_1(false, Req, Path,_UploadId,_ChunkedLen,_,_,_) ->
                      ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req).
 
 %% @private
--spec(handle_multi_upload_2({ok, Bin, Req}|{error, Cause}, Req, Path, ChunkedLen, BucketInfo) ->
+-spec(handle_multi_upload_2({ok, Bin, Req}|{error, Cause}, Req, Path, ChunkedLen, BucketInfo, CMetaBin) ->
              {ok, Req} when Bin::binary(),
                             Req::cowboy_req:req(),
                             Cause::any(),
                             Path::binary(),
                             ChunkedLen::non_neg_integer(),
-                            BucketInfo::#?BUCKET{}).
-handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen, BucketInfo) ->
+                            BucketInfo::#?BUCKET{},
+                            CMetaBin::binary()).
+handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen, BucketInfo, CMetaBin) ->
     %% trim spaces
     Acc = fun(#xmlText{value = " ",
                        pos = P}, Acc, S) ->
@@ -1137,7 +1155,9 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen, BucketInfo) ->
                                 dsize = ChildObjSize}} ->
                     case leo_gateway_rpc_handler:put(#put_req_params{path = Path,
                                                                      body = ?BIN_EMPTY,
+                                                                     meta = CMetaBin,
                                                                      dsize = Len,
+                                                                     msize = byte_size(CMetaBin),
                                                                      csize = ChildObjSize,
                                                                      total_chunks = TotalUploadedObjs,
                                                                      digest = ETag_1,
@@ -1166,7 +1186,7 @@ handle_multi_upload_2({ok, Bin, Req}, _Req, Path,_ChunkedLen, BucketInfo) ->
             ?error("handle_multi_upload_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
             ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req)
     end;
-handle_multi_upload_2({error, Cause}, Req, Path,_ChunkedLen,_BucketInfo) ->
+handle_multi_upload_2({error, Cause}, Req, Path,_ChunkedLen,_BucketInfo, _CMetaBin) ->
     ?error("handle_multi_upload_2/5", [{key, binary_to_list(Path)}, {cause, Cause}]),
     ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req).
 
@@ -1299,11 +1319,16 @@ request_params(Req, Params) ->
                            false
                    end,
     %% ?debug("request_params/2", "Is AWS Chunked: ~p", [IsAwsChunked]),
+
+    {Headers, _} = cowboy_req:headers(Req),
+    {ok, CMetaBin} = parse_headers_to_cmeta(Headers),
+
     Params#req_params{is_multi_delete = IsMultiDelete,
                       is_upload = IsUpload,
                       is_aws_chunked = IsAwsChunked,
                       upload_id = UploadId,
                       upload_part_num = PartNum,
+                      custom_metadata = CMetaBin,
                       range_header = Range}.
 
 
@@ -2066,3 +2091,26 @@ recursive_find(BucketName, Redundancies, Acc,
                     Error
             end
     end.
+
+%% @doc parse Custom Meta from Headers
+-spec(parse_headers_to_cmeta(Headers) ->
+    {ok, Bin} | {error, Cause} when Headers::list(),
+                                    Bin::binary(),
+                                    Cause::any()).
+parse_headers_to_cmeta(Headers) when is_list(Headers) ->
+    MetaList = lists:foldl(fun(Ele, Acc) ->
+                                   case Ele of
+                                       {<<"x-amz-meta-", _>>, _} ->
+                                           Acc ++ Ele;
+                                       _ ->
+                                           Acc
+                                   end
+                           end, [], Headers),
+    case MetaList of
+        [] ->
+            {ok, <<>>};
+        _ ->
+            {ok, term_to_binary(MetaList)}
+    end;
+parse_headers_to_cmeta(_) ->
+    {error, badarg}.

@@ -516,6 +516,7 @@
           sending_chunked_obj_len    :: pos_integer(),          %% sending chunk length
           qs_prefix = <<>>           :: binary() | none,        %% query string
           range_header               :: string(),               %% range header
+          custom_metadata = <<>>     :: binary(),
           has_inner_cache = false    :: boolean(),              %% has inner-cache?
           is_cached = false          :: boolean(),              %% is cached?
           is_dir = false             :: boolean(),              %% is directory?
@@ -539,6 +540,8 @@
 -record(put_req_params, {
           path = <<>> :: binary(),
           body = <<>> :: binary(),
+          meta = <<>> :: binary(),
+          msize = 0 :: non_neg_integer(),
           dsize = 0 :: non_neg_integer(),
           total_chunks = 0 :: non_neg_integer(),
           cindex = 0 :: non_neg_integer(),
@@ -558,7 +561,9 @@
           mtime        = 0    :: non_neg_integer(),   %% gregorian_seconds
           content_type = <<>> :: binary() | string(), %% from a Content-Type header
           body         = <<>> :: binary(),            %% body (value),
-          size         = 0    :: non_neg_integer(),       %% body size
+          meta         = <<>> :: binary(),            %% custom metadata
+          size         = 0    :: non_neg_integer(),   %% body size
+          msize        = 0    :: non_neg_integer(),   %% custom metadata size
           file_path    = ""   :: file:name_all()      %% file path when this cache is stored on disk
          }).
 
