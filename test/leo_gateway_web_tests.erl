@@ -65,6 +65,7 @@ gen_tests_1(Arg) ->
                fun get_object_invalid_/1,
                fun get_object_notfound_/1,
                fun get_object_normal1_/1,
+               fun get_object_cmeta_normal1_/1,
                fun range_object_normal1_/1,
                fun range_object_normal2_/1,
                fun range_object_normal3_/1,
@@ -209,7 +210,8 @@ setup_s3_api() ->
     application:start(cowboy),
 
     {ok, Options} = leo_gateway_app:get_options(),
-    InitFun = fun() -> leo_gateway_http_commons:start(Options) end,
+    InitFun = fun() -> leo_gateway_http_commons:start(
+                         Options#http_options{port = 8080}) end,
     TermFun = fun() -> leo_gateway_s3_api:stop() end,
     setup(InitFun, TermFun).
 
@@ -220,7 +222,8 @@ setup_rest_api() ->
 
     {ok, Options} = leo_gateway_app:get_options(),
     InitFun = fun() -> leo_gateway_http_commons:start(
-                         Options#http_options{handler = leo_gateway_rest_api}) end,
+                         Options#http_options{handler = leo_gateway_rest_api,
+                                              port = 8080}) end,
     TermFun = fun() -> leo_gateway_rest_api:stop() end,
     setup(InitFun, TermFun).
 
@@ -587,7 +590,8 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    },
-                            <<"body">>}]),
+                            <<"body">>,
+                            <<>>}]),
 
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
@@ -598,6 +602,52 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                 ?assertEqual(200, SC),
                 ?assertEqual("body", Body),
                 ?assertEqual(undefined, proplists:get_value("X-From-Cache", Headers))
+            catch
+                throw:Reason ->
+                    throw(Reason)
+            after
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
+get_object_cmeta_normal1_([_TermFun, _Node0, Node1]) ->
+    fun() ->
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link, non_strict]]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, get, 3,
+                           {ok, #?METADATA{
+                                    key =  <<"">>,
+                                    addr_id    = 0,
+                                    ksize      = 4,
+                                    dsize      = 4,
+                                    msize      = 0,
+                                    csize      = 0,
+                                    cnumber    = 0,
+                                    cindex     = 0,
+                                    offset     = 1,
+                                    clock      = calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
+                                    timestamp  = 19740926,
+                                    checksum   = 0,
+                                    ring_hash  = 0,
+                                    cluster_id = [],
+                                    ver = 0,
+                                    del = ?DEL_FALSE
+                                   },
+                            <<"body">>,
+                            term_to_binary([{"x-amz-meta-test", "custom metadata"}])}]),
+
+            try
+                Date = leo_http:rfc1123_date(leo_date:now()),
+                {ok, {{_, SC, _}, Headers, Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]), [{"Date", Date}, {"connection", "close"}]}, [], []),
+                ?assertEqual(200, SC),
+                ?assertEqual("body", Body),
+                ?assertEqual(undefined, proplists:get_value("X-From-Cache", Headers)),
+                ?assertEqual("custom metadata", proplists:get_value("x-amz-meta-test", Headers))
             catch
                 throw:Reason ->
                     throw(Reason)
@@ -659,7 +709,8 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    },
-                            <<"od">>}]),
+                            <<"od">>,
+                            <<>>}]),
 
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
