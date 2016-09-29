@@ -10,14 +10,12 @@ PLT_FILE = .leo_gateway_dialyzer_plt
 DOT_FILE = leo_gateway.dot
 CALL_GRAPH_FILE = leo_gateway.png
 
-all: deps gen_nfs
-	@$(REBAR) compile
-	@$(REBAR) xref skip_deps=true
-	@$(REBAR) eunit skip_deps=true
+all: deps gen_nfs compile xref eunit
 deps:
 	@$(REBAR) get-deps
 compile:
-	@$(REBAR) compile skip_deps=true
+	find . -name rebar.config|xargs sed -i 's/require_otp_vsn,\s\+"\(.\+\)"/require_otp_vsn, "R16B*|17|18|19"/g'
+	@$(REBAR) compile
 xref:
 	@$(REBAR) xref skip_deps=true
 eunit:
@@ -38,7 +36,7 @@ callgraph: graphviz
 graphviz:
 	$(if $(shell which dot),,$(error "To make the depgraph, you need graphviz installed"))
 clean:
-	@$(REBAR) clean skip_deps=true
+	@$(REBAR) clean
 distclean:
 	@$(REBAR) delete-deps
 	@$(REBAR) clean
