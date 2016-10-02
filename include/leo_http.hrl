@@ -561,7 +561,7 @@
           mtime        = 0    :: non_neg_integer(),   %% gregorian_seconds
           content_type = <<>> :: binary() | string(), %% from a Content-Type header
           body         = <<>> :: binary(),            %% body (value),
-          meta         = <<>> :: binary(),            %% custom metadata
+          cmeta        = <<>> :: binary(),            %% custom metadata
           size         = 0    :: non_neg_integer(),   %% body size
           msize        = 0    :: non_neg_integer(),   %% custom metadata size
           file_path    = ""   :: file:name_all()      %% file path when this cache is stored on disk

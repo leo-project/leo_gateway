@@ -219,10 +219,13 @@ invoke([#redundant_node{node = Node,
         %% put
         {value, {ok, {etag, ETag}}} ->
             {ok, ETag};
-        %% get-1
-        {value, {ok, _Meta, _Bin, _CMeta} = Ret} ->
+        %% get-1: leo_storage's ver is from 1.0 to.1.3.0
+        {value, {ok,_Meta,_Bin}} ->
+            {ok,_Meta,_Bin,<<>>};
+        %% get-2: leo_storage's ver is from 1.3.1
+        {value, {ok,_Meta,_Bin,_CMeta} = Ret} ->
             Ret;
-        %% get-2
+        %% get-3
         {value, {ok, match} = Ret} ->
             Ret;
         %% head/get_dir_meta
