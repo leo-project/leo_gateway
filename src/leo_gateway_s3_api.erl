@@ -2100,8 +2100,8 @@ recursive_find(BucketName, Redundancies, Acc,
 parse_headers_to_cmeta(Headers) when is_list(Headers) ->
     MetaList = lists:foldl(fun(Ele, Acc) ->
                                    case Ele of
-                                       {<<"x-amz-meta-", _>>, _} ->
-                                           Acc ++ Ele;
+                                       {<<"x-amz-meta-", _/binary>>, _} ->
+                                           [Ele | Acc];
                                        _ ->
                                            Acc
                                    end
