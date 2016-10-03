@@ -73,6 +73,7 @@ gen_tests_1(Arg) ->
                fun delete_object_notfound_/1,
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
+               fun put_object_error_metadata_too_large_/1,
                fun put_object_normal1_/1,
                fun put_object_aws_chunked_/1,
                fun put_object_aws_chunked_error_/1
@@ -818,6 +819,7 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
+-define(EUNIT_DEBUG_VAL_DEPTH, 1024).
 put_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
@@ -845,6 +847,33 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
                     throw(Reason)
             after
                 ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
+put_object_error_metadata_too_large_([_TermFun, _Node0, Node1]) ->
+    fun() ->
+            try
+                Date = leo_http:rfc1123_date(leo_date:now()),
+                Dummy = lists:flatten(["test" || _ <- lists:seq(1, ?HTTP_METADATA_LIMIT * 2 div 4)]),
+                %Dummy = crypto:rand_bytes(?HTTP_METADATA_LIMIT * 2),
+                {ok, {SC, Body}} =
+                    httpc:request(put, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]),
+                                        [{"Date", Date}, {"Authorization","auth"}, {"x-amz-meta-test", Dummy}], "image/png", "body"},
+                                  [], [{full_result, false}]),
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_MetadataTooLarge,
+                                     ?XML_ERROR_MSG_MetadataTooLarge,
+                                     "a/b.png", ""]),
+                ?debugVal(Body),
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
+                ?assertEqual(400, SC)
+            catch
+                throw:Reason ->
+                    throw(Reason)
             end,
             ok
     end.
