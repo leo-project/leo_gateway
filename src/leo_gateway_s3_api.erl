@@ -743,42 +743,51 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers},
                                   sending_chunked_obj_len = Props#http_options.sending_chunked_obj_len,
                                   reading_chunked_obj_len = Props#http_options.reading_chunked_obj_len,
                                   threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len}),
-    AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
-    AuthRet_2 = case AuthRet of
-                    {error, Reason} ->
-                        {error, Reason};
-                    {ok, AccessKeyId, _} ->
-                        {ok, AccessKeyId}
-                end,
-    ReqParams_2 = case ReqParams#req_params.is_aws_chunked of
-                      true ->
-                          case AuthRet of
-                              {ok, _, SignParams} ->
-                                  {Signature, SignHead, SignKey} =
-                                      case SignParams of
-                                          undefined ->
-                                              {undefined, undefined, undefined};
-                                          _ ->
-                                              SignParams
-                                      end,
-                                  AWSChunkSignParams = #aws_chunk_sign_params{sign_head = SignHead,
-                                                                              sign_key = SignKey,
-                                                                              prev_sign = Signature,
-                                                                              chunk_sign = <<>>},
-                                  AWSChunkDecState = #aws_chunk_decode_state{buffer = <<>>,
-                                                                             dec_state = wait_size,
-                                                                             chunk_offset = 0,
-                                                                             sign_params = AWSChunkSignParams,
-                                                                             total_len = 0},
-                                  ReqParams#req_params{transfer_decode_fun = fun aws_chunk_decode/2,
-                                                       transfer_decode_state = AWSChunkDecState};
+    case ReqParams of
+        {error, metadata_too_large} ->
+            {ok, Req_3} = ?reply_metadata_too_large([?SERVER_HEADER], Path_1, <<>>, Req_2),
+            {ok, Req_3, State};
+        _ ->
+            AuthRet = auth(Req_2, HTTPMethod, Path_1, TokenLen, ReqParams),
+            AuthRet_2 = case AuthRet of
+                            {error, Reason} ->
+                                {error, Reason};
+                            {ok, AccessKeyId, _} ->
+                                {ok, AccessKeyId}
+                        end,
+            ReqParams_2 = case ReqParams#req_params.is_aws_chunked of
+                              true ->
+                                  case AuthRet of
+                                      {ok, _, SignParams} ->
+                                          {Signature, SignHead, SignKey} =
+                                          case SignParams of
+                                              undefined ->
+                                                  {undefined, undefined, undefined};
+                                              _ ->
+                                                  SignParams
+                                          end,
+                                          AWSChunkSignParams = #aws_chunk_sign_params{
+                                                                  sign_head = SignHead,
+                                                                  sign_key = SignKey,
+                                                                  prev_sign = Signature,
+                                                                  chunk_sign = <<>>},
+                                          AWSChunkDecState = #aws_chunk_decode_state{
+                                                                buffer = <<>>,
+                                                                dec_state = wait_size,
+                                                                chunk_offset = 0,
+                                                                sign_params = AWSChunkSignParams,
+                                                                total_len = 0},
+                                          ReqParams#req_params{
+                                            transfer_decode_fun = fun aws_chunk_decode/2,
+                                            transfer_decode_state = AWSChunkDecState};
+                                      _ ->
+                                          ReqParams
+                                  end;
                               _ ->
                                   ReqParams
-                          end;
-                      _ ->
-                          ReqParams
-                  end,
-    handle_2(AuthRet_2, Req_2, HTTPMethod, Path_1, ReqParams_2, State).
+                          end,
+            handle_2(AuthRet_2, Req_2, HTTPMethod, Path_1, ReqParams_2, State)
+    end.
 
 
 %% @doc Handle a request (sub)
@@ -1323,13 +1332,18 @@ request_params(Req, Params) ->
     {Headers, _} = cowboy_req:headers(Req),
     {ok, CMetaBin} = parse_headers_to_cmeta(Headers),
 
-    Params#req_params{is_multi_delete = IsMultiDelete,
-                      is_upload = IsUpload,
-                      is_aws_chunked = IsAwsChunked,
-                      upload_id = UploadId,
-                      upload_part_num = PartNum,
-                      custom_metadata = CMetaBin,
-                      range_header = Range}.
+    case byte_size(CMetaBin) of
+        MSize when MSize >= ?HTTP_METADATA_LIMIT ->
+            {error, metadata_too_large};
+        _ ->
+            Params#req_params{is_multi_delete = IsMultiDelete,
+                              is_upload = IsUpload,
+                              is_aws_chunked = IsAwsChunked,
+                              upload_id = UploadId,
+                              upload_part_num = PartNum,
+                              custom_metadata = CMetaBin,
+                              range_header = Range}
+    end.
 
 
 %% @doc check if bucket is public-read
@@ -2100,8 +2114,8 @@ recursive_find(BucketName, Redundancies, Acc,
 parse_headers_to_cmeta(Headers) when is_list(Headers) ->
     MetaList = lists:foldl(fun(Ele, Acc) ->
                                    case Ele of
-                                       {<<"x-amz-meta-", _>>, _} ->
-                                           Acc ++ Ele;
+                                       {<<"x-amz-meta-", _/binary>>, _} ->
+                                           [Ele | Acc];
                                        _ ->
                                            Acc
                                    end

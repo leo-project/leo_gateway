@@ -177,24 +177,26 @@ get_object_error_([_Node0, Node1]) ->
 
 get_object_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link, non_strict]]),
+    CMetaBin = term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get,
                                         fun(_Addr, Key, _ReqId) ->
                                                 {ok,
                                                  #?METADATA{
                                                      key = Key,
+                                                     meta = CMetaBin,
+                                                     msize = byte_size(CMetaBin),
                                                      dsize = 4,
                                                      del = 0
                                                     },
-                                                 <<"body">>,
-                                                 term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}])
+                                                 <<"body">>
                                                 }
                                         end]),
     KEY = <<"bucket/key">>,
-    {ok, Meta, Body, CMetaBin} = leo_gateway_rpc_handler:get(KEY),
+    {ok, Meta, Body} = leo_gateway_rpc_handler:get(KEY),
     ?assertEqual(4, Meta#?METADATA.dsize),
     ?assertEqual(KEY, Meta#?METADATA.key),
     ?assertEqual(<<"body">>, Body),
-    ?assertEqual(term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]), CMetaBin),
+    ?assertEqual(term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]), Meta#?METADATA.meta),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.
 
@@ -228,24 +230,26 @@ get_object_with_etag_error_([_Node0, Node1]) ->
 
 get_object_with_etag_normal1_([_Node0, Node1]) ->
     ok = rpc:call(Node1, meck, new,    [leo_storage_handler_object, [no_link, non_strict]]),
+    CMetaBin = term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]),
     ok = rpc:call(Node1, meck, expect, [leo_storage_handler_object, get,
                                         fun(_Addr, Key, _Etag, _ReqId) ->
                                                 {ok,
                                                  #?METADATA{
                                                      key = Key,
+                                                     meta = CMetaBin,
+                                                     msize = byte_size(CMetaBin),
                                                      dsize = 4,
                                                      del = 0
                                                     },
-                                                 <<"body">>,
-                                                 term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}])
+                                                 <<"body">>
                                                 }
                                         end]),
     KEY = <<"bucket/key">>,
-    {ok, Meta, Body, CMetaBin} = leo_gateway_rpc_handler:get(KEY, 123),
+    {ok, Meta, Body} = leo_gateway_rpc_handler:get(KEY, 123),
     ?assertEqual(4, Meta#?METADATA.dsize),
     ?assertEqual(KEY, Meta#?METADATA.key),
     ?assertEqual(<<"body">>, Body),
-    ?assertEqual(term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]), CMetaBin),
+    ?assertEqual(term_to_binary([{<<"x-amz-meta-test">>, <<"cmeta">>}]), Meta#?METADATA.meta),
     ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object]),
     ok.
 

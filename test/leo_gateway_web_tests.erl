@@ -73,6 +73,7 @@ gen_tests_1(Arg) ->
                fun delete_object_notfound_/1,
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
+               fun put_object_error_metadata_too_large_/1,
                fun put_object_normal1_/1,
                fun put_object_aws_chunked_/1,
                fun put_object_aws_chunked_error_/1
@@ -318,6 +319,7 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
                                     addr_id    = 0,
                                     ksize      = 8,
                                     dsize      = 0,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -449,6 +451,7 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     addr_id    = 0,
                                     ksize      = 4,
                                     dsize      = 16384,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -577,6 +580,7 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     addr_id    = 0,
                                     ksize      = 4,
                                     dsize      = 4,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -590,8 +594,7 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    },
-                            <<"body">>,
-                            <<>>}]),
+                            <<"body">>}]),
 
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
@@ -615,6 +618,8 @@ get_object_cmeta_normal1_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
                           [leo_storage_handler_object, [no_link, non_strict]]),
+
+            CMetaBin = term_to_binary([{"x-amz-meta-test", "custom metadata"}]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3,
                            {ok, #?METADATA{
@@ -622,7 +627,8 @@ get_object_cmeta_normal1_([_TermFun, _Node0, Node1]) ->
                                     addr_id    = 0,
                                     ksize      = 4,
                                     dsize      = 4,
-                                    msize      = 0,
+                                    meta       = CMetaBin,
+                                    msize      = byte_size(CMetaBin),
                                     csize      = 0,
                                     cnumber    = 0,
                                     cindex     = 0,
@@ -635,8 +641,7 @@ get_object_cmeta_normal1_([_TermFun, _Node0, Node1]) ->
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    },
-                            <<"body">>,
-                            term_to_binary([{"x-amz-meta-test", "custom metadata"}])}]),
+                            <<"body">>}]),
 
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
@@ -675,6 +680,7 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     addr_id    = 0,
                                     ksize      = 4,
                                     dsize      = 16384,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -696,6 +702,7 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     addr_id    = 0,
                                     ksize      = 2,
                                     dsize      = 2,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -709,8 +716,7 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     ver = 0,
                                     del = ?DEL_FALSE
                                    },
-                            <<"od">>,
-                            <<>>}]),
+                            <<"od">>}]),
 
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
@@ -818,6 +824,7 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
+-define(EUNIT_DEBUG_VAL_DEPTH, 1024).
 put_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
@@ -845,6 +852,32 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
                     throw(Reason)
             after
                 ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
+put_object_error_metadata_too_large_([_TermFun, _Node0, _Node1]) ->
+    fun() ->
+            try
+                Date = leo_http:rfc1123_date(leo_date:now()),
+                Dummy = lists:flatten(["test" || _ <- lists:seq(1, ?HTTP_METADATA_LIMIT * 2 div 4)]),
+                %Dummy = crypto:rand_bytes(?HTTP_METADATA_LIMIT * 2),
+                {ok, {SC, Body}} =
+                    httpc:request(put, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]),
+                                        [{"Date", Date}, {"Authorization","auth"}, {"x-amz-meta-test", Dummy}], "image/png", "body"},
+                                  [], [{full_result, false}]),
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_MetadataTooLarge,
+                                     ?XML_ERROR_MSG_MetadataTooLarge,
+                                     "a/b.png", ""]),
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
+                ?assertEqual(400, SC)
+            catch
+                throw:Reason ->
+                    throw(Reason)
             end,
             ok
     end.
