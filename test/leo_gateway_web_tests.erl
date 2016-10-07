@@ -824,6 +824,7 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
+-undef(EUNIT_DEBUG_VAL_DEPTH).
 -define(EUNIT_DEBUG_VAL_DEPTH, 1024).
 put_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
