@@ -468,7 +468,7 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                            }]),
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
-                {ok, {{_, SC, _}, Headers, _Body}} =
+                {ok, {{_, SC, _},_Headers, _Body}} =
                     httpc:request(head, {lists:append(["http://",
                                                        ?TARGET_HOST,
                                                        ":8080/a/b/c/d.png"]), [{"Date", Date}, {"connection", "close"}]}, [], []),
