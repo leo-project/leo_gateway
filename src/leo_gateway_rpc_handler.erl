@@ -57,7 +57,7 @@
 %% @doc Retrieve a metadata from the storage-cluster
 %%
 -spec(head(binary()) ->
-             {ok, #?METADATA{}, binary()}|{error, any()}).
+             {ok, #?METADATA{}}|{error, any()}).
 head(Key) ->
     ReqParams = get_request_parameters(head, Key),
     invoke(ReqParams#rpc_params.redundancies,
@@ -69,7 +69,7 @@ head(Key) ->
 %% @doc Retrieve an object from the storage-cluster
 %%
 -spec(get(binary()) ->
-             {ok, #?METADATA{}, binary(), binary()}|{error, any()}).
+             {ok, #?METADATA{}, binary()}|{error, any()}).
 get(Key) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -79,7 +79,7 @@ get(Key) ->
            [ReqParams#rpc_params.addr_id, Key, ReqParams#rpc_params.req_id],
            []).
 -spec(get(binary(), integer()) ->
-             {ok, match}|{ok, #?METADATA{}, binary(), binary()}|{error, any()}).
+             {ok, match}|{ok, #?METADATA{}, binary()}|{error, any()}).
 get(Key, ETag) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -90,7 +90,7 @@ get(Key, ETag) ->
            []).
 
 -spec(get(binary(), integer(), integer()) ->
-             {ok, #?METADATA{}, binary(), binary()}|{error, any()}).
+             {ok, #?METADATA{}, binary()}|{error, any()}).
 get(Key, StartPos, EndPos) ->
     ok = leo_metrics_req:notify(?STAT_COUNT_GET),
     ReqParams = get_request_parameters(get, Key),
@@ -219,13 +219,10 @@ invoke([#redundant_node{node = Node,
         %% put
         {value, {ok, {etag, ETag}}} ->
             {ok, ETag};
-        %% get-1: leo_storage's ver is from 1.0 to.1.3.0
-        {value, {ok,_Meta,_Bin}} ->
-            {ok,_Meta,_Bin,<<>>};
-        %% get-2: leo_storage's ver is from 1.3.1
-        {value, {ok,_Meta,_Bin,_CMeta} = Ret} ->
+        %% get-1
+        {value, {ok,_Meta,_Bin} = Ret} ->
             Ret;
-        %% get-3
+        %% get-2
         {value, {ok, match} = Ret} ->
             Ret;
         %% head/get_dir_meta
