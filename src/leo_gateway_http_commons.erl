@@ -1121,7 +1121,7 @@ get_range_object_large( Req, BucketName, Key, Start, End,
             get_range_object_large(Req, BucketName, Key, Start, End,
                                    Total, Index + 1, NewPos, TransportRec);
 
-        {ok, #?METADATA{cnumber = GrandChildNum}, _} ->
+        {ok, #?METADATA{cnumber = GrandChildNum}} ->
             case get_range_object_large(Req, BucketName, Key2, Start, End,
                                         GrandChildNum, 0, CurPos, TransportRec) of
                 {ok, NewPos} ->

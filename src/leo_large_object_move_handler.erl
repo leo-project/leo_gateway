@@ -120,9 +120,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% @doc Retrieve chunk object
 %% @private
-get_chunk_obj({ok, #?METADATA{cnumber = 0}, Bin, _}, _Key, Iter) ->
+get_chunk_obj({ok, #?METADATA{cnumber = 0}, Bin}, _Key, Iter) ->
     {{ok, Bin}, Iter};
-get_chunk_obj({ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin, _}, Key, Iter) ->
+get_chunk_obj({ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin}, Key, Iter) ->
     Iter_1 = leo_large_object_commons:iterator_set_chunked(
                Iter, Key, TotalChunkedObjs),
     {Key_1, Iter_2} = leo_large_object_commons:iterator_next(Iter_1),
@@ -132,7 +132,7 @@ get_chunk_obj({ok, #?METADATA{cnumber = TotalChunkedObjs}, _Bin, _}, Key, Iter) 
             {done, Iter_2};
         _ ->
             case leo_gateway_rpc_handler:get(Key_1) of
-                {ok, _, Bin2, _} ->
+                {ok, _, Bin2} ->
                     {{ok, Bin2}, Iter_2};
                 {error, Cause} = Error ->
                     ?error("handle_call/3",
