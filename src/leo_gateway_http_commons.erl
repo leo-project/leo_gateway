@@ -384,7 +384,13 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                        {?HTTP_HEAD_X_FROM_CACHE, <<"True/via disk">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
+            Headers2 = case CacheObj#cache.cmeta of
+                           <<>> ->
+                               Headers ++ CustomHeaders;
+                           CMetaBin ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers ++ CustomHeaders
+                       end,
 
             case file:open(Path, [raw, read]) of
                 {ok, Fd} ->
@@ -424,7 +430,14 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                        {?HTTP_HEAD_X_FROM_CACHE, <<"True/via memory">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
+            Headers2 = case CacheObj#cache.cmeta of
+                           <<>> ->
+                               Headers ++ CustomHeaders;
+                           CMetaBin ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers ++ CustomHeaders
+                       end,
+
             BodyFunc = fun(Socket, Transport) ->
                                leo_net:chunked_send(
                                  Transport, Socket, CacheObj#cache.body, SendChunkLen)
