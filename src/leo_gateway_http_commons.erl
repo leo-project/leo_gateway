@@ -916,7 +916,7 @@ head_object(Req, Key, #req_params{bucket_name = BucketName}) ->
                                CMeta ++ Headers
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, fun() -> void end, Req);
-        {ok, #?METADATA{del = 1}, _} ->
+        {ok, #?METADATA{del = 1}} ->
             ?access_log_head(BucketName, Key, ?HTTP_ST_NOT_FOUND),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, Cause} ->
