@@ -536,13 +536,13 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3,
                                ?XML_ERROR_MSG_InvalidRequest, Key, <<>>, Req);
         false ->
             case leo_gateway_rpc_handler:get(CS2) of
-                {ok, Meta, RespObject, CMetaBin2} ->
+                {ok, Meta, RespObject} ->
                     CMetaBin = case Directive of
-                                    ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
-                                        CMetaBin2;
-                                    _ ->
-                                        CMetaBin1
-                                end,
+                                   ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
+                                       Meta#?METADATA.meta;
+                                   _ ->
+                                       CMetaBin1
+                               end,
                     case Meta#?METADATA.cnumber of
                         0 ->
                             put_object_1(Directive, Req, Key, Meta, RespObject, Params#req_params{custom_metadata = CMetaBin});
@@ -1109,7 +1109,7 @@ handle_multi_upload_1(true, Req, Path, UploadId,
     Path4Conf = << Path/binary, ?STR_NEWLINE, UploadId/binary >>,
 
     case leo_gateway_rpc_handler:get(Path4Conf) of
-        {ok, _, _, CMetaBin} ->
+        {ok, #?METADATA{meta = CMetaBin}, _} ->
             _ = leo_gateway_rpc_handler:delete(Path4Conf),
 
             BodyOpts = case TransferDecodeFun of
