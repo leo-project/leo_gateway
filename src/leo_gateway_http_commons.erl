@@ -384,32 +384,45 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                        {?HTTP_HEAD_X_FROM_CACHE, <<"True/via disk">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = case CacheObj#cache.cmeta of
-                           <<>> ->
-                               Headers ++ CustomHeaders;
-                           CMetaBin ->
-                               CMeta = binary_to_term(CMetaBin),
-                               CMeta ++ Headers ++ CustomHeaders
-                       end,
-
-            case file:open(Path, [raw, read]) of
-                {ok, Fd} ->
-                    ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK),
-                    BodyFunc = fun(Socket,_Transport) ->
-                                       case file:sendfile(Fd, Socket, 0, 0,
-                                                          [{chunk_size, SendChunkLen}]) of
-                                           {ok,_} ->
-                                               void;
-                                           {error, Cause} ->
-                                               ?warn("get_object_with_cache/4",
-                                                     [{key, Path},
-                                                      {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
-                                                      {cause, Cause}])
-                                       end,
-                                       _ = file:close(Fd),
-                                       ok
+            
+            case leo_gateway_rpc_handler:head(Key) of
+                {ok, #?METADATA{meta = CMetaBin}} ->
+                    Headers2 = case CMetaBin of
+                                   <<>> ->
+                                       Headers ++ CustomHeaders;
+                                   _ ->
+                                       CMeta = binary_to_term(CMetaBin),
+                                       CMeta ++ Headers ++ CustomHeaders
                                end,
-                    cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
+
+                    case file:open(Path, [raw, read]) of
+                        {ok, Fd} ->
+                            ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK),
+                            BodyFunc = fun(Socket,_Transport) ->
+                                               case file:sendfile(Fd, Socket, 0, 0,
+                                                                  [{chunk_size, SendChunkLen}]) of
+                                                   {ok,_} ->
+                                                       void;
+                                                   {error, Cause} ->
+                                                       ?warn("get_object_with_cache/4",
+                                                             [{key, Path},
+                                                              {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
+                                                              {cause, Cause}])
+                                               end,
+                                               _ = file:close(Fd),
+                                               ok
+                                       end,
+                            cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
+                        {error, Reason} ->
+                            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
+
+                            catch leo_cache_api:delete(Key),
+                            ?warn("get_object_with_cache/4",
+                                  [{key, Path},
+                                   {summary, ?ERROR_COULD_NOT_OPEN_DISK_CACHE},
+                                   {cause, Reason}]),
+                            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
+                    end;
                 {error, Reason} ->
                     ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
 
