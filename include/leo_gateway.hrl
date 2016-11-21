@@ -351,168 +351,198 @@
             end
         end).
 
--define(access_log_get(_Bucket,_Path,_Size,_Response),
+-define(access_log_get(_Bucket,_Path,_Size,_Response,_Begin),
+        begin
+            ?access_log_get(_Bucket,_Path,_Size,_Response,_Begin,"miss")
+        end).
+-define(access_log_get(_Bucket,_Path,_Size,_Response,_Begin,_Cache),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        _OrgPath,
                                        _ChildNum,
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response]}})
+                                       _Response,
+                                       _Latency,
+                                       _Cache
+                                      ]}
+              })
             %% ?notify_metrics(<<"GET">>,_Bucket,_Size)
         end).
--define(access_log_put(_Bucket,_Path,_Size,_Response),
+-define(access_log_put(_Bucket,_Path,_Size,_Response,_Begin),
         begin
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        _OrgPath,
                                        _ChildNum,
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response
+                                       _Response,
+                                       _Latency,
+                                       ""
                                       ]}
               })
             %% ?notify_metrics(<<"PUT">>,_Bucket,_Size)
         end).
--define(access_log_delete(_Bucket,_Path,_Size,_Response),
+-define(access_log_delete(_Bucket,_Path,_Size,_Response,_Begin),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        _OrgPath,
                                        _ChildNum,
                                        _Size,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response
+                                       _Response,
+                                       _Latency,
+                                       ""
                                       ]}
               })
             %% ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
         end).
--define(access_log_head(_Bucket,_Path,_Response),
+-define(access_log_head(_Bucket,_Path,_Response,_Begin),
         begin
             {_OrgPath, _ChildNum} = ?get_child_num(binary_to_list(_Path)),
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        _OrgPath,
                                        _ChildNum,
                                        0,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response
+                                       _Response,
+                                       _Latency,
+                                       ""
                                       ]}
               })
         end).
 
--define(access_log(_Method,_Bucket,_Path,_Size,_Response),
+-define(access_log(_Method,_Bucket,_Path,_Size,_Response,_Begin),
         begin
             case _Method of
                 get ->
-                    ?access_log_get(_Bucket,_Path,_Size,_Response);
+                    ?access_log_get(_Bucket,_Path,_Size,_Response,_Begin);
                 put ->
-                    ?access_log_put(_Bucket,_Path,_Size,_Response);
+                    ?access_log_put(_Bucket,_Path,_Size,_Response,_Begin);
                 delete ->
-                    ?access_log_delete(_Bucket,_Path,_Size,_Response);
+                    ?access_log_delete(_Bucket,_Path,_Size,_Response,_Begin);
                 head ->
-                    ?access_log_head(_Bucket,_Path,_Response)
+                    ?access_log_head(_Bucket,_Path,_Response,_Begin)
             end
         end).
 
 %% access-log for buckets
--define(access_log_bucket_put(_Bucket,_Response),
+-define(access_log_bucket_put(_Bucket,_Response,_Begin),
         begin
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[BUCKET-PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[BUCKET-PUT]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        "",
                                        0,
                                        0,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response
+                                       _Response,
+                                       _Latency,
+                                       ""
                                       ]}
               })
             %% ?notify_metrics(<<"PUT">>,_Bucket,_Size)
         end).
--define(access_log_bucket_delete(_Bucket,_Response),
+-define(access_log_bucket_delete(_Bucket,_Response,_Begin),
         begin
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[BUCKET-DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[BUCKET-DELETE]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        "",
                                        0,
                                        0,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response
+                                       _Response,
+                                       _Latency,
+                                       ""
                                       ]}
               })
             %% ?notify_metrics(<<"DELETE">>,_Bucket,_Size)
         end).
--define(access_log_bucket_head(_Bucket,_Response),
+-define(access_log_bucket_head(_Bucket,_Response,_Begin),
         begin
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[BUCKET-HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[BUCKET-HEAD]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        "",
                                        0,
                                        0,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response
+                                       _Response,
+                                       _Latency,
+                                       ""
                                       ]}
               })
         end).
--define(access_log_bucket_get(_Bucket, _Prefix, _Response),
+-define(access_log_bucket_get(_Bucket, _Prefix, _Response,_Begin),
         begin
+            _Latency = erlang:round((leo_date:clock() - _Begin) / 1000),
             leo_logger_client_base:append(
               {?LOG_ID_ACCESS,
-               #message_log{format  = "[BUCKET-GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\n",
+               #message_log{format  = "[BUCKET-GET]\t~s\t~s\t~w\t~w\t~s\t~w\t~w\t~w\t~s\n",
                             message = [binary_to_list(_Bucket),
                                        binary_to_list(_Prefix),
                                        0,
                                        0,
                                        leo_date:date_format(),
                                        leo_date:clock(),
-                                       _Response
+                                       _Response,
+                                       _Latency,
+                                       ""
                                       ]}
               })
         end).
 
--define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len),
+-define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len,_Begin),
         case _Cause of
             not_found ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND);
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND,_Begin);
             unavailable ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE);
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE,_Begin);
             timeout ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT);
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT,_Begin);
             bad_range ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE);
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE,_Begin);
             _ ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR)
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR,_Begin)
         end).
 
--define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len,_Req),
+-define(reply_fun(_Cause,_Method,_Bucket,_Key,_Len,_Req,_Begin),
         case _Cause of
             not_found ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND),
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_NOT_FOUND,_Begin),
                 case _Method of
                     delete ->
                         ?reply_no_content([?SERVER_HEADER], Req);
@@ -522,15 +552,15 @@
                         ?reply_not_found([?SERVER_HEADER],_Key, <<>>,_Req)
                 end;
             unavailable ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE),
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_SERVICE_UNAVAILABLE,_Begin),
                 ?reply_service_unavailable_error([?SERVER_HEADER],_Key, <<>>,_Req);
             timeout ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT),
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_GATEWAY_TIMEOUT,_Begin),
                 ?reply_timeout([?SERVER_HEADER],_Key, <<>>,_Req);
             bad_range ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE),
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_BAD_RANGE,_Begin),
                 ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
             _ ->
-                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR),
+                ?access_log(_Method,_Bucket,_Key,_Len, ?HTTP_ST_INTERNAL_ERROR,_Begin),
                 ?reply_internal_error([?SERVER_HEADER],_Key, <<>>,_Req)
         end).

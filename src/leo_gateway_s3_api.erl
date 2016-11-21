@@ -221,6 +221,7 @@ onresponse(CacheCondition) ->
 get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl = false,
                                  qs_prefix = Prefix}) ->
+    BeginTime = leo_date:clock(),
     NormalizedMarker = case cowboy_req:qs_val(?HTTP_QS_BIN_MARKER, Req) of
                            {undefined,_} ->
                                <<>>;
@@ -261,25 +262,25 @@ get_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
 
     case get_bucket_1(AccessKeyId, Key, Delimiter, NormalizedMarker, MaxKeys, Prefix) of
         {ok, XMLRet} ->
-            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_OK),
+            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_OK, BeginTime),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_CONTENT_TYPE, ?HTTP_CTYPE_XML}],
             ?reply_ok(Header, XMLRet, Req);
         {error, badarg} ->
-            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_BAD_REQ),
+            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_BAD_REQ, BeginTime),
             ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
                                ?XML_ERROR_MSG_InvalidArgument, Key, <<>>, Req);
         {error, not_found} ->
-            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_NOT_FOUND),
+            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_NOT_FOUND, BeginTime),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
         {error, unavailable} ->
-            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_SERVICE_UNAVAILABLE),
+            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_SERVICE_UNAVAILABLE, BeginTime),
             ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_INTERNAL_ERROR),
+            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_INTERNAL_ERROR, BeginTime),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req);
         {error, timeout} ->
-            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_SERVICE_UNAVAILABLE),
+            ?access_log_bucket_get(Key, PrefixBin, ?HTTP_ST_SERVICE_UNAVAILABLE, BeginTime),
             ?reply_timeout([?SERVER_HEADER], Key, <<>>, Req)
     end;
 get_bucket(Req, Bucket, #req_params{access_key_id = _AccessKeyId,
@@ -305,6 +306,7 @@ get_bucket(Req, Bucket, #req_params{access_key_id = _AccessKeyId,
                             ReqParams::#req_params{}).
 put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                                  is_acl = false}) ->
+    BeginTime = leo_date:clock(),
     Bucket = formalize_bucket(Key),
     CannedACL = string:to_lower(binary_to_list(?http_header(Req, ?HTTP_HEAD_X_AMZ_ACL))),
     %% Consume CreateBucketConfiguration
@@ -317,7 +319,7 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
             end,
     case put_bucket_1(CannedACL, AccessKeyId, Bucket) of
         ok ->
-            ?access_log_bucket_put(Bucket, ?HTTP_ST_OK),
+            ?access_log_bucket_put(Bucket, ?HTTP_ST_OK, BeginTime),
             ?reply_ok([?SERVER_HEADER], Req_1);
         {error, ?ERR_TYPE_INTERNAL_ERROR} ->
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req_1);
@@ -360,14 +362,20 @@ put_bucket(Req, Key, #req_params{access_key_id = AccessKeyId,
                             Key::binary(),
                             ReqParams::#req_params{}).
 delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    BeginTime = leo_date:clock(),
+    Bucket = formalize_bucket(Key),
     case delete_bucket_1(AccessKeyId, Key) of
         ok ->
-            Bucket = formalize_bucket(Key),
-            ?access_log_bucket_delete(Bucket, ?HTTP_ST_NO_CONTENT),
+            ?access_log_bucket_delete(Bucket, ?HTTP_ST_NO_CONTENT, BeginTime),
             ?reply_no_content([?SERVER_HEADER], Req);
         not_found ->
+            ?access_log_bucket_delete(Bucket, ?HTTP_ST_NOT_FOUND, BeginTime),
             ?reply_not_found([?SERVER_HEADER], Key, <<>>, Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
+        {error, timeout} ->
+            ?access_log_bucket_delete(Bucket, ?HTTP_ST_SERVICE_UNAVAILABLE, BeginTime),
+            ?reply_timeout_without_body([?SERVER_HEADER], Req);
+        {error, _} ->
+            ?access_log_bucket_delete(Bucket, ?HTTP_ST_INTERNAL_ERROR, BeginTime),
             ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
     end.
 
@@ -378,17 +386,21 @@ delete_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
                             Key::binary(),
                             ReqParams::#req_params{}).
 head_bucket(Req, Key, #req_params{access_key_id = AccessKeyId}) ->
+    BeginTime = leo_date:clock(),
     Bucket = formalize_bucket(Key),
     case head_bucket_1(AccessKeyId, Bucket) of
         ok ->
-            ?access_log_bucket_head(Bucket, ?HTTP_ST_OK),
+            ?access_log_bucket_head(Bucket, ?HTTP_ST_OK, BeginTime),
             ?reply_ok([?SERVER_HEADER], Req);
         not_found ->
+            ?access_log_bucket_head(Bucket, ?HTTP_ST_NOT_FOUND, BeginTime),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error_without_body([?SERVER_HEADER], Req);
         {error, timeout} ->
-            ?reply_timeout_without_body([?SERVER_HEADER], Req)
+            ?access_log_bucket_head(Bucket, ?HTTP_ST_SERVICE_UNAVAILABLE, BeginTime),
+            ?reply_timeout_without_body([?SERVER_HEADER], Req);
+        {error, _} ->
+            ?access_log_bucket_delete(Bucket, ?HTTP_ST_INTERNAL_ERROR, BeginTime),
+            ?reply_internal_error_without_body([?SERVER_HEADER], Req)
     end.
 
 
@@ -565,6 +577,7 @@ put_object(Directive, Req, Key, #req_params{handler = ?PROTO_HANDLER_S3,
 put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket_name = BucketName,
                                                          bucket_info = BucketInfo,
                                                          custom_metadata = CMetaBin} = Params) ->
+    BeginTime = leo_date:clock(),
     Size = size(Bin),
     case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
                                                      body = Bin,
@@ -573,7 +586,7 @@ put_object_1(Directive, Req, Key, Meta, Bin, #req_params{bucket_name = BucketNam
                                                      msize = byte_size(CMetaBin),
                                                      bucket_info = BucketInfo}) of
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_COPY ->
-            ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
+            ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK, BeginTime),
             resp_copy_obj_xml(Req, Meta);
         {ok, _ETag} when Directive == ?HTTP_HEAD_X_AMZ_META_DIRECTIVE_REPLACE ->
             put_object_2(Req, Key, Meta, Params);
@@ -597,9 +610,10 @@ put_object_2(Req, Key, Meta, Params) ->
 
 %% @private
 put_object_3(Req, #?METADATA{key = Key, dsize = Size} = Meta, #req_params{bucket_name = BucketName}) ->
+    BeginTime = leo_date:clock(),
     case leo_gateway_rpc_handler:delete(Meta#?METADATA.key) of
         ok ->
-            ?access_log_delete(BucketName, Key, Size, ?HTTP_ST_NO_CONTENT),
+            ?access_log_delete(BucketName, Key, Size, ?HTTP_ST_NO_CONTENT, BeginTime),
             resp_copy_obj_xml(Req, Meta);
         {error, not_found} ->
             resp_copy_obj_xml(Req, Meta);
@@ -1969,9 +1983,10 @@ delete_multi_objects_4(Req, IsQuiet, [Key|Rest], DeletedKeys, ErrorKeys,
     Path = << BucketName/binary, <<"/">>/binary, BinKey/binary >>,
     case leo_gateway_rpc_handler:head(Path) of
         {ok, Meta} ->
+            BeginTime = leo_date:clock(),
             case leo_gateway_rpc_handler:delete(Path) of
                 ok ->
-                    ?access_log_delete(BucketName, Path, Meta#?METADATA.dsize, ?HTTP_ST_NO_CONTENT),
+                    ?access_log_delete(BucketName, Path, Meta#?METADATA.dsize, ?HTTP_ST_NO_CONTENT, BeginTime),
                     delete_multi_objects_4(Req, IsQuiet, Rest,
                                            [Key|DeletedKeys], ErrorKeys, Params);
                 {error, not_found} ->
