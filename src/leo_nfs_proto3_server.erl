@@ -77,6 +77,7 @@
 -define(NFS3ERR_NOENT,    'NFS3ERR_NOENT').
 -define(NFS3ERR_IO,       'NFS3ERR_IO').
 -define(NFS3ERR_NOTEMPTY, 'NFS3ERR_NOTEMPTY').
+-define(NFS3ERR_BADHANDLE,'NFS3ERR_BADHANDLE').
 
 
 %% ---------------------------------------------------------------------
@@ -115,17 +116,20 @@ nfsproc3_null_3(_Clnt, State) ->
 
 %% @doc
 nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
-    {ok, Path} = leo_nfs_state_ets:get_path(UID),
-    ?debug("nfsproc3_getattr_3", "path:~p client:~p", [Path, Clnt]),
-    case getattr(Path) of
-        {ok, Meta} ->
-            {reply, {?NFS3_OK, {Meta}}, State};
-        not_found ->
-            {reply, {?NFS3ERR_NOENT, void}, State};
-        {error, Reason} ->
-            {reply, {?NFS3ERR_IO, Reason}, State}
+    case leo_nfs_state_ets:get_path(UID) of
+        {ok, Path} ->
+            ?debug("nfsproc3_getattr_3", "path:~p client:~p", [Path, Clnt]),
+            case getattr(Path) of
+                {ok, Meta} ->
+                    {reply, {?NFS3_OK, {Meta}}, State};
+                not_found ->
+                    {reply, {?NFS3ERR_NOENT, void}, State};
+                {error, Reason} ->
+                    {reply, {?NFS3ERR_IO, Reason}, State}
+            end;
+        _ ->
+            {reply, {?NFS3ERR_BADHANDLE, void}, State}
     end.
-
 
 %% @doc
 %% @todo for now do nothing

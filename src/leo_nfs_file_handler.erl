@@ -233,9 +233,8 @@ write(Key, Start, End, Bin) ->
         {error, not_found} when IsLarge =:= false ->
             write_nothing2small(Key, Start, End, Bin);
         {error, Cause} ->
-            ?debug("write/4","Cause: ~p",[Cause])
-            {error, Cause};
-
+            ?debug("write/4","Cause: ~p",[Cause]),
+            {error, Cause}
     end.
 
 %% @private
@@ -403,24 +402,24 @@ large_obj_partial_update(Key, Bin, Index) ->
         {error, Cause} ->
             {error, Cause}
     end.
-large_obj_partial_update(Key, Bin, Index, Offset, Size) ->
+large_obj_partial_update(Key, Data, Index, Offset, Size) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
     Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
     case leo_gateway_rpc_handler:get(Key_1) of
         {ok, Metadata, Bin} ->
             Bin_1 = case Offset > Metadata#?METADATA.dsize of
                         true ->
-                            << Bin/binary, 0:(8*(Offset - Metadata#?METADATA.dsize)), Bin/binary >>;
+                            << Bin/binary, 0:(8*(Offset - Metadata#?METADATA.dsize)), Data/binary >>;
                         false ->
                             case (Offset + Size + 1) < Metadata#?METADATA.dsize of
                                 true ->
                                     End = Offset + Size,
                                     << Head:Offset/binary,_/binary >> = Bin,
                                     << _:End/binary, Tail/binary >> = Bin,
-                                    << Head/binary, Bin/binary, Tail/binary >>;
+                                    << Head/binary, Data/binary, Tail/binary >>;
                                 false ->
                                     << Head:Offset/binary,_/binary >> = Bin,
-                                    << Head/binary, Bin/binary >>
+                                    << Head/binary, Data/binary >>
                             end
                     end,
             case leo_gateway_rpc_handler:put(
@@ -434,7 +433,7 @@ large_obj_partial_update(Key, Bin, Index, Offset, Size) ->
                     {error, Cause}
             end;
         {error, not_found} ->
-            Bin_1 = << 0:(Offset*8), Bin/binary >>,
+            Bin_1 = << 0:(Offset*8), Data/binary >>,
             case leo_gateway_rpc_handler:put(
                    #put_req_params{path = Key_1,
                                    body = Bin_1,
