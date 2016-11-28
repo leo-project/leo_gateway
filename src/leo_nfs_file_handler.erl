@@ -226,14 +226,16 @@ write(Key, Start, End, Bin) ->
             write_small2large(Key, Start, End, Bin, SrcMetadata, SrcObj);
         {ok, #?METADATA{cnumber = 0} = SrcMetadata, SrcObj} when IsLarge =:= false ->
             write_small2small(Key, Start, End, Bin, SrcMetadata, SrcObj);
-        {ok, #?METADATA{cnumber = _CNum} = SrcMetadata} ->
+        {ok, #?METADATA{cnumber = _CNum} = SrcMetadata, _} ->
             write_large2any(Key, Start, End, Bin, SrcMetadata);
         {error, not_found} when IsLarge =:= true ->
             write_nothing2large(Key, Start, End, Bin);
         {error, not_found} when IsLarge =:= false ->
             write_nothing2small(Key, Start, End, Bin);
         {error, Cause} ->
-            {error, Cause}
+            ?debug("write/4","Cause: ~p",[Cause])
+            {error, Cause};
+
     end.
 
 %% @private
@@ -662,7 +664,7 @@ trim(Key, Size) ->
             IndexBin = list_to_binary(integer_to_list(1)),
             Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
             case leo_gateway_rpc_handler:get(Key_1) of
-                {ok,_Metadata, SrcObj, _} ->
+                {ok,_Metadata, SrcObj} ->
                     %% Trim the data by Size
                     << DstObj:Size/binary,_Rest/binary >> = SrcObj,
                     %% Insert the new object as a small object
@@ -694,6 +696,7 @@ large_obj_partial_trim(Key, Index, Size) ->
                 {ok,_} ->
                     ok;
                 Error ->
+                    ?error("large_obj_partial_trim/3", "Key: ~w, Index: ~w, Size: ~w, Error: ~w", [Key, Index, Size, Error]),
                     Error
             end;
         Error ->
