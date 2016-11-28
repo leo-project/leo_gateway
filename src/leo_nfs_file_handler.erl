@@ -162,9 +162,12 @@ rename(SrcKey, DstKey) ->
                                    Metadata::#?METADATA{},
                                    Bin::binary()).
 rename_1(Key, Metadata, Bin) ->
+    CMeta = Metadata#?METADATA.meta,
     case leo_gateway_rpc_handler:put(
            #put_req_params{path = Key,
                            body = Bin,
+                           meta = CMeta,
+                           msize = byte_size(CMeta),
                            dsize = byte_size(Bin)}) of
         {ok,_ETag} ->
             rename_2(Metadata);
@@ -233,7 +236,7 @@ write(Key, Start, End, Bin) ->
         {error, not_found} when IsLarge =:= false ->
             write_nothing2small(Key, Start, End, Bin);
         {error, Cause} ->
-            ?debug("write/4","Cause: ~p",[Cause]),
+            ?debug("write/4","Cause: ~w",[Cause]),
             {error, Cause}
     end.
 
@@ -400,6 +403,7 @@ large_obj_partial_update(Key, Bin, Index) ->
         {ok,_ETag} ->
             ok;
         {error, Cause} ->
+            ?error("large_obj_partial_update/3", "Key:~w, Error:~w", [Key_1, Cause]),
             {error, Cause}
     end.
 large_obj_partial_update(Key, Data, Index, Offset, Size) ->
@@ -430,6 +434,7 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
                 {ok,_ETag} ->
                     ok;
                 {error, Cause} ->
+                    ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
                     {error, Cause}
             end;
         {error, not_found} ->
@@ -442,9 +447,11 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
                 {ok,_ETag} ->
                     ok;
                 {error, Cause} ->
+                    ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
+            ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
             {error, Cause}
     end.
 
@@ -466,7 +473,8 @@ large_obj_partial_commit(0, Key, TotalChunks, ChunkSize, TotalSize) ->
                            digest = 0}) of
         {ok,_} ->
             ok;
-        Error ->
+        {error, Cause} = Error ->
+            ?error("large_obj_partial_commit/5", "Key:~w, Error:~w", [Key, Cause]),
             Error
     end;
 large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
@@ -475,7 +483,8 @@ large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
     case leo_gateway_rpc_handler:head(Key_1) of
         {ok, #?METADATA{dsize = Size}} ->
             large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, TotalSize + Size);
-        Error ->
+        {error, Cause} = Error ->
+            ?error("large_obj_partial_commit/5", "Key:~w, Error:~w", [Key_1, Cause]),
             Error
     end.
 
@@ -504,7 +513,7 @@ read(Key, Start, End) ->
                     {ok,_Pos, Bin} = read_large(Key, NewStartPos, NewEndPos, N, Index, CurPos, <<>>),
                     {ok, Metadata, Bin};
                 _ ->
-                    {error, Metadata}
+                    {error, not_found}
             end;
         Error ->
             Error
@@ -695,7 +704,7 @@ large_obj_partial_trim(Key, Index, Size) ->
                 {ok,_} ->
                     ok;
                 Error ->
-                    ?error("large_obj_partial_trim/3", "Key: ~w, Index: ~w, Size: ~w, Error: ~w", [Key, Index, Size, Error]),
+                    ?error("large_obj_partial_trim/3", "Key:~w, Index:~w, Size:~w, Error:~w", [Key, Index, Size, Error]),
                     Error
             end;
         Error ->
