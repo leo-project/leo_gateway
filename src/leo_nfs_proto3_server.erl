@@ -77,6 +77,7 @@
 -define(NFS3ERR_NOENT,    'NFS3ERR_NOENT').
 -define(NFS3ERR_IO,       'NFS3ERR_IO').
 -define(NFS3ERR_NOTEMPTY, 'NFS3ERR_NOTEMPTY').
+-define(NFS3ERR_BADHANDLE,'NFS3ERR_BADHANDLE').
 
 
 %% ---------------------------------------------------------------------
@@ -115,15 +116,20 @@ nfsproc3_null_3(_Clnt, State) ->
 
 %% @doc
 nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
-    {ok, Path} = leo_nfs_state_ets:get_path(UID),
-    ?debug("nfsproc3_getattr_3", "path:~p client:~p", [Path, Clnt]),
-    case getattr(Path) of
-        {ok, Meta} ->
-            {reply, {?NFS3_OK, {Meta}}, State};
-        not_found ->
-            {reply, {?NFS3ERR_NOENT, void}, State};
-        {error, Reason} ->
-            {reply, {?NFS3ERR_IO, Reason}, State}
+    case leo_nfs_state_ets:get_path(UID) of
+        {ok, Path} ->
+            ?debug("nfsproc3_getattr_3", "path:~p client:~p", [Path, Clnt]),
+            case getattr(Path) of
+                {ok, Meta} ->
+                    {reply, {?NFS3_OK, {Meta}}, State};
+                not_found ->
+                    {reply, {?NFS3ERR_NOENT, void}, State};
+                {error, Reason} ->
+                    ?error("nfsproc3_getattr_3/3", "Path:~p, Error:~p", [Path, Reason]),
+                    {reply, {?NFS3ERR_IO, Reason}, State}
+            end;
+        _ ->
+            {reply, {?NFS3ERR_BADHANDLE, void}, State}
     end.
 
 
@@ -146,6 +152,7 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
                 ok ->
                     {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
                 {error, Reason}->
+                    ?error("nfsproc3_setattr_3/3", "Path:~w, Size:~w, Error:~w", [Path, Size, Reason]),
                     {reply, {?NFS3ERR_IO, Reason}, State}
             end
     end.
@@ -165,7 +172,8 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
                                }}, State};
         not_found ->
             {reply, {?NFS3ERR_NOENT, {{false, void}}}, State};
-        {error,_Reason} ->
+        {error, Reason} ->
+            ?error("nfsproc3_lookup_3/3", "Path:~w, Error:~w", [Path, Reason]),
             {reply, {?NFS3ERR_IO, {{false, void}}}, State}
     end.
 
@@ -200,7 +208,7 @@ nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
                                 Body}
                     }, State};
         {error, Reason} ->
-            io:format(user, "[read]open error reason:~p~n",[Reason]),
+            ?error("nfsproc3_read_3/3", "Path:~w, Offset:~w, Count:~w, Error:~w", [Path, Offset, Count, Reason]),
             {reply, {?NFS3ERR_IO, {{false, void} %% post_op_attr for obj
                                   }}, State}
     end.
@@ -220,7 +228,7 @@ nfsproc3_write_3({{UID}, Offset, Count,_HowStable, Data} = _1, Clnt, State) ->
                                 WriteVerf}
                     }, State};
         {error, Reason} ->
-            io:format(user, "[write]error file:~p reason:~p~n",[Path ,Reason]),
+            ?error("nfsproc3_write_3/3", "Path:~w, Offset:~w, Count:~w, Error:~w", [Path, Offset, Count, Reason]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
@@ -241,7 +249,7 @@ nfsproc3_create_3({{{UID}, Name}, {_CreateMode,_How}} = _1, Clnt, State) ->
                                 ?SIMPLENFS_WCC_EMPTY}
                     }, State};
         {error, Reason} ->
-            io:format(user, "[create]error reason:~p~n",[Reason]),
+            ?error("nfsproc3_create_3/3", "Path:~w, Error:~w", [Key, Reason]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
@@ -263,7 +271,7 @@ nfsproc3_mkdir_3({{{UID}, Name},_How} = _1, Clnt, State) ->
                                }
                     }, State};
         {error, Reason} ->
-            io:format(user, "[mkdir]error reason:~p~n",[Reason]),
+            ?error("nfsproc3_mkdir_3/3", "Path:~w, Error:~w", [Key, Reason]),
             {reply, {?NFS3ERR_IO, {{false, void}, %% post_op file handle
                                    {false, void}, %% post_op_attr
                                    ?SIMPLENFS_WCC_EMPTY
@@ -299,7 +307,7 @@ nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, State) ->
         ok ->
             {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
         {error, Reason} ->
-            io:format(user, "[remove]reason:~p~n",[Reason]),
+            ?error("nfsproc3_remove_3/3", "Path:~w, Error:~w", [Key, Reason]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
@@ -337,7 +345,7 @@ nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) -
                                       ?SIMPLENFS_WCC_EMPTY  %% dst
                                      }}, State};
         {error, Reason} ->
-            io:format(user, "[rename]reason:~p~n",[Reason]),
+            ?error("nfsproc3_rename_3/3", "Src:~w, Dst:~w, Reason:~w", [Src4S3, Dst4S3, Reason]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY, %% src
                                    ?SIMPLENFS_WCC_EMPTY  %% dst
                                   }}, State}
@@ -518,7 +526,6 @@ readdir(Path, Cookie, CookieVerf,_MaxCnt, IsPlus, State) ->
 is_empty_dir(Path) ->
     case leo_nfs_file_handler:list_dir(Path, false) of
         {ok, MetaList} when is_list(MetaList) ->
-            ?debug("is_empty_dir/1", "List Dir ~p, ~p", [Path, MetaList]),
             FilteredList =
                 lists:foldl(
                   fun(Meta, Acc) ->
@@ -543,6 +550,7 @@ is_empty_dir(Path) ->
                                   end
                           end
                   end, [], MetaList),
+            ?debug("is_empty_dir/1", "Dir:~p, Filter:~p", [Path, FilteredList]),
             length(FilteredList) =:= 0;
         _Error ->
             false
