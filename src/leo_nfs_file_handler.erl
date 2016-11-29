@@ -162,9 +162,12 @@ rename(SrcKey, DstKey) ->
                                    Metadata::#?METADATA{},
                                    Bin::binary()).
 rename_1(Key, Metadata, Bin) ->
+    CMeta = Metadata#?METADATA.meta,
     case leo_gateway_rpc_handler:put(
            #put_req_params{path = Key,
                            body = Bin,
+                           meta = CMeta,
+                           msize = byte_size(CMeta),
                            dsize = byte_size(Bin)}) of
         {ok,_ETag} ->
             rename_2(Metadata);
@@ -226,13 +229,14 @@ write(Key, Start, End, Bin) ->
             write_small2large(Key, Start, End, Bin, SrcMetadata, SrcObj);
         {ok, #?METADATA{cnumber = 0} = SrcMetadata, SrcObj} when IsLarge =:= false ->
             write_small2small(Key, Start, End, Bin, SrcMetadata, SrcObj);
-        {ok, #?METADATA{cnumber = _CNum} = SrcMetadata} ->
+        {ok, #?METADATA{cnumber = _CNum} = SrcMetadata, _} ->
             write_large2any(Key, Start, End, Bin, SrcMetadata);
         {error, not_found} when IsLarge =:= true ->
             write_nothing2large(Key, Start, End, Bin);
         {error, not_found} when IsLarge =:= false ->
             write_nothing2small(Key, Start, End, Bin);
         {error, Cause} ->
+            ?debug("write/4","Cause: ~w",[Cause]),
             {error, Cause}
     end.
 
@@ -399,26 +403,27 @@ large_obj_partial_update(Key, Bin, Index) ->
         {ok,_ETag} ->
             ok;
         {error, Cause} ->
+            ?error("large_obj_partial_update/3", "Key:~w, Error:~w", [Key_1, Cause]),
             {error, Cause}
     end.
-large_obj_partial_update(Key, Bin, Index, Offset, Size) ->
+large_obj_partial_update(Key, Data, Index, Offset, Size) ->
     IndexBin = list_to_binary(integer_to_list(Index)),
     Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
     case leo_gateway_rpc_handler:get(Key_1) of
         {ok, Metadata, Bin} ->
             Bin_1 = case Offset > Metadata#?METADATA.dsize of
                         true ->
-                            << Bin/binary, 0:(8*(Offset - Metadata#?METADATA.dsize)), Bin/binary >>;
+                            << Bin/binary, 0:(8*(Offset - Metadata#?METADATA.dsize)), Data/binary >>;
                         false ->
                             case (Offset + Size + 1) < Metadata#?METADATA.dsize of
                                 true ->
                                     End = Offset + Size,
                                     << Head:Offset/binary,_/binary >> = Bin,
                                     << _:End/binary, Tail/binary >> = Bin,
-                                    << Head/binary, Bin/binary, Tail/binary >>;
+                                    << Head/binary, Data/binary, Tail/binary >>;
                                 false ->
                                     << Head:Offset/binary,_/binary >> = Bin,
-                                    << Head/binary, Bin/binary >>
+                                    << Head/binary, Data/binary >>
                             end
                     end,
             case leo_gateway_rpc_handler:put(
@@ -429,10 +434,11 @@ large_obj_partial_update(Key, Bin, Index, Offset, Size) ->
                 {ok,_ETag} ->
                     ok;
                 {error, Cause} ->
+                    ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
                     {error, Cause}
             end;
         {error, not_found} ->
-            Bin_1 = << 0:(Offset*8), Bin/binary >>,
+            Bin_1 = << 0:(Offset*8), Data/binary >>,
             case leo_gateway_rpc_handler:put(
                    #put_req_params{path = Key_1,
                                    body = Bin_1,
@@ -441,9 +447,11 @@ large_obj_partial_update(Key, Bin, Index, Offset, Size) ->
                 {ok,_ETag} ->
                     ok;
                 {error, Cause} ->
+                    ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
                     {error, Cause}
             end;
         {error, Cause} ->
+            ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
             {error, Cause}
     end.
 
@@ -465,7 +473,8 @@ large_obj_partial_commit(0, Key, TotalChunks, ChunkSize, TotalSize) ->
                            digest = 0}) of
         {ok,_} ->
             ok;
-        Error ->
+        {error, Cause} = Error ->
+            ?error("large_obj_partial_commit/5", "Key:~w, Error:~w", [Key, Cause]),
             Error
     end;
 large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
@@ -474,7 +483,8 @@ large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
     case leo_gateway_rpc_handler:head(Key_1) of
         {ok, #?METADATA{dsize = Size}} ->
             large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, TotalSize + Size);
-        Error ->
+        {error, Cause} = Error ->
+            ?error("large_obj_partial_commit/5", "Key:~w, Error:~w", [Key_1, Cause]),
             Error
     end.
 
@@ -503,7 +513,7 @@ read(Key, Start, End) ->
                     {ok,_Pos, Bin} = read_large(Key, NewStartPos, NewEndPos, N, Index, CurPos, <<>>),
                     {ok, Metadata, Bin};
                 _ ->
-                    {error, Metadata}
+                    {error, not_found}
             end;
         Error ->
             Error
@@ -662,7 +672,7 @@ trim(Key, Size) ->
             IndexBin = list_to_binary(integer_to_list(1)),
             Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, IndexBin/binary >>,
             case leo_gateway_rpc_handler:get(Key_1) of
-                {ok,_Metadata, SrcObj, _} ->
+                {ok,_Metadata, SrcObj} ->
                     %% Trim the data by Size
                     << DstObj:Size/binary,_Rest/binary >> = SrcObj,
                     %% Insert the new object as a small object
@@ -694,6 +704,7 @@ large_obj_partial_trim(Key, Index, Size) ->
                 {ok,_} ->
                     ok;
                 Error ->
+                    ?error("large_obj_partial_trim/3", "Key:~w, Index:~w, Size:~w, Error:~w", [Key, Index, Size, Error]),
                     Error
             end;
         Error ->
