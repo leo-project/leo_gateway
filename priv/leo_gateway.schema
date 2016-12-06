@@ -297,6 +297,18 @@
   {default, 5242880}
  ]}.
 
+{translation, "leo_gateway.large_object.reading_chunked_obj_len",
+ fun(Conf) ->
+         Len = cuttlefish_util:conf_get_value("large_object.chunked_obj_len", Conf),
+         ReadingLen = cuttlefish_util:conf_get_value("large_object.reading_chunked_obj_len", Conf),
+         case ReadingLen > Len of
+             true ->
+                 Reason = lists:flatten(io_lib:format("reading_chunked_obj_len: ~w > chunked_obj_len: ~w", [ReadingLen, Len])),
+                 {error, Reason};
+             false ->
+                 ReadingLen
+         end
+ end}.
 
 %% --------------------------------------------------------------------
 %% GATEWAY - CACHE

@@ -587,6 +587,14 @@ get_options() ->
     MaxChunkedObjs = leo_misc:get_value('max_chunked_objs', LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
     ChunkedObjLen = leo_misc:get_value('chunked_obj_len', LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     ReadingChunkedLen = leo_misc:get_value('reading_chunked_obj_len', LargeObjectProp, ?DEF_LOBJ_READING_CHUNK_OBJ_LEN),
+    case ReadingChunkedLen of
+        {error, Cause} ->
+            %% stop to handle
+            %% https://github.com/leo-project/leofs/issues/531
+            error({error, Cause});
+        _ ->
+            nop
+    end,
     ThresholdChunkLen = leo_misc:get_value('threshold_of_chunk_len', LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN),
     MaxObjLen = MaxChunkedObjs * ChunkedObjLen,
 
