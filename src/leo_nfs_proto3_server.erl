@@ -125,7 +125,7 @@ nfsproc3_getattr_3({{UID}} = _1, Clnt, State) ->
                 not_found ->
                     {reply, {?NFS3ERR_NOENT, void}, State};
                 {error, Reason} ->
-                    ?error("nfsproc3_getattr_3/3", "Path:~p, Error:~p", [Path, Reason]),
+                    ?error("nfsproc3_getattr_3/3", [{path, Path}, {cause, Reason}]),
                     {reply, {?NFS3ERR_IO, Reason}, State}
             end;
         _ ->
@@ -151,7 +151,8 @@ nfsproc3_setattr_3({{FileUID}, {_Mode,
                 ok ->
                     {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
                 {error, Reason}->
-                    ?error("nfsproc3_setattr_3/3", "Path:~w, Size:~w, Error:~w", [Path, Size, Reason]),
+                    ?error("nfsproc3_setattr_3/3",
+                           [{path, Path}, {size, Size}, {cause, Reason}]),
                     {reply, {?NFS3ERR_IO, Reason}, State}
             end
     end.
@@ -172,7 +173,7 @@ nfsproc3_lookup_3({{{UID}, Name}} = _1, Clnt, State) ->
         not_found ->
             {reply, {?NFS3ERR_NOENT, {{false, void}}}, State};
         {error, Reason} ->
-            ?error("nfsproc3_lookup_3/3", "Path:~w, Error:~w", [Path, Reason]),
+            ?error("nfsproc3_lookup_3/3", [{path, Path}, {cause, Reason}]),
             {reply, {?NFS3ERR_IO, {{false, void}}}, State}
     end.
 
@@ -207,7 +208,8 @@ nfsproc3_read_3({{UID}, Offset, Count} =_1, Clnt, State) ->
                                 Body}
                     }, State};
         {error, Reason} ->
-            ?error("nfsproc3_read_3/3", "Path:~w, Offset:~w, Count:~w, Error:~w", [Path, Offset, Count, Reason]),
+            ?error("nfsproc3_read_3/3",
+                   [{path, Path}, {offset, Offset}, {count, Count}, {cause, Reason}]),
             {reply, {?NFS3ERR_IO, {{false, void} %% post_op_attr for obj
                                   }}, State}
     end.
@@ -227,7 +229,8 @@ nfsproc3_write_3({{UID}, Offset, Count,_HowStable, Data} = _1, Clnt, State) ->
                                 WriteVerf}
                     }, State};
         {error, Reason} ->
-            ?error("nfsproc3_write_3/3", "Path:~w, Offset:~w, Count:~w, Error:~w", [Path, Offset, Count, Reason]),
+            ?error("nfsproc3_write_3/3",
+                   [{path, Path}, {offset, Offset}, {count, Count}, {cause, Reason}]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
@@ -248,7 +251,8 @@ nfsproc3_create_3({{{UID}, Name}, {_CreateMode,_How}} = _1, Clnt, State) ->
                                 ?SIMPLENFS_WCC_EMPTY}
                     }, State};
         {error, Reason} ->
-            ?error("nfsproc3_create_3/3", "Path:~w, Error:~w", [Key, Reason]),
+            ?error("nfsproc3_create_3/3",
+                   [{path, Key}, {cause, Reason}]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
@@ -270,7 +274,8 @@ nfsproc3_mkdir_3({{{UID}, Name},_How} = _1, Clnt, State) ->
                                }
                     }, State};
         {error, Reason} ->
-            ?error("nfsproc3_mkdir_3/3", "Path:~w, Error:~w", [Key, Reason]),
+            ?error("nfsproc3_mkdir_3/3",
+                   [{path, Key}, {cause, Reason}]),
             {reply, {?NFS3ERR_IO, {{false, void}, %% post_op file handle
                                    {false, void}, %% post_op_attr
                                    ?SIMPLENFS_WCC_EMPTY
@@ -306,7 +311,8 @@ nfsproc3_remove_3({{{UID}, Name}} = _1, Clnt, State) ->
         ok ->
             {reply, {?NFS3_OK, {?SIMPLENFS_WCC_EMPTY}}, State};
         {error, Reason} ->
-            ?error("nfsproc3_remove_3/3", "Path:~w, Error:~w", [Key, Reason]),
+            ?error("nfsproc3_remove_3/3",
+                   [{path, Key}, {cause, Reason}]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY}}, State}
     end.
 
@@ -344,7 +350,8 @@ nfsproc3_rename_3({{{SrcUID}, SrcName}, {{DstUID}, DstName}} =_1, Clnt, State) -
                                       ?SIMPLENFS_WCC_EMPTY  %% dst
                                      }}, State};
         {error, Reason} ->
-            ?error("nfsproc3_rename_3/3", "Src:~w, Dst:~w, Reason:~w", [Src4S3, Dst4S3, Reason]),
+            ?error("nfsproc3_rename_3/3",
+                   [{src, Src4S3}, {dest, Dst4S3}, {cause, Reason}]),
             {reply, {?NFS3ERR_IO, {?SIMPLENFS_WCC_EMPTY, %% src
                                    ?SIMPLENFS_WCC_EMPTY  %% dst
                                   }}, State}

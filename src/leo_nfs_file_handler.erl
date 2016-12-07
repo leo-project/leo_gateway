@@ -117,7 +117,7 @@ list_dir(Redundancies, Path, Marker, Acc, Modifier) when is_function(Modifier) -
                     list_dir(Redundancies, Path, TrimedKey, Metadata ++ Acc, Modifier)
             end;
         Error ->
-            ?error("list_dir", [{cause, Error}]),
+            ?error("list_dir/5", [{cause, Error}]),
             Error
     end;
 list_dir(Redundancies, Path, Marker,_Acc,_Modifier) ->
@@ -403,7 +403,7 @@ large_obj_partial_update(Key, Bin, Index) ->
         {ok,_ETag} ->
             ok;
         {error, Cause} ->
-            ?error("large_obj_partial_update/3", "Key:~w, Error:~w", [Key_1, Cause]),
+            ?error("large_obj_partial_update/3", [{key, Key_1}, {cause, Cause}]),
             {error, Cause}
     end.
 large_obj_partial_update(Key, Data, Index, Offset, Size) ->
@@ -434,7 +434,7 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
                 {ok,_ETag} ->
                     ok;
                 {error, Cause} ->
-                    ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
+                    ?error("large_obj_partial_update/5", [{key, Key_1}, {cause, Cause}]),
                     {error, Cause}
             end;
         {error, not_found} ->
@@ -447,11 +447,11 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
                 {ok,_ETag} ->
                     ok;
                 {error, Cause} ->
-                    ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
+                    ?error("large_obj_partial_update/5", [{key, Key_1}, {cause, Cause}]),
                     {error, Cause}
             end;
         {error, Cause} ->
-            ?error("large_obj_partial_update/5", "Key:~w, Error:~w", [Key_1, Cause]),
+            ?error("large_obj_partial_update/5", [{key, Key_1}, {cause, Cause}]),
             {error, Cause}
     end.
 
@@ -474,7 +474,7 @@ large_obj_partial_commit(0, Key, TotalChunks, ChunkSize, TotalSize) ->
         {ok,_} ->
             ok;
         {error, Cause} = Error ->
-            ?error("large_obj_partial_commit/5", "Key:~w, Error:~w", [Key, Cause]),
+            ?error("large_obj_partial_commit/5", [{key, Key}, {cause, Cause}]),
             Error
     end;
 large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
@@ -484,7 +484,7 @@ large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
         {ok, #?METADATA{dsize = Size}} ->
             large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, TotalSize + Size);
         {error, Cause} = Error ->
-            ?error("large_obj_partial_commit/5", "Key:~w, Error:~w", [Key_1, Cause]),
+            ?error("large_obj_partial_commit/5", [{key, Key_1}, {cause, Cause}]),
             Error
     end.
 
@@ -704,7 +704,9 @@ large_obj_partial_trim(Key, Index, Size) ->
                 {ok,_} ->
                     ok;
                 Error ->
-                    ?error("large_obj_partial_trim/3", "Key:~w, Index:~w, Size:~w, Error:~w", [Key, Index, Size, Error]),
+                    ?error("large_obj_partial_trim/3",
+                           [{key, Key}, {index, Index},
+                            {size, Size}, {cause, Error}]),
                     Error
             end;
         Error ->

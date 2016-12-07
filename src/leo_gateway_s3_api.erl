@@ -952,13 +952,15 @@ handle_2({ok, AccessKeyId}, Req, HTTPMethod, Path, Params, State) ->
                  HTTPMethod, Req,
                  Path, Params#req_params{access_key_id = AccessKeyId}) of
         {'EXIT', {"aws-chunked decode failed", _} = Cause} ->
-            ?error("handle_2/6", "path:~s, cause:~p", [binary_to_list(Path), Cause]),
+            ?error("handle_2/6", [{key, binary_to_list(Path)},
+                                  {cause, Cause}]),
             {ok, Req_2} = ?reply_forbidden(
                              [?SERVER_HEADER], ?XML_ERROR_CODE_AccessDenied,
                              ?XML_ERROR_MSG_AccessDenied, Path, <<>>, Req),
             {ok, Req_2, State};
         {'EXIT', Cause} ->
-            ?error("handle_2/6", [{key, binary_to_list(Path)}, {cause, Cause}]),
+            ?error("handle_2/6", [{key, binary_to_list(Path)},
+                                  {cause, Cause}]),
             {ok, Req_2} = ?reply_internal_error([?SERVER_HEADER], Path, <<>>, Req),
             {ok, Req_2, State};
         {ok, Req_2} ->
@@ -982,7 +984,8 @@ aws_chunk_decode(Bin, State) ->
                            DecState, Offset, SignParams),
     case Ret of
         {{error, Reason2}, {_, _, _, _}} ->
-            ?error("aws_chunk_decode", "Parse Error: ~p", [Reason2]),
+            ?error("aws_chunk_decode/2", [{simple_cause, "parsing error"},
+                                          {cause, Reason2}]),
             erlang:error("aws-chunked decode failed");
         {{ok, Acc}, {Buffer_2, DecState_2, Offset_2, SignParams_2}} ->
             {more, Acc, #aws_chunk_decode_state{buffer = Buffer_2,
@@ -1085,8 +1088,10 @@ aws_chunk_decode({ok, Acc}, Buffer, read_chunk, Offset,
                             end;
                         WrongSign ->
                             ?error("aws_chunk_decode/4",
-                                   "Chunk Signature Not Match: ~p, ~p, ~p",
-                                   [WrongSign, ChunkSign, binary_to_list(BinToSign)]),
+                                   [{cause, "Chunk Signature Not Match"},
+                                    {wrong_sign, WrongSign},
+                                    {chunk_sign, ChunkSign},
+                                    {sign, binary_to_list(BinToSign)}]),
                             {{error, unmatch}, {Buffer, error, Offset, SignParams}}
                     end
             end;

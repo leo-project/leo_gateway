@@ -133,7 +133,7 @@ get_mount_key(Bucket, AccessKey, IP) ->
     get_mount_key_1(ManagerNodes, Bucket, AccessKey, IP).
 
 get_mount_key_1([],_,_,_) ->
-    ?error("get_mount_key_1/4", "No reply from Manager"),
+    ?error("get_mount_key_1/4", [{cause, "No reply from Manager"}]),
     {error, not_found};
 
 get_mount_key_1([Node|Rest], Bucket, AccessKey, IP) ->
@@ -184,7 +184,7 @@ is_valid_mount_dir(<<$/,Rest/binary>>) ->
         {ok, _Bucket} ->
             true;
         Error ->
-            ?error("is_valid_mount_dir", [{cause, Error}]),
+            ?error("is_valid_mount_dir/1", [{cause, Error}]),
             false
     end;
 is_valid_mount_dir(_Path) ->

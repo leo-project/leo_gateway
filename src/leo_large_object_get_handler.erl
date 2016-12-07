@@ -284,7 +284,7 @@ handle_read_loop(Offset, TotalSize, #req_info{key = Key,
                    eof ->
                        0;
                    {error, Reason} ->
-                       ?error("handle_read_loop/3", "Ref:~p, Reason:~s", [Ref, Reason]),
+                       ?error("handle_read_loop/3", [{ref, Ref}, {cause, Reason}]),
                        erlang:error(Reason)
                end,
     case ReadSize of
