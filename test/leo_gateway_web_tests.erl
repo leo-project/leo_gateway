@@ -468,10 +468,14 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                            }]),
             try
                 Date = leo_http:rfc1123_date(leo_date:now()),
-                {ok, {{_, SC, _},_Headers, _Body}} =
+                {ok, {{_, SC, _}, Headers, _Body}} =
                     httpc:request(head, {lists:append(["http://",
                                                        ?TARGET_HOST,
                                                        ":8080/a/b/c/d.png"]), [{"Date", Date}, {"connection", "close"}]}, [], []),
+                %% https://github.com/leo-project/leofs/issues/489#issuecomment-265389401
+                %% exists only content-length header
+                ?assertEqual({"content-length", "16384"}, lists:keyfind("content-length", 1, Headers)),
+                ?assertEqual(false, lists:keyfind("transfer-encoding", 1, Headers)),
                 ?assertEqual(200, SC)
                 %% ?assertEqual("16384", proplists:get_value("content-length", Headers))
             catch

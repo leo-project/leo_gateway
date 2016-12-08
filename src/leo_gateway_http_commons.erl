@@ -917,7 +917,15 @@ head_object(Req, Key, #req_params{bucket_name = BucketName}) ->
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, leo_mime:guess_mime(Key)},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
-                       {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
+                       %% https://github.com/leo-project/leofs/issues/489
+                       %% We used Camel Case for response headers
+                       %% as old version boto(s) only took care Camel Cased headers.
+                       %% but the latest(also maybe last) stable release seems to
+                       %% handle headers with caseinsensitive mannear.
+                       %% so I changed to the lower case one from the Camel Cased
+                       %% in order to cope with cowboy_req:merge_headers which only take care
+                       %% lower case ones.
+                       {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, Timestamp}],
             Headers2 = case CMetaBin of
                            <<>> ->
@@ -927,7 +935,7 @@ head_object(Req, Key, #req_params{bucket_name = BucketName}) ->
                                CMeta ++ Headers
                        end,
             ?access_log_head(BucketName, Key, ?HTTP_ST_OK, BeginTime),
-            cowboy_req:reply(?HTTP_ST_OK, Headers2, fun() -> void end, Req);
+            cowboy_req:reply(?HTTP_ST_OK, Headers2, <<>>, Req);
         {ok, #?METADATA{del = 1}} ->
             ?access_log_head(BucketName, Key, ?HTTP_ST_NOT_FOUND, BeginTime),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
