@@ -230,7 +230,7 @@ write(Key, Start, End, Bin) ->
         {ok, #?METADATA{cnumber = 0} = SrcMetadata, SrcObj} when IsLarge =:= false ->
             write_small2small(Key, Start, End, Bin, SrcMetadata, SrcObj);
         {ok, #?METADATA{cnumber = _CNum} = SrcMetadata, _} ->
-            write_large2any(Key, Start, End, Bin, SrcMetadata);
+            catch write_large2any(Key, Start, End, Bin, SrcMetadata);
         {error, not_found} when IsLarge =:= true ->
             write_nothing2large(Key, Start, End, Bin);
         {error, not_found} when IsLarge =:= false ->
@@ -291,21 +291,34 @@ write_large2any(Key, Start, End, Bin, SrcMetadata) ->
                                        LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     IndexStart = Start div ChunkedObjLen + 1,
     IndexEnd = End div ChunkedObjLen + 1,
-    case IndexStart =:= IndexEnd of
+    LastChunkSize = case IndexStart =:= IndexEnd of
         true ->
             Offset = Start rem ChunkedObjLen,
             Size = End - Start + 1,
-            large_obj_partial_update(Key, Bin, IndexStart, Offset, Size);
+            case large_obj_partial_update(Key, Bin, IndexStart, Offset, Size) of
+                {error, Cause} ->
+                    throw({error, Cause});
+                _ ->
+                    Offset + Size
+            end;
         false ->
             %% head
             HeadOffset = Start rem ChunkedObjLen,
             HeadSize = ChunkedObjLen - HeadOffset,
             << HeadBin:HeadSize/binary, Rest/binary >> = Bin,
-            large_obj_partial_update(Key, HeadBin, IndexStart, HeadOffset, HeadSize),
+            case large_obj_partial_update(Key, HeadBin, IndexStart, HeadOffset, HeadSize) of
+                {error, Cause} ->
+                    throw({error, Cause});
+                _ -> nop
+            end,
             %% middle
             Rest3 = lists:foldl(
                       fun(Index, << MidBin:ChunkedObjLen/binary, Rest2/binary >>) ->
-                              large_obj_partial_update(Key, MidBin, Index),
+                              case large_obj_partial_update(Key, MidBin, Index) of
+                                  {error, Cause2} ->
+                                      throw({error, Cause2});
+                                  _ -> nop
+                              end,
                               Rest2
                       end,
                       Rest,
@@ -313,10 +326,18 @@ write_large2any(Key, Start, End, Bin, SrcMetadata) ->
             %% tail
             TailOffset = 0,
             TailSize = End rem ChunkedObjLen + 1,
-            large_obj_partial_update(Key, Rest3, IndexEnd, TailOffset, TailSize)
+            case large_obj_partial_update(Key, Rest3, IndexEnd, TailOffset, TailSize) of
+                {error, Cause3} ->
+                    throw({error, Cause3});
+                _ ->
+                    TailSize
+            end
     end,
     NumChunks = erlang:max(IndexEnd, SrcMetadata#?METADATA.cnumber),
-    large_obj_partial_commit(Key, NumChunks, ChunkedObjLen).
+    %% https://github.com/leo-project/leofs/issues/537
+    %% calc total size
+    TotalSize = ChunkedObjLen * (NumChunks - 1) + LastChunkSize,
+    large_obj_partial_commit(Key, NumChunks, ChunkedObjLen, TotalSize).
 
 %% @private
 write_nothing2large(Key, Start,_End, Bin) ->
@@ -459,11 +480,9 @@ large_obj_partial_update(Key, Data, Index, Offset, Size) ->
 %% @doc Update the metadata of a large file to reflect the total file size
 %% @todo Chucksum(MD5) also have to be updated
 %% @private
--spec(large_obj_partial_commit(binary(), pos_integer(), pos_integer()) ->
+-spec(large_obj_partial_commit(binary(), pos_integer(), pos_integer(), pos_integer()) ->
              ok | {error, any()}).
-large_obj_partial_commit(Key, TotalChunks, ChunkSize) ->
-    large_obj_partial_commit(TotalChunks, Key, TotalChunks, ChunkSize, 0).
-large_obj_partial_commit(0, Key, TotalChunks, ChunkSize, TotalSize) ->
+large_obj_partial_commit(Key, TotalChunks, ChunkSize, TotalSize) ->
     case leo_gateway_rpc_handler:put(
            #put_req_params{path = Key,
                            body = ?BIN_EMPTY,
@@ -474,20 +493,9 @@ large_obj_partial_commit(0, Key, TotalChunks, ChunkSize, TotalSize) ->
         {ok,_} ->
             ok;
         {error, Cause} = Error ->
-            ?error("large_obj_partial_commit/5", [{key, Key}, {cause, Cause}]),
-            Error
-    end;
-large_obj_partial_commit(PartNum, Key, NumChunks, ChunkSize, TotalSize) ->
-    PartNumBin = list_to_binary(integer_to_list(PartNum)),
-    Key_1 = << Key/binary, ?DEF_SEPARATOR/binary, PartNumBin/binary >>,
-    case leo_gateway_rpc_handler:head(Key_1) of
-        {ok, #?METADATA{dsize = Size}} ->
-            large_obj_partial_commit(PartNum - 1, Key, NumChunks, ChunkSize, TotalSize + Size);
-        {error, Cause} = Error ->
-            ?error("large_obj_partial_commit/5", [{key, Key_1}, {cause, Cause}]),
+            ?error("large_obj_partial_commit/4", [{key, Key}, {cause, Cause}]),
             Error
     end.
-
 
 %% -------------------------------------------------------------------
 %% READ operation
