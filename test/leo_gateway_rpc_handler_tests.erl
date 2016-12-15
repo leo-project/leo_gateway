@@ -92,6 +92,14 @@ setup() ->
     ok = rpc:call(Node1, meck, new,    [leo_metrics_req, [no_link, non_strict]]),
     ok = rpc:call(Node1, meck, expect, [leo_metrics_req, notify, fun(_) -> ok end]),
 
+    leo_pod:start_link(?POD_LOH_WORKER,
+                       ?env_loh_put_worker_pool_size(),
+                       ?env_loh_put_worker_buffer_size(),
+                       leo_large_object_worker, [],
+                       fun(_) ->
+                               void
+                       end),
+
     [Node0, Node1].
 
 teardown([_, Node1]) ->

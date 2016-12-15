@@ -202,6 +202,14 @@ setup(InitFun, TermFun) ->
     application:start(leo_cache),
     leo_cache_api:start(),
 
+    leo_pod:start_link(?POD_LOH_WORKER,
+                       ?env_loh_put_worker_pool_size(),
+                       ?env_loh_put_worker_buffer_size(),
+                       leo_large_object_worker, [],
+                       fun(_) ->
+                               void
+                       end),
+
     InitFun(),
     [TermFun, Node0, Node1].
 

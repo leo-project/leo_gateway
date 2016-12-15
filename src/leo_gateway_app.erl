@@ -369,6 +369,19 @@ after_process_1(Pid, Managers) ->
                               {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
                              ]),
 
+    %% Large Object Worker Pool
+    ChildSpec_1  = {?POD_LOH_WORKER, {leo_pod_sup, start_link,
+                                      [?POD_LOH_WORKER,
+                                       ?env_loh_put_worker_pool_size(),
+                                       ?env_loh_put_worker_buffer_size(),
+                                       leo_large_object_worker, [],
+                                       fun(_) ->
+                                               void
+                                       end]},
+                    permanent, ?SHUTDOWN_WAITING_TIME,
+                    supervisor, [leo_pod_sup]},
+    {ok,_} = supervisor:start_child(leo_gateway_sup, ChildSpec_1),
+
     %% Launch SavannaAgent(QoS)
     SVManagers = ?env_qos_managers(),
     QoS_StatEnabled = ?env_qos_stat_enabled(),
@@ -380,11 +393,11 @@ after_process_1(Pid, Managers) ->
         false ->
             void
     end,
-    ChildSpec = {leo_gateway_qos_stat,
-                 {leo_gateway_qos_stat, start_link,
-                  [SVManagers, QoS_StatEnabled]},
-                 permanent, 2000, worker, [leo_gateway_qos_stat]},
-    {ok, _} = supervisor:start_child(leo_gateway_sup, ChildSpec),
+    ChildSpec_2 = {leo_gateway_qos_stat,
+                   {leo_gateway_qos_stat, start_link,
+                    [SVManagers, QoS_StatEnabled]},
+                   permanent, 2000, worker, [leo_gateway_qos_stat]},
+    {ok,_} = supervisor:start_child(leo_gateway_sup, ChildSpec_2),
 
     %% Check status of the storage-cluster
     inspect_cluster_status({ok, Pid}, Managers).

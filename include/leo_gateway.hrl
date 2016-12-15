@@ -63,6 +63,28 @@
 -define(TIMEOUT_L5_SEC, 30000).
 
 
+%% Large size object related definitions
+-define(POD_LOH_WORKER, 'pod_loh_worker').
+
+-define(env_loh_put_worker_pool_size(),
+        case application:get_env(leo_gateway, loh_put_worker_pool_size) of
+            {ok, EnvLOHWorkerPoolSize} ->
+                ?debugVal(EnvLOHWorkerPoolSize),
+                EnvLOHWorkerPoolSize;
+            _ ->
+                64
+        end).
+
+-define(env_loh_put_worker_buffer_size(),
+        case application:get_env(leo_gateway, loh_put_worker_buffer_size) of
+            {ok, EnvLOHWorkerBufferSize} ->
+                ?debugVal(EnvLOHWorkerBufferSize),
+                EnvLOHWorkerBufferSize;
+            _ ->
+                32
+        end).
+
+
 %% Protocol
 -define(PROTO_HANDLER_S3, 'leo_gateway_s3_api').
 -define(PROTO_HANDLER_REST, 'leo_gateway_rest_api').
@@ -113,8 +135,6 @@
                          num_of_chunks = 0 :: non_neg_integer(),
                          md5_context = <<>> :: binary()
                         }).
-
-
 
 
 %%----------------------------------------------------------------------
