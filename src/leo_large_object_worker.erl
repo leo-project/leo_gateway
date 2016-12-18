@@ -70,7 +70,7 @@ handle_call({put, PutReq},_From, State) ->
     {reply, Ret, State}.
 
 %% @TODO
-%% handle_call({get, PutReq},_From, State) ->
+%% handle_call({get, GetReq},_From, State) ->
 %%     {reply, Ret, State}.
 
 

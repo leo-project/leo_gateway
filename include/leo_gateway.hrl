@@ -84,6 +84,9 @@
                 32
         end).
 
+%% Interval of the large-object-worker checkout
+%% (default: 100ms)
+-define(DEF_WAIT_TIME_OF_CHECKOUT, 100).
 
 %% Protocol
 -define(PROTO_HANDLER_S3, 'leo_gateway_s3_api').

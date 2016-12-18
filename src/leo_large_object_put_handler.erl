@@ -154,7 +154,7 @@ handle_call({put, Bin}, _From, #state{bucket_info = BucketInfo,
                                                  body = Bin_2,
                                                  dsize = MaxObjLen,
                                                  cindex = NumOfChunks,
-                                                 bucket_info = BucketInfo}, 0) of
+                                                 bucket_info = BucketInfo}, leo_date:clock()) of
                     {ok, SpawnRet} ->
                         Context_1 = crypto:hash_update(Context, Bin_2),
                         << Head:8/binary, _Rest/binary>> = Bin_2,
@@ -287,21 +287,31 @@ code_change(_OldVsn, State, _Extra) ->
                                                   Times::non_neg_integer(),
                                                   SpawnRet::{pid(), reference()},
                                                   Cause::any()).
-send_object(PutReq, Times) ->
+send_object(PutReq, BeginTime) ->
+    Key = PutReq#put_req_params.path,
+
     case leo_pod:checkout(?POD_LOH_WORKER) of
         {ok, Worker} ->
             Fun = fun() ->
                           Ret = gen_server:call(Worker, {put, PutReq}),
                           ok = leo_pod:checkin(?POD_LOH_WORKER, Worker),
-                          erlang:send(self(),
-                                      {async_notify, PutReq#put_req_params.path, Ret})
+                          erlang:send(self(), {async_notify, Key, Ret})
                   end,
             SpawnRet = erlang:spawn_monitor(Fun),
             {ok, SpawnRet};
         {error,_Cause} ->
-            %% @TODO: TIMEOUT handling
-            timer:sleep(100),
-            send_object(PutReq, Times + 1)
+            Latency = erlang:round((leo_date:clock() - BeginTime) / 1000),
+            case (?DEF_REQ_TIMEOUT < Latency) of
+                true ->
+                    Cause = timeout,
+                    erlang:send(self(), {async_notify, Key, {error, Cause}}),
+                    ?error("send_object/2", [{key, Key}, {cause, Cause},
+                                             {latency, Latency}]),
+                    {error, Cause};
+                false ->
+                    timer:sleep(?DEF_WAIT_TIME_OF_CHECKOUT),
+                    send_object(PutReq, BeginTime)
+            end
     end.
 
 %% @doc Waits sub processes
