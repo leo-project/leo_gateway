@@ -69,7 +69,6 @@
 -define(env_loh_put_worker_pool_size(),
         case application:get_env(leo_gateway, loh_put_worker_pool_size) of
             {ok, EnvLOHWorkerPoolSize} ->
-                ?debugVal(EnvLOHWorkerPoolSize),
                 EnvLOHWorkerPoolSize;
             _ ->
                 64
@@ -78,7 +77,6 @@
 -define(env_loh_put_worker_buffer_size(),
         case application:get_env(leo_gateway, loh_put_worker_buffer_size) of
             {ok, EnvLOHWorkerBufferSize} ->
-                ?debugVal(EnvLOHWorkerBufferSize),
                 EnvLOHWorkerBufferSize;
             _ ->
                 32
