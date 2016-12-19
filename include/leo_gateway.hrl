@@ -63,25 +63,6 @@
 -define(TIMEOUT_L5_SEC, 30000).
 
 
-%% Large size object related definitions
--define(POD_LOH_WORKER, 'pod_loh_worker').
-
--define(env_loh_put_worker_pool_size(),
-        case application:get_env(leo_gateway, loh_put_worker_pool_size) of
-            {ok, EnvLOHWorkerPoolSize} ->
-                EnvLOHWorkerPoolSize;
-            _ ->
-                64
-        end).
-
--define(env_loh_put_worker_buffer_size(),
-        case application:get_env(leo_gateway, loh_put_worker_buffer_size) of
-            {ok, EnvLOHWorkerBufferSize} ->
-                EnvLOHWorkerBufferSize;
-            _ ->
-                32
-        end).
-
 %% Interval of the large-object-worker checkout
 %% (default: 100ms)
 -define(DEF_WAIT_TIME_OF_CHECKOUT, 100).
@@ -188,6 +169,30 @@
         case application:get_env(leo_gateway, recover) of
             {ok, EnvRecover} -> EnvRecover;
             _ -> []
+        end).
+
+
+%% Large size object related definitions
+-define(POD_LOH_WORKER, 'pod_loh_worker').
+-define(DEF_LOH_PUT_WORKER_POOL_SIZE, 64).
+-define(DEF_LOH_PUT_WORKER_BUFFER_SIZE, 32).
+
+-define(env_loh_put_worker_pool_size(),
+        case application:get_env(leo_gateway, large_object) of
+            {ok, EnvLargeObject_1} ->
+                leo_misc:get_value('put_worker_pool_size',
+                                   EnvLargeObject_1, ?DEF_LOH_PUT_WORKER_POOL_SIZE);
+            _ ->
+                ?DEF_LOH_PUT_WORKER_POOL_SIZE
+        end).
+
+-define(env_loh_put_worker_buffer_size(),
+        case application:get_env(leo_gateway, large_object) of
+            {ok, EnvLargeObject_2} ->
+                leo_misc:get_value('put_worker_buffer_size',
+                                   EnvLargeObject_2, ?DEF_LOH_PUT_WORKER_BUFFER_SIZE);
+            _ ->
+                ?DEF_LOH_PUT_WORKER_BUFFER_SIZE
         end).
 
 

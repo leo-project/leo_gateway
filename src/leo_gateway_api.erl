@@ -69,10 +69,12 @@ get_node_status() ->
     LObjProps = ?env_large_object_properties(),
     HttpConf =
         [
+         %% Protocol-related
          {handler, leo_misc:get_value('protocol', HttpProps, Protocol)},
          {port, leo_misc:get_value('port', HttpProps, ?DEF_HTTP_PORT)},
          {ssl_port, leo_misc:get_value('ssl_port', HttpProps, ?DEF_HTTP_SSL_PORT)},
          {num_of_acceptors, leo_misc:get_value('num_of_acceptors', HttpProps, ?DEF_HTTP_NUM_OF_ACCEPTORS)},
+         %% Cache-related
          {http_cache, leo_misc:get_value('http_cache', CacheProps, ?DEF_HTTP_CACHE)},
          {cache_workers, leo_misc:get_value('cache_workers', CacheProps, ?DEF_CACHE_WORKERS)},
          {cache_ram_capacity, leo_misc:get_value('cache_ram_capacity', CacheProps, ?DEF_CACHE_RAM_CAPACITY)},
@@ -84,10 +86,13 @@ get_node_status() ->
          {cache_max_content_len, leo_misc:get_value('cache_max_content_len', CacheProps, ?DEF_CACHE_MAX_CONTENT_LEN)},
          {cachable_content_type, leo_misc:get_value('cachable_content_type', CacheProps, [])},
          {cachable_path_pattern, leo_misc:get_value('cachable_path_pattern', CacheProps, [])},
+         %% LargeObject-related
          {max_chunked_objs, leo_misc:get_value('max_chunked_objs', LObjProps, ?DEF_LOBJ_MAX_CHUNKED_OBJS)},
          {chunked_obj_len, leo_misc:get_value('chunked_obj_len', LObjProps, ?DEF_LOBJ_CHUNK_OBJ_LEN)},
          {reading_chunked_obj_len, leo_misc:get_value('reading_chunked_obj_len', LObjProps, ?DEF_LOBJ_READING_CHUNK_OBJ_LEN)},
-         {threshold_of_chunk_len, leo_misc:get_value('threshold_of_chunk_len', LObjProps, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN)}
+         {threshold_of_chunk_len, leo_misc:get_value('threshold_of_chunk_len', LObjProps, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN)},
+         {loh_put_worker_pool_size, leo_misc:get_value('put_worker_pool_size', LObjProps, ?DEF_LOH_PUT_WORKER_POOL_SIZE)},
+         {loh_put_worker_buffer_size, leo_misc:get_value('put_worker_buffer_size', LObjProps, ?DEF_LOH_PUT_WORKER_BUFFER_SIZE)}
         ],
     {ok, [{type, gateway},
           {version, get_info(version)},

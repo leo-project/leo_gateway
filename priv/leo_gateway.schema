@@ -314,7 +314,7 @@
 %% @doc Large Object Handler - put worker pool size
 {mapping,
  "large_object.put_worker_pool_size",
- "leo_gateway.loh_put_worker_pool_size",
+ "leo_gateway.large_object.put_worker_pool_size",
  [
   {datatype, integer},
   {default, 64}
@@ -323,7 +323,7 @@
 %% @doc Large Object Handler - put worker buffer size
 {mapping,
  "large_object.put_worker_buffer_size",
- "leo_gateway.loh_put_worker_buffer_size",
+ "leo_gateway.large_object.put_worker_buffer_size",
  [
   {datatype, integer},
   {default, 32}
