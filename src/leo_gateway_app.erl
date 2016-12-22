@@ -123,7 +123,7 @@ prep_stop(_State) ->
     catch leo_mq_sup:stop(),
     catch leo_logger_sup:stop(),
 
-    case get_options() of
+    case catch get_options() of
         {ok, HttpOptions} ->
             case HttpOptions#http_options.handler of
                 ?PROTO_HANDLER_S3 ->
@@ -222,7 +222,7 @@ after_process_0({ok, Pid}) ->
                 {ok, Pid} ->
                     {ok, Pid};
                 {_, Cause} ->
-                    ?error("inspect_cluster_status/1", [{cause, Cause}]),
+                    ?error("after_process_0/1", [{cause, Cause}]),
                     init:stop()
             end;
         false ->
@@ -539,7 +539,7 @@ log_file_appender([{Type, _}|T], Acc) when Type == file ->
 %% @doc Retrieve properties
 %%
 -spec(get_options() ->
-             {ok, #http_options{}}).
+             {ok, #http_options{}} | {error, Cause} when Cause::any()).
 get_options() ->
     HttpProp = ?env_http_properties(),
 
@@ -568,8 +568,22 @@ get_options() ->
     CacheProp = ?env_cache_properties(),
     UserHttpCache = leo_misc:get_value('http_cache', CacheProp, ?DEF_HTTP_CACHE),
     CacheWorkers = leo_misc:get_value('cache_workers', CacheProp, ?DEF_CACHE_WORKERS),
-    CacheRAMCapacity = leo_misc:get_value('cache_ram_capacity', CacheProp, ?DEF_CACHE_RAM_CAPACITY),
-    CacheDiscCapacity = leo_misc:get_value('cache_disc_capacity', CacheProp, ?DEF_CACHE_DISC_CAPACITY),
+
+    CacheRAMCapacity =
+        case leo_misc:get_value('cache_ram_capacity', CacheProp, ?DEF_CACHE_RAM_CAPACITY) of
+            {error, Cause_1} ->
+                erlang:error(Cause_1);
+            CacheRAMCapacity_1 ->
+                CacheRAMCapacity_1
+        end,
+    CacheDiscCapacity =
+        case leo_misc:get_value('cache_disc_capacity', CacheProp, ?DEF_CACHE_DISC_CAPACITY) of
+            {error, Cause_2} ->
+                erlang:error(Cause_2);
+            CacheDiscCapacity_1 ->
+                CacheDiscCapacity_1
+        end,
+
     CacheDiscThresholdLen = leo_misc:get_value('cache_disc_threshold_len', CacheProp, ?DEF_CACHE_DISC_THRESHOLD_LEN),
     CacheDiscDirData = leo_misc:get_value('cache_disc_dir_data', CacheProp, ?DEF_CACHE_DISC_DIR_DATA),
     CacheDiscDirJournal = leo_misc:get_value('cache_disc_dir_journal', CacheProp, ?DEF_CACHE_DISC_DIR_JOURNAL),

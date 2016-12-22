@@ -362,6 +362,26 @@
   {default, 1073741824}
  ]}.
 
+{translation, "leo_gateway.cache.cache_ram_capacity",
+ fun(Conf) ->
+         NumOfWorkers = cuttlefish_util:conf_get_value("cache.cache_workers", Conf),
+         RamCapacity  = cuttlefish_util:conf_get_value("cache.cache_ram_capacity", Conf),
+
+         case RamCapacity > 0 of
+             true ->
+                 case (8 * 1024 * 1024) * NumOfWorkers > RamCapacity of
+                     true ->
+                         {error, {invalid_configuration,
+                                  "(8 * 1024 * 1024) * ${cache.cache_workers} >= ${cache.cache_ram_capacity}"}};
+                     false ->
+                         RamCapacity
+                 end;
+             false ->
+                 0
+         end
+ end}.
+
+
 %% @doc Disk cache capacity in bytes
 {mapping,
  "cache.cache_disc_capacity",
@@ -370,6 +390,26 @@
   {datatype, bytesize},
   {default, 524288000}
  ]}.
+
+{translation, "leo_gateway.cache.cache_disc_capacity",
+ fun(Conf) ->
+         NumOfWorkers = cuttlefish_util:conf_get_value("cache.cache_workers", Conf),
+         DiscCapacity  = cuttlefish_util:conf_get_value("cache.cache_disc_capacity", Conf),
+
+         case DiscCapacity > 0 of
+             true ->
+                 case (8 * 1024 * 1024) * NumOfWorkers > DiscCapacity of
+                     true ->
+                         {error, {invalid_configuration,
+                                  "(8 * 1024 * 1024) * ${cache.cache_workers} >= ${cache.cache_disc_capacity}"}};
+                     false ->
+                         DiscCapacity
+                 end;
+             false ->
+                 0
+         end
+ end}.
+
 
 %% @doc When the length of the object exceeds this value, store the object on disk
 {mapping,
