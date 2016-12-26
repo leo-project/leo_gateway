@@ -631,7 +631,7 @@ get_object_cmeta_normal1_([_TermFun, _Node0, Node1]) ->
             ok = rpc:call(Node1, meck, new,
                           [leo_storage_handler_object, [no_link, non_strict]]),
 
-            CMetaBin = term_to_binary([{"x-amz-meta-test", "custom metadata"}]),
+            CMetaBin = term_to_binary([{<<"x-amz-meta-test">>, <<"custom metadata">>}]),
             ok = rpc:call(Node1, meck, expect,
                           [leo_storage_handler_object, get, 3,
                            {ok, #?METADATA{
