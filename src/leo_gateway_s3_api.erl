@@ -2102,7 +2102,7 @@ recursive_find(BucketName, Redundancies, Acc,
                                         [Key, ?BIN_SLASH, Marker, MaxKeys],
                                         []) of
         {ok, Metadata} when is_list(Metadata) ->
-            recursive_find(BucketName, Redundancies, [Metadata | Acc], Rest,
+            recursive_find(BucketName, Redundancies, [Rest | Acc], Metadata,
                            Marker, MaxKeys, LastKey, Transport, Socket);
         {ok,_} ->
             {error, invalid_format};
