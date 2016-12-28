@@ -44,6 +44,7 @@
           bucket_name = <<>> :: binary(),
           bucket_info :: #?BUCKET{},
           key = <<>> :: binary(),
+          meta = <<>> :: binary(),
           length :: pos_integer(),
           timeout_for_body = 0 :: non_neg_integer(),
           chunked_size = 0 :: non_neg_integer(),
@@ -163,6 +164,7 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}, SendChunkLen) ->
            content_type = ContentType,
            etag = Checksum,
            body = Body,
+           cmeta = CMetaBin,
            size = Size} = binary_to_term(CachedObj),
     Now = leo_date:now(),
     Diff = Now - MTime,
@@ -173,12 +175,19 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}, SendChunkLen) ->
             Req;
         false ->
             LastModified = leo_http:rfc1123_date(MTime),
-            Header = [?SERVER_HEADER,
+            Headers = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_LAST_MODIFIED, LastModified},
                       {?HTTP_HEAD_RESP_CONTENT_TYPE,  ContentType},
                       {?HTTP_HEAD_RESP_AGE, integer_to_list(Diff)},
                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(Checksum)},
                       {?HTTP_HEAD_RESP_CACHE_CTRL, ?httP_cache_ctl(Expire)}],
+            Headers2 = case CMetaBin of
+                           <<>> ->
+                               Headers;
+                           _ ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers
+                       end,
 
             IMSSec = case cowboy_req:parse_header(?HTTP_HEAD_IF_MODIFIED_SINCE, Req) of
                          {ok, undefined,_} ->
@@ -188,14 +197,14 @@ onrequest_2(Req, Expire, Key, {ok, CachedObj}, SendChunkLen) ->
                      end,
             case IMSSec of
                 MTime ->
-                    {ok, Req2} = ?reply_not_modified(Header, Req),
+                    {ok, Req2} = ?reply_not_modified(Headers, Req),
                     Req2;
                 _ ->
                     BodyFunc = fun(Socket, Transport) ->
                                        leo_net:chunked_send(
                                          Transport, Socket, Body, SendChunkLen)
                                end,
-                    {ok, Req2} = ?reply_ok([?SERVER_HEADER], {Size, BodyFunc}, Req),
+                    {ok, Req2} = ?reply_ok(Headers2, {Size, BodyFunc}, Req),
                     Req2
             end
     end.
@@ -220,11 +229,29 @@ onresponse(#cache_condition{expire = Expire} = Config, FunGenKey) ->
                                          fun is_cachable_req3/4]) of
                         true ->
                             Now = leo_date:now(),
+                            MetaList = lists:foldl(fun(Ele, Acc) ->
+                                                           case Ele of
+                                                               {<<"x-amz-meta-", _>>, _} ->
+                                                                   Acc ++ Ele;
+                                                               _ ->
+                                                                   Acc
+                                                           end
+                                                   end, [], Header1),
+                            CMetaBin = case MetaList of
+                                       [] ->
+                                           <<>>;
+                                       _ ->
+                                           term_to_binary(MetaList)
+                                   end,
+
                             Bin = term_to_binary(
                                     #cache{mtime = Now,
                                            etag = leo_hex:raw_binary_to_integer(crypto:hash(md5, Body)),
                                            size = byte_size(Body),
                                            body = Body,
+                                           cmeta = CMetaBin,
+                                           msize = byte_size(CMetaBin),
+
                                            content_type = ?http_content_type(Header1)}),
                             catch leo_cache_api:put(Key, Bin),
                             Header2 = lists:keydelete(?HTTP_HEAD_LAST_MODIFIED, 1, Header1),
@@ -255,9 +282,11 @@ get_object(Req, Key, #req_params{bucket_name = BucketName,
                                  custom_header_settings = CustomHeaderSettings,
                                  has_inner_cache = HasInnerCache,
                                  sending_chunked_obj_len = SendChunkLen}) ->
+    BeginTime = leo_date:clock(),
     case leo_gateway_rpc_handler:get(Key) of
         %% For regular case (NOT a chunked object)
-        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
+        {ok, #?METADATA{cnumber = 0,
+                        meta = CMetaBin} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
 
             case HasInnerCache of
@@ -266,35 +295,52 @@ get_object(Req, Key, #req_params{bucket_name = BucketName,
                                                 mtime = Meta#?METADATA.timestamp,
                                                 content_type = Mime,
                                                 body = RespObject,
+                                                cmeta = CMetaBin,
+                                                msize = byte_size(CMetaBin),
                                                 size = byte_size(RespObject)}),
                     catch leo_cache_api:put(Key, Val);
                 false ->
                     void
             end,
 
-            ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, Mime},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
+            Headers2 = case CMetaBin of
+                           <<>> ->
+                               Headers ++ CustomHeaders;
+                           _ ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers ++ CustomHeaders
+                       end,
+
             BodyFunc = fun(Socket, Transport) ->
                                leo_net:chunked_send(
                                  Transport, Socket, RespObject, SendChunkLen)
                        end,
+
+            ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK, BeginTime),
             ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% For a chunked object.
         {ok, #?METADATA{cnumber = TotalChunkedObjs,
-                        dsize = ObjLen} = Meta, _RespObject} ->
+                        dsize = ObjLen,
+                        meta = CMetaBin} = Meta, _RespObject} ->
             Mime = leo_mime:guess_mime(Key),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, Mime},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
+            Headers2 = case CMetaBin of
+                           <<>> ->
+                               Headers ++ CustomHeaders;
+                           _ ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers ++ CustomHeaders
+                       end,
             BodyFunc = fun(Socket, Transport) ->
                                {ok, Pid} = leo_large_object_get_handler:start_link(
                                              {Key, #transport_record{transport = Transport,
@@ -303,16 +349,16 @@ get_object(Req, Key, #req_params{bucket_name = BucketName,
                                try
                                    Ret = leo_large_object_get_handler:get(
                                            Pid, TotalChunkedObjs, Req, Meta),
-                                   reply_fun(Ret, get, BucketName, Key, ObjLen),
+                                   reply_fun(Ret, get, BucketName, Key, ObjLen, BeginTime),
                                    ok
                                after
-                                   ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, 0),
+                                   ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, 0, BeginTime),
                                    catch leo_large_object_get_handler:stop(Pid)
                                end
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
         {error, Cause} ->
-            reply_fun({error, Cause}, get, BucketName, Key, 0, Req)
+            reply_fun({error, Cause}, get, BucketName, Key, 0, Req, BeginTime)
     end.
 
 
@@ -322,6 +368,7 @@ get_object(Req, Key, #req_params{bucket_name = BucketName,
 get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                                                       custom_header_settings = CustomHeaderSettings,
                                                       sending_chunked_obj_len = SendChunkLen}) ->
+    BeginTime = leo_date:clock(),
     Path = CacheObj#cache.file_path,
     HasDiskCache = case Path of
                        [] ->
@@ -340,61 +387,91 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                        {?HTTP_HEAD_X_FROM_CACHE, <<"True/via disk">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
-
-            case file:open(Path, [raw, read]) of
-                {ok, Fd} ->
-                    ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK),
-                    BodyFunc = fun(Socket,_Transport) ->
-                                       case file:sendfile(Fd, Socket, 0, 0,
-                                                          [{chunk_size, SendChunkLen}]) of
-                                           {ok,_} ->
-                                               void;
-                                           {error, Cause} ->
-                                               ?warn("get_object_with_cache/4",
-                                                     [{key, Path},
-                                                      {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
-                                                      {cause, Cause}])
-                                       end,
-                                       _ = file:close(Fd),
-                                       ok
+            
+            case leo_gateway_rpc_handler:head(Key) of
+                {ok, #?METADATA{meta = CMetaBin}} ->
+                    Headers2 = case CMetaBin of
+                                   <<>> ->
+                                       Headers ++ CustomHeaders;
+                                   _ ->
+                                       CMeta = binary_to_term(CMetaBin),
+                                       CMeta ++ Headers ++ CustomHeaders
                                end,
-                    cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
-                {error, Reason} ->
-                    ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR),
 
+                    case file:open(Path, [raw, read]) of
+                        {ok, Fd} ->
+                            BodyFunc = fun(Socket,_Transport) ->
+                                               case file:sendfile(Fd, Socket, 0, 0,
+                                                                  [{chunk_size, SendChunkLen}]) of
+                                                   {ok,_} ->
+                                                       void;
+                                                   {error, Cause} ->
+                                                       ?warn("get_object_with_cache/4",
+                                                             [{key, Path},
+                                                              {summary, ?ERROR_COULD_NOT_SEND_DISK_CACHE},
+                                                              {cause, Cause}])
+                                               end,
+                                               _ = file:close(Fd),
+                                               ok
+                                       end,
+
+                            ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK, BeginTime, "hit:disk-cache"),
+                            cowboy_req:reply(?HTTP_ST_OK, Headers2, {CacheObj#cache.size, BodyFunc}, Req);
+                        {error, Reason} ->
+                            catch leo_cache_api:delete(Key),
+                            ?warn("get_object_with_cache/4",
+                                  [{key, Path},
+                                   {summary, ?ERROR_COULD_NOT_OPEN_DISK_CACHE},
+                                   {cause, Reason}]),
+
+                            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR, BeginTime, "hit:disk-cache"),
+                            ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
+                    end;
+                {error, Reason} ->
                     catch leo_cache_api:delete(Key),
                     ?warn("get_object_with_cache/4",
                           [{key, Path},
                            {summary, ?ERROR_COULD_NOT_OPEN_DISK_CACHE},
                            {cause, Reason}]),
+
+                    ?access_log_get(BucketName, Key, 0, ?HTTP_ST_INTERNAL_ERROR, BeginTime),
                     ?reply_internal_error([?SERVER_HEADER], Key, <<>>, Req)
             end;
 
         %% HIT: get an object from memory-cache
         {ok, match} when Path == [] ->
-            ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, CacheObj#cache.content_type},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(CacheObj#cache.etag)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, leo_http:rfc1123_date(CacheObj#cache.mtime)},
                        {?HTTP_HEAD_X_FROM_CACHE, <<"True/via memory">>}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
+            Headers2 = case CacheObj#cache.cmeta of
+                           <<>> ->
+                               Headers ++ CustomHeaders;
+                           CMetaBin ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers ++ CustomHeaders
+                       end,
+
             BodyFunc = fun(Socket, Transport) ->
                                leo_net:chunked_send(
                                  Transport, Socket, CacheObj#cache.body, SendChunkLen)
                        end,
+
+            ?access_log_get(BucketName, Key, CacheObj#cache.size, ?HTTP_ST_OK, BeginTime, "hit:mem-cache"),
             ?reply_ok(Headers2, {CacheObj#cache.size, BodyFunc}, Req);
 
         %% MISS: get an object from storage (small-size)
-        {ok, #?METADATA{cnumber = 0} = Meta, RespObject} ->
-            ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK),
+        {ok, #?METADATA{cnumber = 0,
+                        meta = CMetaBin} = Meta, RespObject} ->
             Mime = leo_mime:guess_mime(Key),
             Val = term_to_binary(#cache{etag = Meta#?METADATA.checksum,
                                         mtime = Meta#?METADATA.timestamp,
                                         content_type = Mime,
                                         body = RespObject,
+                                        cmeta = CMetaBin,
+                                        msize = byte_size(CMetaBin),
                                         size = byte_size(RespObject)}),
             catch leo_cache_api:put(Key, Val),
             Headers = [?SERVER_HEADER,
@@ -402,23 +479,38 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
+            Headers2 = case CMetaBin of
+                           <<>> ->
+                               Headers ++ CustomHeaders;
+                           _ ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers ++ CustomHeaders
+                       end,
             BodyFunc = fun(Socket, Transport) ->
                                leo_net:chunked_send(
                                  Transport, Socket, RespObject, SendChunkLen)
                        end,
+
+            ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, ?HTTP_ST_OK, BeginTime),
             ?reply_ok(Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
 
         %% MISS: get an object from storage (large-size)
         {ok, #?METADATA{cnumber = TotalChunkedObjs,
-                        dsize = ObjLen} = Meta, _RespObject} ->
+                        dsize = ObjLen,
+                        meta = CMetaBin} = Meta, _RespObject} ->
             Mime = leo_mime:guess_mime(Key),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE,  Mime},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, ?http_date(Meta#?METADATA.timestamp)}],
             {ok, CustomHeaders} = leo_nginx_conf_parser:get_custom_headers(Key, CustomHeaderSettings),
-            Headers2 = Headers ++ CustomHeaders,
+            Headers2 = case CMetaBin of
+                           <<>> ->
+                               Headers ++ CustomHeaders;
+                           _ ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers ++ CustomHeaders
+                       end,
             BodyFunc = fun(Socket, Transport) ->
                                {ok, Pid} = leo_large_object_get_handler:start_link(
                                              {Key, #transport_record{transport = Transport,
@@ -427,33 +519,35 @@ get_object_with_cache(Req, Key, CacheObj, #req_params{bucket_name = BucketName,
                                try
                                    Ret = leo_large_object_get_handler:get(
                                            Pid, TotalChunkedObjs, Req, Meta),
-                                   reply_fun(Ret, get, BucketName, Key, ObjLen),
+                                   reply_fun(Ret, get, BucketName, Key, ObjLen, BeginTime),
                                    ok
                                after
-                                   ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, 0),
+                                   ?access_log_get(BucketName, Key, Meta#?METADATA.dsize, 0, BeginTime),
                                    catch leo_large_object_get_handler:stop(Pid)
                                end
                        end,
             cowboy_req:reply(?HTTP_ST_OK, Headers2, {Meta#?METADATA.dsize, BodyFunc}, Req);
         {error, Cause} ->
-            reply_fun({error, Cause}, get, BucketName, Key, 0, Req)
+            reply_fun({error, Cause}, get, BucketName, Key, 0, Req, BeginTime)
     end.
 
 %% @doc MOVE/COPY an object
 -spec(move_large_object(#?METADATA{}, binary(), #req_params{}) ->
              ok | {error, any()}).
 move_large_object(#?METADATA{key = Key, cnumber = TotalChunkedObjs} = SrcMeta, DestKey, Params) ->
+    BeginTime = leo_date:clock(),
     {ok, ReadHandler} = leo_large_object_move_handler:start_link(Key, 0, TotalChunkedObjs),
     try
-        move_large_object(SrcMeta, DestKey, Params, ReadHandler)
+        move_large_object(SrcMeta, DestKey, Params, ReadHandler, BeginTime)
     after
         catch leo_large_object_move_handler:stop(ReadHandler)
     end.
 
 move_large_object(#?METADATA{dsize = Size}, DestKey,
                   #req_params{chunked_obj_len = ChunkedSize,
+                              custom_metadata = CMeta,
                               bucket_name = BucketName,
-                              bucket_info = BucketInfo}, ReadHandler) ->
+                              bucket_info = BucketInfo}, ReadHandler, BeginTime) ->
     {ok, WriteHandler} =
         leo_large_object_put_handler:start_link(
           BucketInfo, DestKey, ChunkedSize),
@@ -464,8 +558,9 @@ move_large_object(#?METADATA{dsize = Size}, DestKey,
                               bucket_name = BucketName,
                               bucket_info = BucketInfo,
                               key = DestKey,
+                              meta = CMeta,
                               length = Size,
-                              chunked_size = ChunkedSize}, ReadHandler) of
+                              chunked_size = ChunkedSize}, ReadHandler, BeginTime) of
             ok ->
                 ok;
             {error, Cause} ->
@@ -479,12 +574,12 @@ move_large_object(#?METADATA{dsize = Size}, DestKey,
 %% @private
 move_large_object_1({ok, Data},
                     #req_large_obj{key = Key,
-                                   handler = WriteHandler} = ReqLargeObj, ReadHandler) ->
+                                   handler = WriteHandler} = ReqLargeObj, ReadHandler, BeginTime) ->
     case catch leo_large_object_put_handler:put(WriteHandler, Data) of
         ok ->
             move_large_object_1(
               leo_large_object_move_handler:get_chunk_obj(ReadHandler),
-              ReqLargeObj, ReadHandler);
+              ReqLargeObj, ReadHandler, BeginTime);
         {'EXIT', Cause} ->
             ?error("move_large_object_1/3",
                    [{key, binary_to_list(Key)}, {cause, Cause}]),
@@ -495,7 +590,7 @@ move_large_object_1({ok, Data},
             {error, ?ERROR_FAIL_PUT_OBJ}
     end;
 move_large_object_1({error, Cause},
-                    #req_large_obj{key = Key},_ReadHandler) ->
+                    #req_large_obj{key = Key},_ReadHandler,_) ->
     ?error("move_large_object_1/3",
            [{key, binary_to_list(Key)}, {cause, Cause}]),
     {error, ?ERROR_FAIL_RETRIEVE_OBJ};
@@ -503,8 +598,9 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                                          bucket_name = BucketName,
                                          bucket_info = BucketInfo,
                                          key = Key,
+                                         meta = CMeta,
                                          length = Size,
-                                         chunked_size = ChunkedSize},_ReadHandler) ->
+                                         chunked_size = ChunkedSize},_ReadHandler,BeginTime) ->
     case catch leo_large_object_put_handler:result(WriteHandler) of
         {ok, #large_obj_info{length = TotalSize,
                              num_of_chunks = TotalChunks,
@@ -512,6 +608,8 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
             Digest_1 = leo_hex:raw_binary_to_integer(Digest),
             case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
                                                              body = ?BIN_EMPTY,
+                                                             meta = CMeta,
+                                                             msize = byte_size(CMeta),
                                                              dsize = Size,
                                                              total_chunks = TotalChunks,
                                                              cindex = 0,
@@ -519,7 +617,7 @@ move_large_object_1(done, #req_large_obj{handler = WriteHandler,
                                                              digest = Digest_1,
                                                              bucket_info = BucketInfo}) of
                 {ok, _ETag} ->
-                    ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
+                    ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK, BeginTime),
                     ok;
                 {error, timeout = Cause} ->
                     {error, Cause};
@@ -544,12 +642,13 @@ put_object(Req, Key, #req_params{bucket_name = BucketName,
                                  threshold_of_chunk_len = ThresholdObjLen,
                                  transfer_decode_fun = TransferDecodeFun,
                                  transfer_decode_state = TransferDecodeState} = Params) ->
+    BeginTime = leo_date:clock(),
     {Size, _} = cowboy_req:body_length(Req),
     ?debug("put_object/3", "Object Size: ~p", [Size]),
 
     case (Size >= ThresholdObjLen) of
         true when Size >= MaxLenForObj ->
-            ?access_log_put(BucketName, Key, 0, ?HTTP_ST_BAD_REQ),
+            ?access_log_put(BucketName, Key, 0, ?HTTP_ST_BAD_REQ, BeginTime),
             ?reply_bad_request([?SERVER_HEADER],
                                ?XML_ERROR_CODE_EntityTooLarge,
                                ?XML_ERROR_MSG_EntityTooLarge,
@@ -598,11 +697,15 @@ binary_is_contained(<<C:8, Rest/binary>>, Char) ->
 put_small_object({error, Cause},_,_) ->
     {error, Cause};
 put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket_name = BucketName,
+                                                          custom_metadata = CMeta,
                                                           upload_part_num = UploadPartNum,
                                                           has_inner_cache = HasInnerCache,
                                                           bucket_info = BucketInfo}) ->
+    BeginTime = leo_date:clock(),
     case leo_gateway_rpc_handler:put(#put_req_params{path = Key,
                                                      body = Bin,
+                                                     meta = CMeta,
+                                                     msize = byte_size(CMeta),
                                                      dsize = Size,
                                                      cindex = UploadPartNum,
                                                      bucket_info = BucketInfo}) of
@@ -615,6 +718,8 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket_name = BucketNa
                                                 mtime = leo_date:now(),
                                                 content_type = Mime,
                                                 body = Bin,
+                                                cmeta = CMeta,
+                                                msize = byte_size(CMeta),
                                                 size = byte_size(Bin)
                                                }),
                     catch leo_cache_api:put(Key, Val);
@@ -622,12 +727,12 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket_name = BucketNa
                     void
             end,
 
-            ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
             Header = [?SERVER_HEADER,
                       {?HTTP_HEAD_RESP_ETAG, ?http_etag(ETag)}],
+            ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK, BeginTime),
             ?reply_ok(Header, Req);
         {error, Cause} ->
-            reply_fun({error, Cause}, put, BucketName, Key, 0, Req)
+            reply_fun({error, Cause}, put, BucketName, Key, 0, Req, BeginTime)
     end.
 
 
@@ -637,11 +742,13 @@ put_small_object({ok, {Size, Bin, Req}}, Key, #req_params{bucket_name = BucketNa
              {ok, cowboy_req:req()}).
 put_large_object(Req, Key, Size, #req_params{bucket_name = BucketName,
                                              bucket_info = BucketInfo,
+                                             custom_metadata = CMeta,
                                              timeout_for_body = Timeout4Body,
                                              chunked_obj_len = ChunkedSize,
                                              reading_chunked_obj_len = ReadingChunkedSize,
                                              transfer_decode_fun = TransferDecodeFun,
                                              transfer_decode_state = TransferDecodeState})->
+    BeginTime = leo_date:clock(),
     %% launch 'large_object_handler'
     {ok, Handler} =
         leo_large_object_put_handler:start_link(BucketInfo, Key, ChunkedSize),
@@ -665,6 +772,7 @@ put_large_object(Req, Key, Size, #req_params{bucket_name = BucketName,
     Reply = case put_large_object_1(cowboy_req:body(Req, BodyOpts_1),
                                     #req_large_obj{handler = Handler,
                                                    key = Key,
+                                                   meta = CMeta,
                                                    length = Size,
                                                    timeout_for_body = Timeout4Body,
                                                    chunked_size = ChunkedSize,
@@ -677,9 +785,9 @@ put_large_object(Req, Key, Size, #req_params{bucket_name = BucketName,
                                          true  -> ErrorRet;
                                          false -> {Req, ErrorRet}
                                      end,
-                    reply_fun({error, Cause}, put, BucketName, Key, Size, Req_1);
+                    reply_fun({error, Cause}, put, BucketName, Key, Size, Req_1, BeginTime);
                 Ret ->
-                    ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK),
+                    ?access_log_put(BucketName, Key, Size, ?HTTP_ST_OK, BeginTime),
                     Ret
             end,
     catch leo_large_object_put_handler:stop(Handler),
@@ -728,6 +836,7 @@ put_large_object_1({error, Cause}, #req_large_obj{key = Key}) ->
 put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                                                    bucket_info = BucketInfo,
                                                    key = Key,
+                                                   meta = CMeta,
                                                    length = Size,
                                                    chunked_size = ChunkedSize}) ->
     case catch leo_large_object_put_handler:put(Handler, Data) of
@@ -740,6 +849,8 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
                     case leo_gateway_rpc_handler:put(#put_req_params{
                                                         path = Key,
                                                         body = ?BIN_EMPTY,
+                                                        meta = CMeta,
+                                                        msize = byte_size(CMeta),
                                                         dsize = Size,
                                                         total_chunks = TotalChunks,
                                                         csize = ChunkedSize,
@@ -777,6 +888,7 @@ put_large_object_1({ok, Data, Req}, #req_large_obj{handler = Handler,
 -spec(delete_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 delete_object(Req, Key, #req_params{bucket_name = BucketName}) ->
+    BeginTime = leo_date:clock(),
     Size1 = case leo_gateway_rpc_handler:head(Key) of
                 {ok, #?METADATA{del = 0, dsize = Size}} ->
                     Size;
@@ -786,10 +898,10 @@ delete_object(Req, Key, #req_params{bucket_name = BucketName}) ->
 
     case leo_gateway_rpc_handler:delete(Key) of
         ok ->
-            ?access_log_delete(BucketName, Key, Size1, ?HTTP_ST_NO_CONTENT),
+            ?access_log_delete(BucketName, Key, Size1, ?HTTP_ST_NO_CONTENT, BeginTime),
             ?reply_no_content([?SERVER_HEADER], Req);
         {error, Cause} ->
-            reply_fun({error, Cause}, delete, BucketName, Key, 0, Req)
+            reply_fun({error, Cause}, delete, BucketName, Key, 0, Req, BeginTime)
     end.
 
 
@@ -797,21 +909,38 @@ delete_object(Req, Key, #req_params{bucket_name = BucketName}) ->
 -spec(head_object(cowboy_req:req(), binary(), #req_params{}) ->
              {ok, cowboy_req:req()}).
 head_object(Req, Key, #req_params{bucket_name = BucketName}) ->
+    BeginTime = leo_date:clock(),
     case leo_gateway_rpc_handler:head(Key) of
-        {ok, #?METADATA{del = 0} = Meta} ->
+        {ok, #?METADATA{del = 0,
+                        meta = CMetaBin} = Meta} ->
             Timestamp = leo_http:rfc1123_date(Meta#?METADATA.timestamp),
-            ?access_log_head(BucketName, Key, ?HTTP_ST_OK),
             Headers = [?SERVER_HEADER,
                        {?HTTP_HEAD_RESP_CONTENT_TYPE, leo_mime:guess_mime(Key)},
                        {?HTTP_HEAD_RESP_ETAG, ?http_etag(Meta#?METADATA.checksum)},
-                       {?HTTP_HEAD_RESP_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
+                       %% https://github.com/leo-project/leofs/issues/489
+                       %% We used Camel Case for response headers
+                       %% as old version boto(s) only took care Camel Cased headers.
+                       %% but the latest(also maybe last) stable release seems to
+                       %% handle headers with caseinsensitive mannear.
+                       %% so I changed to the lower case one from the Camel Cased
+                       %% in order to cope with cowboy_req:merge_headers which only take care
+                       %% lower case ones.
+                       {?HTTP_HEAD_CONTENT_LENGTH, erlang:integer_to_list(Meta#?METADATA.dsize)},
                        {?HTTP_HEAD_RESP_LAST_MODIFIED, Timestamp}],
-            cowboy_req:reply(?HTTP_ST_OK, Headers, fun() -> void end, Req);
+            Headers2 = case CMetaBin of
+                           <<>> ->
+                               Headers;
+                           _ ->
+                               CMeta = binary_to_term(CMetaBin),
+                               CMeta ++ Headers
+                       end,
+            ?access_log_head(BucketName, Key, ?HTTP_ST_OK, BeginTime),
+            cowboy_req:reply(?HTTP_ST_OK, Headers2, <<>>, Req);
         {ok, #?METADATA{del = 1}} ->
-            ?access_log_head(BucketName, Key, ?HTTP_ST_NOT_FOUND),
+            ?access_log_head(BucketName, Key, ?HTTP_ST_NOT_FOUND, BeginTime),
             ?reply_not_found_without_body([?SERVER_HEADER], Req);
         {error, Cause} ->
-            reply_fun({error, Cause}, head, BucketName, Key, 0, Req)
+            reply_fun({error, Cause}, head, BucketName, Key, 0, Req, BeginTime)
     end.
 
 
@@ -821,23 +950,32 @@ head_object(Req, Key, #req_params{bucket_name = BucketName}) ->
 range_object(Req, Key, #req_params{bucket_name = BucketName,
                                    range_header = RangeHeader,
                                    sending_chunked_obj_len = SendChunkLen}) ->
+    BeginTime = leo_date:clock(),
     Range = cowboy_http:range(RangeHeader),
-    get_range_object(Req, BucketName, Key, Range, SendChunkLen).
+    get_range_object(Req, BucketName, Key, Range, SendChunkLen, BeginTime).
 
 
 %% @private
-get_range_object(Req, BucketName, Key, {error, badarg}, _) ->
-    ?access_log_get(BucketName, Key, 0, ?HTTP_ST_BAD_RANGE),
+get_range_object(Req, BucketName, Key, {error, badarg}, _, BeginTime) ->
+    ?access_log_get(BucketName, Key, 0, ?HTTP_ST_BAD_RANGE, BeginTime),
     ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
-get_range_object(Req, BucketName, Key, {_Unit, Range}, SendChunkLen) when is_list(Range) ->
+get_range_object(Req, BucketName, Key, {_Unit, Range}, SendChunkLen, BeginTime) when is_list(Range) ->
     case get_body_length(Key, Range) of
         {ok, Length} ->
             case leo_gateway_rpc_handler:head(Key) of
-                {ok, #?METADATA{del = 0} = Meta} ->
+                {ok, #?METADATA{del = 0,
+                                meta = CMetaBin} = Meta}->
                     Timestamp = leo_http:rfc1123_date(Meta#?METADATA.timestamp),
-                    Header = [?SERVER_HEADER,
-                              {?HTTP_HEAD_RESP_CONTENT_TYPE, leo_mime:guess_mime(Key)},
-                              {?HTTP_HEAD_RESP_LAST_MODIFIED, Timestamp}],
+                    Headers = [?SERVER_HEADER,
+                               {?HTTP_HEAD_RESP_CONTENT_TYPE, leo_mime:guess_mime(Key)},
+                               {?HTTP_HEAD_RESP_LAST_MODIFIED, Timestamp}],
+                    Headers2 = case CMetaBin of
+                                   <<>> ->
+                                       Headers;
+                                   _ ->
+                                       CMeta = binary_to_term(CMetaBin),
+                                       CMeta ++ Headers
+                               end,
                     Req2 = cowboy_req:set_resp_body_fun(
                              Length,
                              fun(Socket, Transport) ->
@@ -847,32 +985,18 @@ get_range_object(Req, BucketName, Key, {_Unit, Range}, SendChunkLen) when is_lis
                                                                           sending_chunked_obj_len = SendChunkLen})
                              end,
                              Req),
-                    ?reply_partial_content(Header, Req2);
+                    ?reply_partial_content(Headers2, Req2);
                 {ok, #?METADATA{del = 1}} ->
-                    ?access_log_head(BucketName, Key, ?HTTP_ST_NOT_FOUND),
+                    ?access_log_get(BucketName, Key, 0, ?HTTP_ST_NOT_FOUND, BeginTime),
                     ?reply_not_found_without_body([?SERVER_HEADER], Req);
-                {error, not_found} ->
-                    ?access_log_head(BucketName, Key, ?HTTP_ST_NOT_FOUND),
-                    ?reply_not_found_without_body([?SERVER_HEADER], Req);
-                {error, unavailable} ->
-                    ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-                {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-                    ?access_log_head(BucketName, Key, ?HTTP_ST_INTERNAL_ERROR),
-                    ?reply_internal_error_without_body([?SERVER_HEADER], Req);
-                {error, timeout} ->
-                    ?access_log_head(BucketName, Key, ?HTTP_ST_GATEWAY_TIMEOUT),
-                    ?reply_timeout_without_body([?SERVER_HEADER], Req)
+                {error, Cause} ->
+                    reply_fun({error, Cause}, get, BucketName, Key, 0, Req, BeginTime)
             end;
         {error, bad_range} ->
+            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_BAD_RANGE, BeginTime),
             ?reply_bad_range([?SERVER_HEADER], Key, <<>>, Req);
-        {error, unavailable} ->
-            ?reply_service_unavailable_error([?SERVER_HEADER], Key, <<>>, Req);
-        {error, timeout} ->
-            ?reply_timeout_without_body([?SERVER_HEADER], Req);
-        {error, ?ERR_TYPE_INTERNAL_ERROR} ->
-            ?reply_internal_error_without_body([?SERVER_HEADER], Req);
-        _ ->
-            ?reply_not_found_without_body([?SERVER_HEADER], Req)
+        {error, Cause} ->
+            reply_fun({error, Cause}, get, BucketName, Key, 0, Req, BeginTime)
     end.
 
 %% @private
@@ -942,12 +1066,13 @@ get_range_object_small(_Req, BucketName, Key, Start, End,
                        #transport_record{transport = Transport,
                                          socket = Socket,
                                          sending_chunked_obj_len = SendChunkLen}) ->
+    BeginTime = leo_date:clock(),
     case leo_gateway_rpc_handler:get(Key, Start, End) of
         {ok, _Meta, <<>>} ->
-            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_OK),
+            ?access_log_get(BucketName, Key, 0, ?HTTP_ST_OK, BeginTime),
             ok;
         {ok, _Meta, Bin} ->
-            ?access_log_get(BucketName, Key, byte_size(Bin), ?HTTP_ST_OK),
+            ?access_log_get(BucketName, Key, byte_size(Bin), ?HTTP_ST_OK, BeginTime),
             case leo_net:chunked_send(Transport, Socket, Bin, SendChunkLen) of
                 ok ->
                     ok;
@@ -1131,11 +1256,11 @@ is_cachable_req3(_Key, #cache_condition{content_types = CTypes}, Headers, _Body)
 
 %% @doc Reply to a request
 %% @private
-reply_fun(ok, get, Bucket, Key, ObjLen) ->
-    ?access_log_get(Bucket, Key, ObjLen, ?HTTP_ST_OK);
-reply_fun({ok,_}, get, Bucket, Key, ObjLen) ->
-    ?access_log_get(Bucket, Key, ObjLen, ?HTTP_ST_OK);
-reply_fun({error, Cause}, Method, Bucket, Key, ObjLen) ->
-    ?reply_fun(Cause, Method, Bucket, Key, ObjLen).
-reply_fun({error, Cause}, Method, Bucket, Key, ObjLen, Req) ->
-    ?reply_fun(Cause, Method, Bucket, Key, ObjLen, Req).
+reply_fun(ok, get, Bucket, Key, ObjLen, BeginTime) ->
+    ?access_log_get(Bucket, Key, ObjLen, ?HTTP_ST_OK, BeginTime);
+reply_fun({ok,_}, get, Bucket, Key, ObjLen, BeginTime) ->
+    ?access_log_get(Bucket, Key, ObjLen, ?HTTP_ST_OK, BeginTime);
+reply_fun({error, Cause}, Method, Bucket, Key, ObjLen, BeginTime) ->
+    ?reply_fun(Cause, Method, Bucket, Key, ObjLen, BeginTime).
+reply_fun({error, Cause}, Method, Bucket, Key, ObjLen, Req, BeginTime) ->
+    ?reply_fun(Cause, Method, Bucket, Key, ObjLen, Req, BeginTime).

@@ -198,10 +198,12 @@ handle_1(Req, [{NumOfMinLayers, NumOfMaxLayers}, HasInnerCache, _CustomHeaderSet
                                     threshold_of_chunk_len = Props#http_options.threshold_of_chunk_len},
             handle_2(Req, HTTPMethod, Path, ReqParams, State);
         false when HTTPMethod == ?HTTP_GET ->
-            ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req);
+            {ok, Req2} = ?reply_not_found([?SERVER_HEADER], Path, <<>>, Req),
+            {ok, Req2, State};
         false  ->
-            ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
-                               ?XML_ERROR_MSG_InvalidArgument, Path, <<>>, Req)
+            {ok, Req2} = ?reply_bad_request([?SERVER_HEADER], ?XML_ERROR_CODE_InvalidArgument,
+                                            ?XML_ERROR_MSG_InvalidArgument, Path, <<>>, Req),
+            {ok, Req2, State}
     end.
 
 %% @private

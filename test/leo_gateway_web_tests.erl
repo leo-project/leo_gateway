@@ -65,6 +65,7 @@ gen_tests_1(Arg) ->
                fun get_object_invalid_/1,
                fun get_object_notfound_/1,
                fun get_object_normal1_/1,
+               fun get_object_cmeta_normal1_/1,
                fun range_object_normal1_/1,
                fun range_object_normal2_/1,
                fun range_object_normal3_/1,
@@ -72,6 +73,7 @@ gen_tests_1(Arg) ->
                fun delete_object_notfound_/1,
                fun delete_object_normal1_/1,
                fun put_object_error_/1,
+               fun put_object_error_metadata_too_large_/1,
                fun put_object_normal1_/1,
                fun put_object_aws_chunked_/1,
                fun put_object_aws_chunked_error_/1
@@ -200,6 +202,14 @@ setup(InitFun, TermFun) ->
     application:start(leo_cache),
     leo_cache_api:start(),
 
+    leo_pod:start_link(?POD_LOH_WORKER,
+                       ?env_loh_put_worker_pool_size(),
+                       ?env_loh_put_worker_buffer_size(),
+                       leo_large_object_worker, [],
+                       fun(_) ->
+                               void
+                       end),
+
     InitFun(),
     [TermFun, Node0, Node1].
 
@@ -209,7 +219,8 @@ setup_s3_api() ->
     application:start(cowboy),
 
     {ok, Options} = leo_gateway_app:get_options(),
-    InitFun = fun() -> leo_gateway_http_commons:start(Options) end,
+    InitFun = fun() -> leo_gateway_http_commons:start(
+                         Options#http_options{port = 8080}) end,
     TermFun = fun() -> leo_gateway_s3_api:stop() end,
     setup(InitFun, TermFun).
 
@@ -220,7 +231,8 @@ setup_rest_api() ->
 
     {ok, Options} = leo_gateway_app:get_options(),
     InitFun = fun() -> leo_gateway_http_commons:start(
-                         Options#http_options{handler = leo_gateway_rest_api}) end,
+                         Options#http_options{handler = leo_gateway_rest_api,
+                                              port = 8080}) end,
     TermFun = fun() -> leo_gateway_rest_api:stop() end,
     setup(InitFun, TermFun).
 
@@ -315,6 +327,7 @@ get_bucket_list_normal1_([_TermFun, _Node0, Node1]) ->
                                     addr_id    = 0,
                                     ksize      = 8,
                                     dsize      = 0,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -446,6 +459,7 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     addr_id    = 0,
                                     ksize      = 4,
                                     dsize      = 16384,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -466,6 +480,10 @@ head_object_normal1_([_TermFun, _Node0, Node1]) ->
                     httpc:request(head, {lists:append(["http://",
                                                        ?TARGET_HOST,
                                                        ":8080/a/b/c/d.png"]), [{"Date", Date}, {"connection", "close"}]}, [], []),
+                %% https://github.com/leo-project/leofs/issues/489#issuecomment-265389401
+                %% exists only content-length header
+                ?assertEqual({"content-length", "16384"}, lists:keyfind("content-length", 1, Headers)),
+                ?assertEqual(false, lists:keyfind("transfer-encoding", 1, Headers)),
                 ?assertEqual(200, SC)
                 %% ?assertEqual("16384", proplists:get_value("content-length", Headers))
             catch
@@ -574,6 +592,7 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
                                     addr_id    = 0,
                                     ksize      = 4,
                                     dsize      = 4,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -607,6 +626,54 @@ get_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
+get_object_cmeta_normal1_([_TermFun, _Node0, Node1]) ->
+    fun() ->
+            ok = rpc:call(Node1, meck, new,
+                          [leo_storage_handler_object, [no_link, non_strict]]),
+
+            CMetaBin = term_to_binary([{<<"x-amz-meta-test">>, <<"custom metadata">>}]),
+            ok = rpc:call(Node1, meck, expect,
+                          [leo_storage_handler_object, get, 3,
+                           {ok, #?METADATA{
+                                    key =  <<"">>,
+                                    addr_id    = 0,
+                                    ksize      = 4,
+                                    dsize      = 4,
+                                    meta       = CMetaBin,
+                                    msize      = byte_size(CMetaBin),
+                                    csize      = 0,
+                                    cnumber    = 0,
+                                    cindex     = 0,
+                                    offset     = 1,
+                                    clock      = calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
+                                    timestamp  = 19740926,
+                                    checksum   = 0,
+                                    ring_hash  = 0,
+                                    cluster_id = [],
+                                    ver = 0,
+                                    del = ?DEL_FALSE
+                                   },
+                            <<"body">>}]),
+
+            try
+                Date = leo_http:rfc1123_date(leo_date:now()),
+                {ok, {{_, SC, _}, Headers, Body}} =
+                    httpc:request(get, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]), [{"Date", Date}, {"connection", "close"}]}, [], []),
+                ?assertEqual(200, SC),
+                ?assertEqual("body", Body),
+                ?assertEqual(undefined, proplists:get_value("X-From-Cache", Headers)),
+                ?assertEqual("custom metadata", proplists:get_value("x-amz-meta-test", Headers))
+            catch
+                throw:Reason ->
+                    throw(Reason)
+            after
+                ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
 range_object_normal1_([_TermFun, _Node0, Node1]) ->
     range_object_base([_TermFun, _Node0, Node1], "bytes=1-2").
 range_object_normal2_([_TermFun, _Node0, Node1]) ->
@@ -625,6 +692,7 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     addr_id    = 0,
                                     ksize      = 4,
                                     dsize      = 16384,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -646,6 +714,7 @@ range_object_base([_TermFun, _Node0, Node1], RangeValue) ->
                                     addr_id    = 0,
                                     ksize      = 2,
                                     dsize      = 2,
+                                    meta       = <<>>,
                                     msize      = 0,
                                     csize      = 0,
                                     cnumber    = 0,
@@ -767,6 +836,8 @@ delete_object_normal1_([_TermFun, _Node0, Node1]) ->
             ok
     end.
 
+-undef(EUNIT_DEBUG_VAL_DEPTH).
+-define(EUNIT_DEBUG_VAL_DEPTH, 1024).
 put_object_error_([_TermFun, _Node0, Node1]) ->
     fun() ->
             ok = rpc:call(Node1, meck, new,
@@ -794,6 +865,32 @@ put_object_error_([_TermFun, _Node0, Node1]) ->
                     throw(Reason)
             after
                 ok = rpc:call(Node1, meck, unload, [leo_storage_handler_object])
+            end,
+            ok
+    end.
+
+put_object_error_metadata_too_large_([_TermFun, _Node0, _Node1]) ->
+    fun() ->
+            try
+                Date = leo_http:rfc1123_date(leo_date:now()),
+                Dummy = lists:flatten(["test" || _ <- lists:seq(1, ?HTTP_METADATA_LIMIT * 2 div 4)]),
+                %Dummy = crypto:rand_bytes(?HTTP_METADATA_LIMIT * 2),
+                {ok, {SC, Body}} =
+                    httpc:request(put, {lists:append(["http://",
+                                                      ?TARGET_HOST,
+                                                      ":8080/a/b.png"]),
+                                        [{"Date", Date}, {"Authorization","auth"}, {"x-amz-meta-test", Dummy}], "image/png", "body"},
+                                  [], [{full_result, false}]),
+                %% req id is empty for now
+                Xml = io_lib:format(?XML_ERROR,
+                                    [?XML_ERROR_CODE_MetadataTooLarge,
+                                     ?XML_ERROR_MSG_MetadataTooLarge,
+                                     "a/b.png", ""]),
+                ?assertEqual(erlang:list_to_binary(Xml), erlang:list_to_binary(Body)),
+                ?assertEqual(400, SC)
+            catch
+                throw:Reason ->
+                    throw(Reason)
             end,
             ok
     end.

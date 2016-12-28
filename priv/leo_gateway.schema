@@ -122,7 +122,7 @@
  "leo_gateway.system_version",
  [
   {datatype, string},
-  {default, "1.3.0"}
+  {default, "1.3.1"}
  ]}.
 
 
@@ -297,6 +297,38 @@
   {default, 5242880}
  ]}.
 
+{translation, "leo_gateway.large_object.reading_chunked_obj_len",
+ fun(Conf) ->
+         Len = cuttlefish_util:conf_get_value("large_object.chunked_obj_len", Conf),
+         ReadingLen = cuttlefish_util:conf_get_value("large_object.reading_chunked_obj_len", Conf),
+         case ReadingLen > Len of
+             true ->
+                 Reason = lists:flatten(io_lib:format("reading_chunked_obj_len: ~w > chunked_obj_len: ~w", [ReadingLen, Len])),
+                 {error, Reason};
+             false ->
+                 ReadingLen
+         end
+ end}.
+
+
+%% @doc Large Object Handler - put worker pool size
+{mapping,
+ "large_object.put_worker_pool_size",
+ "leo_gateway.large_object.put_worker_pool_size",
+ [
+  {datatype, integer},
+  {default, 64}
+ ]}.
+
+%% @doc Large Object Handler - put worker buffer size
+{mapping,
+ "large_object.put_worker_buffer_size",
+ "leo_gateway.large_object.put_worker_buffer_size",
+ [
+  {datatype, integer},
+  {default, 32}
+ ]}.
+
 
 %% --------------------------------------------------------------------
 %% GATEWAY - CACHE
@@ -330,6 +362,26 @@
   {default, 1073741824}
  ]}.
 
+{translation, "leo_gateway.cache.cache_ram_capacity",
+ fun(Conf) ->
+         NumOfWorkers = cuttlefish_util:conf_get_value("cache.cache_workers", Conf),
+         RamCapacity  = cuttlefish_util:conf_get_value("cache.cache_ram_capacity", Conf),
+
+         case RamCapacity > 0 of
+             true ->
+                 case (8 * 1024 * 1024) * NumOfWorkers > RamCapacity of
+                     true ->
+                         {error, {invalid_configuration,
+                                  "(8 * 1024 * 1024) * ${cache.cache_workers} >= ${cache.cache_ram_capacity}"}};
+                     false ->
+                         RamCapacity
+                 end;
+             false ->
+                 0
+         end
+ end}.
+
+
 %% @doc Disk cache capacity in bytes
 {mapping,
  "cache.cache_disc_capacity",
@@ -338,6 +390,26 @@
   {datatype, bytesize},
   {default, 524288000}
  ]}.
+
+{translation, "leo_gateway.cache.cache_disc_capacity",
+ fun(Conf) ->
+         NumOfWorkers = cuttlefish_util:conf_get_value("cache.cache_workers", Conf),
+         DiscCapacity  = cuttlefish_util:conf_get_value("cache.cache_disc_capacity", Conf),
+
+         case DiscCapacity > 0 of
+             true ->
+                 case (8 * 1024 * 1024) * NumOfWorkers > DiscCapacity of
+                     true ->
+                         {error, {invalid_configuration,
+                                  "(8 * 1024 * 1024) * ${cache.cache_workers} >= ${cache.cache_disc_capacity}"}};
+                     false ->
+                         DiscCapacity
+                 end;
+             false ->
+                 0
+         end
+ end}.
+
 
 %% @doc When the length of the object exceeds this value, store the object on disk
 {mapping,
@@ -1154,7 +1226,7 @@
 
 
 %% @doc configuration path of the leofs gateway's snmp-agent
-%% See: http://www.leofs.org/docs/configuration.html#snmpa-setup
+%% See: http://leo-project.net/leofs/docs/configuration/configuration_4.html#index-3
 {mapping,
  "snmp_conf",
  "vm_args.-config",

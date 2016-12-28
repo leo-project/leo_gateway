@@ -138,6 +138,8 @@ delete(Key) ->
 put(#put_req_params{path = Key,
                     body = Body,
                     dsize = Size,
+                    meta = CMeta,
+                    msize = MSize,
                     total_chunks = TotalChunks,
                     cindex = ChunkIndex,
                     csize = ChunkedSize,
@@ -177,7 +179,9 @@ put(#put_req_params{path = Key,
            [#?OBJECT{addr_id = AddrId,
                      key = Key,
                      data = Body,
+                     meta = CMeta,
                      dsize = Size,
+                     msize = MSize,
                      timestamp = Timestamp,
                      csize = ChunkedSize,
                      cnumber = TotalChunks,
@@ -216,14 +220,24 @@ invoke([#redundant_node{node = Node,
         {value, {ok, {etag, ETag}}} ->
             {ok, ETag};
         %% get-1
-        {value, {ok, _Meta, _Bin} = Ret} ->
-            Ret;
+        {value, {ok, Meta, Bin}} ->
+            case leo_object_storage_transformer:transform_metadata(Meta) of
+                {error,_} ->
+                    {ok, Meta, Bin};
+                Meta_1 ->
+                    {ok, Meta_1, Bin}
+            end;
         %% get-2
         {value, {ok, match} = Ret} ->
             Ret;
         %% head/get_dir_meta
-        {value, {ok, _Meta} = Ret} ->
-            Ret;
+        {value, {ok, Meta}} ->
+            case leo_object_storage_transformer:transform_metadata(Meta) of
+                {error,_} ->
+                    {ok, Meta};
+                Meta_1 ->
+                    {ok, Meta_1}
+            end;
         %% error
         {value, {error,_Cause}} = Error ->
             {error, handle_error(Node, Mod, Method, Args, Error)};

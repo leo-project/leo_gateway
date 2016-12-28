@@ -146,32 +146,34 @@ handle_call({put, Bin}, _From, #state{bucket_info = BucketInfo,
         true ->
             NumOfChunksBin = list_to_binary(integer_to_list(NumOfChunks)),
             << Bin_2:MaxObjLen/binary, StackedBin_1/binary >> = Bin_1,
-            Fun = fun() ->
-                          ChunkedKey = << Key/binary,
-                                          ?DEF_SEPARATOR/binary,
-                                          NumOfChunksBin/binary >>,
-                          Ret = leo_gateway_rpc_handler:put(
-                                  #put_req_params{path = ChunkedKey,
-                                                  body = Bin_2,
-                                                  dsize = MaxObjLen,
-                                                  cindex = NumOfChunks,
-                                                  bucket_info = BucketInfo}),
-                          AsyncNotify = {async_notify, ChunkedKey, Ret},
-                          erlang:send(self(), AsyncNotify)
-                  end,
-            SpawnRet = erlang:spawn_monitor(Fun),
-            Context_1 = crypto:hash_update(Context, Bin_2),
-            << Head:8/binary, _Rest/binary>> = Bin_2,
-            Offset = MaxObjLen * NumOfChunks,
-
-            ?debug("handle_call",
-                   "Save Chunk, Key: ~p, Chunk: ~p, Offset: ~p, Bin: ~p",
-                   [Key, NumOfChunks, Offset, leo_hex:binary_to_hex(Head)]),
-            {reply, ok, State#state{stacked_bin = StackedBin_1,
-                                    num_of_chunks = NumOfChunks + 1,
-                                    total_len = TotalLen_1,
-                                    monitor_set = sets:add_element(SpawnRet, MonitorSet),
-                                    md5_context = Context_1}};
+            ChunkedKey = << Key/binary,
+                            ?DEF_SEPARATOR/binary,
+                            NumOfChunksBin/binary >>,
+            {Ret, State_1} =
+                case send_object(#put_req_params{path = ChunkedKey,
+                                                 body = Bin_2,
+                                                 dsize = MaxObjLen,
+                                                 cindex = NumOfChunks,
+                                                 bucket_info = BucketInfo}, leo_date:clock()) of
+                    {ok, SpawnRet} ->
+                        Context_1 = crypto:hash_update(Context, Bin_2),
+                        << Head:8/binary, _Rest/binary>> = Bin_2,
+                        Offset = MaxObjLen * NumOfChunks,
+                        ?debug("handle_call",
+                               "Save Chunk, Key: ~p, Chunk: ~p, Offset: ~p, Bin: ~p",
+                               [Key, NumOfChunks, Offset, leo_hex:binary_to_hex(Head)]),
+                        {ok, State#state{stacked_bin = StackedBin_1,
+                                         num_of_chunks = NumOfChunks + 1,
+                                         total_len = TotalLen_1,
+                                         monitor_set = sets:add_element(SpawnRet, MonitorSet),
+                                         md5_context = Context_1}};
+                    {error, Cause} ->
+                        {{error, Cause}, State#state{stacked_bin = StackedBin_1,
+                                                     num_of_chunks = NumOfChunks + 1,
+                                                     total_len = TotalLen_1,
+                                                     monitor_set = MonitorSet}}
+                end,
+            {reply, Ret, State_1};
         false ->
             {reply, ok, State#state{stacked_bin = Bin_1,
                                     total_len = TotalLen_1}}
@@ -278,6 +280,40 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% Private Functions
 %%====================================================================
+%% @doc Checkout a worker and execute the request
+%% @private
+-spec(send_object(PutReq, Times) ->
+             {ok, SpawnRet} | {error, Cause} when PutReq::#put_req_params{},
+                                                  Times::non_neg_integer(),
+                                                  SpawnRet::{pid(), reference()},
+                                                  Cause::any()).
+send_object(PutReq, BeginTime) ->
+    Key = PutReq#put_req_params.path,
+
+    case leo_pod:checkout(?POD_LOH_WORKER) of
+        {ok, Worker} ->
+            Fun = fun() ->
+                          Ret = gen_server:call(Worker, {put, PutReq}),
+                          ok = leo_pod:checkin(?POD_LOH_WORKER, Worker),
+                          erlang:send(self(), {async_notify, Key, Ret})
+                  end,
+            SpawnRet = erlang:spawn_monitor(Fun),
+            {ok, SpawnRet};
+        {error,_Cause} ->
+            Latency = erlang:round((leo_date:clock() - BeginTime) / 1000),
+            case (?DEF_REQ_TIMEOUT < Latency) of
+                true ->
+                    Cause = timeout,
+                    erlang:send(self(), {async_notify, Key, {error, Cause}}),
+                    ?error("send_object/2", [{key, Key}, {cause, Cause},
+                                             {latency, Latency}]),
+                    {error, Cause};
+                false ->
+                    timer:sleep(?DEF_WAIT_TIME_OF_CHECKOUT),
+                    send_object(PutReq, BeginTime)
+            end
+    end.
+
 %% @doc Waits sub processes
 %% @private
 wait_sub_process(MonitorSet, Errors) ->

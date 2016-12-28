@@ -113,6 +113,7 @@
 -define(HTTP_ST_GATEWAY_TIMEOUT,     504).
 
 -define(HTTP_MAXKEYS_LIMIT,          1000).
+-define(HTTP_METADATA_LIMIT,         2048).
 
 -define(CACHE_HTTP,  'http').
 -define(CACHE_INNER, 'inner').
@@ -163,6 +164,7 @@
 -define(XML_ERROR_CODE_InvalidBucketName, "InvalidBucketName").
 -define(XML_ERROR_CODE_SignatureDoesNotMatch, "SignatureDoesNotMatch").
 -define(XML_ERROR_CODE_RequestTimeTooSkewed, "RequestTimeTooSkewed").
+-define(XML_ERROR_CODE_MetadataTooLarge, "MetadataTooLarge").
 
 %% error messages used in a error response
 -define(XML_ERROR_MSG_EntityTooLarge, "Your proposed upload exceeds the maximum allowed object size.").
@@ -181,6 +183,7 @@
 -define(XML_ERROR_MSG_InvalidBucketName, "The specified bucket is not valid.").
 -define(XML_ERROR_MSG_SignatureDoesNotMatch, "The request signature we calculated does not match the signature you provided. Check your AWS secret access key and signing method.").
 -define(XML_ERROR_MSG_RequestTimeTooSkewed, "The difference between the request time and the server's time is too large.").
+-define(XML_ERROR_MSG_MetadataTooLarge, "Your metadata headers exceed the maximum allowed metadata size.").
 
 %% Macros
 %% - code:200
@@ -263,6 +266,11 @@
         cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,
                          io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_BadDigest,
                                                     ?XML_ERROR_MSG_BadDigest,
+                                                    xmerl_lib:export_text(_Key), _ReqId]), _R)).
+-define(reply_metadata_too_large(_H, _Key, _ReqId, _R),
+        cowboy_req:reply(?HTTP_ST_BAD_REQ, _H,
+                         io_lib:format(?XML_ERROR, [?XML_ERROR_CODE_MetadataTooLarge,
+                                                    ?XML_ERROR_MSG_MetadataTooLarge,
                                                     xmerl_lib:export_text(_Key), _ReqId]), _R)).
 
 -define(http_header(_R, _K),
@@ -516,6 +524,7 @@
           sending_chunked_obj_len    :: pos_integer(),          %% sending chunk length
           qs_prefix = <<>>           :: binary() | none,        %% query string
           range_header               :: string(),               %% range header
+          custom_metadata = <<>>     :: binary(),
           has_inner_cache = false    :: boolean(),              %% has inner-cache?
           is_cached = false          :: boolean(),              %% is cached?
           is_dir = false             :: boolean(),              %% is directory?
@@ -539,6 +548,8 @@
 -record(put_req_params, {
           path = <<>> :: binary(),
           body = <<>> :: binary(),
+          meta = <<>> :: binary(),
+          msize = 0 :: non_neg_integer(),
           dsize = 0 :: non_neg_integer(),
           total_chunks = 0 :: non_neg_integer(),
           cindex = 0 :: non_neg_integer(),
@@ -558,7 +569,9 @@
           mtime        = 0    :: non_neg_integer(),   %% gregorian_seconds
           content_type = <<>> :: binary() | string(), %% from a Content-Type header
           body         = <<>> :: binary(),            %% body (value),
-          size         = 0    :: non_neg_integer(),       %% body size
+          cmeta        = <<>> :: binary(),            %% custom metadata
+          size         = 0    :: non_neg_integer(),   %% body size
+          msize        = 0    :: non_neg_integer(),   %% custom metadata size
           file_path    = ""   :: file:name_all()      %% file path when this cache is stored on disk
          }).
 

@@ -1,4 +1,4 @@
-.PHONY: deps compile test
+.PHONY: all get_deps compile xref eunit release check_plt build_plt dialyzer doc callgraph graphviz clean distclean gen_rpc gen_nfs
 
 REBAR := ./rebar
 APPS = erts kernel stdlib sasl crypto compiler inets mnesia public_key runtime_tools snmp syntax_tools tools xmerl webtool
@@ -10,18 +10,20 @@ PLT_FILE = .leo_gateway_dialyzer_plt
 DOT_FILE = leo_gateway.dot
 CALL_GRAPH_FILE = leo_gateway.png
 
-all: deps gen_nfs
-	@$(REBAR) compile
-	@$(REBAR) xref skip_deps=true
-	@$(REBAR) eunit skip_deps=true
-deps:
+all: get_deps gen_nfs compile xref eunit
+get_deps:
 	@$(REBAR) get-deps
 compile:
-	@$(REBAR) compile skip_deps=true
+	$(SHELL) -c ./replace_otp_vsn.sh
+	@$(REBAR) compile
 xref:
 	@$(REBAR) xref skip_deps=true
 eunit:
 	@$(REBAR) eunit skip_deps=true
+release:
+	rm -rf rel/leo_gateway
+	@$(REBAR) compile
+	(cd rel/ && ../rebar generate)
 check_plt:
 	@$(REBAR) compile
 	dialyzer --check_plt --plt $(PLT_FILE) --apps $(APPS)
@@ -31,8 +33,6 @@ build_plt:
 dialyzer:
 	@$(REBAR) compile
 	dialyzer --plt $(PLT_FILE) -r ebin/ --dump_callgraph $(DOT_FILE) -Wrace_conditions | fgrep -v -f ./dialyzer.ignore-warnings
-typer:
-	typer --plt $(PLT_FILE) -I include/ -r src/
 doc: compile
 	@$(REBAR) doc
 callgraph: graphviz
@@ -40,12 +40,10 @@ callgraph: graphviz
 graphviz:
 	$(if $(shell which dot),,$(error "To make the depgraph, you need graphviz installed"))
 clean:
-	@$(REBAR) clean skip_deps=true
+	@$(REBAR) clean
 distclean:
 	@$(REBAR) delete-deps
 	@$(REBAR) clean
-qc:
-	@$(REBAR) qc skip_deps=true
 gen_rpc: deps
 	(cd deps/erpcgen/;make)
 gen_nfs: gen_rpc

@@ -123,7 +123,7 @@ prep_stop(_State) ->
     catch leo_mq_sup:stop(),
     catch leo_logger_sup:stop(),
 
-    case get_options() of
+    case catch get_options() of
         {ok, HttpOptions} ->
             case HttpOptions#http_options.handler of
                 ?PROTO_HANDLER_S3 ->
@@ -222,7 +222,7 @@ after_process_0({ok, Pid}) ->
                 {ok, Pid} ->
                     {ok, Pid};
                 {_, Cause} ->
-                    ?error("inspect_cluster_status/1", [{cause, Cause}]),
+                    ?error("after_process_0/1", [{cause, Cause}]),
                     init:stop()
             end;
         false ->
@@ -369,6 +369,19 @@ after_process_1(Pid, Managers) ->
                               {?PROP_DISC_CACHE_JOURNAL_DIR,   CacheDiscDirJournal}
                              ]),
 
+    %% Large Object Worker Pool
+    ChildSpec_1  = {?POD_LOH_WORKER, {leo_pod_sup, start_link,
+                                      [?POD_LOH_WORKER,
+                                       ?env_loh_put_worker_pool_size(),
+                                       ?env_loh_put_worker_buffer_size(),
+                                       leo_large_object_worker, [],
+                                       fun(_) ->
+                                               void
+                                       end]},
+                    permanent, ?SHUTDOWN_WAITING_TIME,
+                    supervisor, [leo_pod_sup]},
+    {ok,_} = supervisor:start_child(leo_gateway_sup, ChildSpec_1),
+
     %% Launch SavannaAgent(QoS)
     SVManagers = ?env_qos_managers(),
     QoS_StatEnabled = ?env_qos_stat_enabled(),
@@ -380,11 +393,11 @@ after_process_1(Pid, Managers) ->
         false ->
             void
     end,
-    ChildSpec = {leo_gateway_qos_stat,
-                 {leo_gateway_qos_stat, start_link,
-                  [SVManagers, QoS_StatEnabled]},
-                 permanent, 2000, worker, [leo_gateway_qos_stat]},
-    {ok, _} = supervisor:start_child(leo_gateway_sup, ChildSpec),
+    ChildSpec_2 = {leo_gateway_qos_stat,
+                   {leo_gateway_qos_stat, start_link,
+                    [SVManagers, QoS_StatEnabled]},
+                   permanent, 2000, worker, [leo_gateway_qos_stat]},
+    {ok,_} = supervisor:start_child(leo_gateway_sup, ChildSpec_2),
 
     %% Check status of the storage-cluster
     inspect_cluster_status({ok, Pid}, Managers).
@@ -526,7 +539,7 @@ log_file_appender([{Type, _}|T], Acc) when Type == file ->
 %% @doc Retrieve properties
 %%
 -spec(get_options() ->
-             {ok, #http_options{}}).
+             {ok, #http_options{}} | {error, Cause} when Cause::any()).
 get_options() ->
     HttpProp = ?env_http_properties(),
 
@@ -555,8 +568,22 @@ get_options() ->
     CacheProp = ?env_cache_properties(),
     UserHttpCache = leo_misc:get_value('http_cache', CacheProp, ?DEF_HTTP_CACHE),
     CacheWorkers = leo_misc:get_value('cache_workers', CacheProp, ?DEF_CACHE_WORKERS),
-    CacheRAMCapacity = leo_misc:get_value('cache_ram_capacity', CacheProp, ?DEF_CACHE_RAM_CAPACITY),
-    CacheDiscCapacity = leo_misc:get_value('cache_disc_capacity', CacheProp, ?DEF_CACHE_DISC_CAPACITY),
+
+    CacheRAMCapacity =
+        case leo_misc:get_value('cache_ram_capacity', CacheProp, ?DEF_CACHE_RAM_CAPACITY) of
+            {error, Cause_1} ->
+                erlang:error(Cause_1);
+            CacheRAMCapacity_1 ->
+                CacheRAMCapacity_1
+        end,
+    CacheDiscCapacity =
+        case leo_misc:get_value('cache_disc_capacity', CacheProp, ?DEF_CACHE_DISC_CAPACITY) of
+            {error, Cause_2} ->
+                erlang:error(Cause_2);
+            CacheDiscCapacity_1 ->
+                CacheDiscCapacity_1
+        end,
+
     CacheDiscThresholdLen = leo_misc:get_value('cache_disc_threshold_len', CacheProp, ?DEF_CACHE_DISC_THRESHOLD_LEN),
     CacheDiscDirData = leo_misc:get_value('cache_disc_dir_data', CacheProp, ?DEF_CACHE_DISC_DIR_DATA),
     CacheDiscDirJournal = leo_misc:get_value('cache_disc_dir_journal', CacheProp, ?DEF_CACHE_DISC_DIR_JOURNAL),
@@ -587,6 +614,14 @@ get_options() ->
     MaxChunkedObjs = leo_misc:get_value('max_chunked_objs', LargeObjectProp, ?DEF_LOBJ_MAX_CHUNKED_OBJS),
     ChunkedObjLen = leo_misc:get_value('chunked_obj_len', LargeObjectProp, ?DEF_LOBJ_CHUNK_OBJ_LEN),
     ReadingChunkedLen = leo_misc:get_value('reading_chunked_obj_len', LargeObjectProp, ?DEF_LOBJ_READING_CHUNK_OBJ_LEN),
+    case ReadingChunkedLen of
+        {error, Cause} ->
+            %% stop to handle
+            %% https://github.com/leo-project/leofs/issues/531
+            error({error, Cause});
+        _ ->
+            nop
+    end,
     ThresholdChunkLen = leo_misc:get_value('threshold_of_chunk_len', LargeObjectProp, ?DEF_LOBJ_THRESHOLD_OF_CHUNK_LEN),
     MaxObjLen = MaxChunkedObjs * ChunkedObjLen,
 
