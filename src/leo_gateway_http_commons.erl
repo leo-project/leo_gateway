@@ -781,9 +781,11 @@ put_large_object(Req, Key, Size, #req_params{bucket_name = BucketName,
                                                    transfer_decode_state = TransferDecodeState}) of
                 {error, ErrorRet} ->
                     ok = leo_large_object_put_handler:rollback(Handler),
-                    {Req_1, Cause} = case (erlang:size(ErrorRet) == 2) of
-                                         true  -> ErrorRet;
-                                         false -> {Req, ErrorRet}
+                    {Req_1, Cause} = case ErrorRet of
+                                         {_, _} ->
+                                             ErrorRet;
+                                         _ ->
+                                             {Req, ErrorRet}
                                      end,
                     reply_fun({error, Cause}, put, BucketName, Key, Size, Req_1, BeginTime);
                 Ret ->
