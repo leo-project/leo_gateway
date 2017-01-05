@@ -230,6 +230,19 @@ invoke([#redundant_node{node = Node,
         %% get-2
         {value, {ok, match} = Ret} ->
             Ret;
+        %% find_by_parent_dir
+        {value, {ok, MetaL}} when is_list(MetaL) ->
+            ?debug("invoke/5", [{ret, MetaL}]),
+            TMetaL = lists:foldl(fun(Meta, Acc) ->
+                                         Out = case leo_object_storage_transformer:transform_metadata(Meta) of
+                                                   {error, _} ->
+                                                       Meta;
+                                                   Meta_1 ->
+                                                       Meta_1
+                                               end,
+                                         [Out | Acc]
+                                 end, [], MetaL),
+            {ok, lists:reverse(TMetaL)};
         %% head/get_dir_meta
         {value, {ok, Meta}} ->
             case leo_object_storage_transformer:transform_metadata(Meta) of
