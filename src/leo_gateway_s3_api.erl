@@ -1637,6 +1637,9 @@ get_bucket_1(_AccessKeyId, BucketName, none, Marker, MaxKeys, Prefix) ->
             Error
     end;
 get_bucket_1(_AccessKeyId, BucketName, Delimiter, Marker, MaxKeys, Prefix) ->
+    ?debug("get_bucket_1/6", "BucketName: ~p, Delimiter: ~p, Marker: ~p, MaxKeys: ~p",
+           [BucketName, Delimiter, Marker, MaxKeys]),
+
     Prefix_1 = case Prefix of
                    none ->
                        <<>>;
