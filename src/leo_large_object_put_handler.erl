@@ -293,7 +293,7 @@ send_object(PutReq, BeginTime) ->
     case leo_pod:checkout(?POD_LOH_WORKER) of
         {ok, Worker} ->
             Fun = fun() ->
-                          Ret = gen_server:call(Worker, {put, PutReq}),
+                          Ret = (catch gen_server:call(Worker, {put, PutReq})),
                           ok = leo_pod:checkin(?POD_LOH_WORKER, Worker),
                           erlang:send(self(), {async_notify, Key, Ret})
                   end,
